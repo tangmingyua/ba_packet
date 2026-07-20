@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-api-config"
+description = "Allow frontend to read local API base URL and auth token."
+commands.allow = ["get_api_config"]

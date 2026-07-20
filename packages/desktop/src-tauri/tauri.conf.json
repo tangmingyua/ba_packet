@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "监管资料库搜索",
+  "version": "1.0.0",
+  "identifier": "com.ba.packet.catalog",
+  "build": {
+    "beforeDevCommand": "npm run dev -w @ba-packet/web",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build -w @ba-packet/web",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../bundle/resources/server.exe": "server.exe",
+      "../bundle/resources/sql-wasm.wasm": "sql-wasm.wasm",
+      "../bundle/resources/dataset-schema.sql": "dataset-schema.sql",
+      "../bundle/resources/seed/catalog.db.enc": "seed/catalog.db.enc"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
+  }
+}

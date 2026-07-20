@@ -1,0 +1,53 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+packages/web/dist/
+release/
+packages/desktop/release/
+
+# 桌面打包产物（安装包 / 免安装 / server.exe 等）
+packages/desktop/bundle/
+packages/desktop/src-tauri/target/
+
+# 数据库与运行时密钥（勿提交）
+packages/server/data/
+packages/server/.runtime/
+**/app-data/
+*.db
+*.db.enc
+*.dpapi
+**/db-key.hex
+**/db-key.dpapi
+
+# 二进制与压缩包
+*.exe
+*.msi
+*.zip
+*.7z
+
+# 日志与临时文件
+*.log
+*.tmp
+test-*.txt
+test-*.json
+test-catalog.db
+test-session.json
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+~$*
+.idea/
+.vscode/
+*.swp
+
+# Excel 测试数据（若放在项目根目录）
+*.xlsx
+*.xls

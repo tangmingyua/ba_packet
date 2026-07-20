@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>口袋 BA · 查答疑</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html" class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="logo-text-wrap">
+        <div class="logo-title">Pocket BA</div>
+        <div class="logo-subtitle">口袋 BA</div>
+      </div>
+    </a>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="nav-item">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </span>
+        查规范
+      </a>
+      <a href="qa.html" class="nav-item active">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        查答疑
+      </a>
+      <a href="search.html?mode=aggregate" class="nav-item">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </span>
+        聚合查询
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      EAST V5.0 + 制度答疑<br>
+      离线查询工具
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">查答疑 · <span id="qaModuleTitle">制度答疑</span></div>
+      <div class="topbar-actions">
+        <button class="btn" onclick="history.back()">← 返回首页</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- Module tabs (level 1) -->
+      <div class="qa-module-tabs" id="moduleTabs"></div>
+
+      <!-- Sheet tabs (level 2) -->
+      <div class="qa-sheet-tabs" id="sheetTabs"></div>
+
+      <!-- Filter bar (same style as search page) -->
+      <div class="qa-filter-bar">
+        <div class="filter-group" style="flex:1;min-width:220px;">
+          <label>关键字（匹配数据项名称/表名）</label>
+          <input type="text" id="qaSearch" placeholder="输入数据项名称或表名关键字..." autocomplete="off">
+          <div class="q-suggest" id="qaQSuggest"></div>
+        </div>
+        <div class="filter-group">
+          <label>自定义筛选列</label>
+          <select id="qaColSelect">
+            <option value="">选择列</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>自定义筛选值</label>
+          <input type="text" id="qaColVal" placeholder="输入内容">
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="doQaSearch()">查询</button>
+          <button class="btn" onclick="resetQaFilters()">重置</button>
+        </div>
+      </div>
+
+      <!-- Data table -->
+      <div class="table-wrap">
+        <div class="table-header">
+          <span class="table-title">答疑数据 <span class="table-count" id="qaCount">0</span> 条</span>
+          <div class="col-toggle-wrap">
+            <button class="btn" onclick="exportQaCSV()">导出 CSV</button>
+            <button class="col-toggle-btn" id="qaColToggleBtn" onclick="toggleQaExtraCols()">
+              <span id="qaColToggleIcon">▸</span> 展开全部列
+            </button>
+          </div>
+        </div>
+        <div class="table-scroll" id="qaTable">
+          <div class="empty">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </div>
+            <div>请选择模块和数据表</div>
+          </div>
+        </div>
+        <div class="pagination" id="qaPagination" style="display:none;">
+          <button id="qaPagePrev" onclick="qaGoToPage(qaCurrentPage - 1)">上一页</button>
+          <span id="qaPageNums"></span>
+          <button id="qaPageNext" onclick="qaGoToPage(qaCurrentPage + 1)">下一页</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+function $(id) { return document.getElementById(id); }
+
+// ========== Primary column key matchers (different modules use different key names) ==========
+const PRIMARY_KEYS = [
+  { label: '表名', keys: ['表名', '报表名', '表名（主）', '表名（副）', '1104表名', 'EAST表名', '客户风险表名'] },
+  { label: '数据项名称', keys: ['数据项名称', '字段名', '数据项/指标名称', '重点指标名称'] },
+  { label: '问题编号', keys: ['问题编号'] },
+  { label: '问题类型', keys: ['问题类型'] },
+  { label: '具体问题描述', keys: ['具体问题描述', '问题描述'] },
+  { label: '解决方案或建议', keys: ['解决方案或建议', '解决方案建议', '问答答复'] },
+  { label: '总局意见', keys: ['总局意见 - 反馈意见', '总局意见', '牵头单位意见 - 反馈意见'] }
+];
+
+// Columns that may get truncated with ...>>
+const TRUNCATABLE_KEYS = ['具体问题描述', '解决方案或建议', '总局意见', '问题描述', '问答答复', '问题类型', '备注', '答疑源文件', '解决方案建议'];
+
+// Long-text column key (for blue color)
+const DESC_KEYS = ['具体问题描述', '问题描述', '解决方案或建议', '解决方案建议', '问答答复'];
+
+let qaModules = [];
+let qaSheets = [];
+let qaCurrentModule = '';
+let qaCurrentSheet = '';
+let qaColumns = [];           // raw column names from sheet
+let qaDisplayCols = [];       // ordered display columns (primary first, then secondary)
+let qaPrimaryCols = [];       // primary column names actually present in current sheet
+let qaSecondaryCols = [];     // secondary column names actually present in current sheet
+let qaCurrentPage = 1;
+const QA_PAGE_SIZE = 10;
+let qaTotalCount = 0;
+let qaKeyword = '';
+let qaTypeFilter = '__all__'; // kept for backward compat, not shown
+let qaCustomCol = '';
+let qaCustomVal = '';
+let qaExtraColsVisible = false;
+let qaCurrentRows = [];
+
+// ========== Init ==========
+async function initQaPage() {
+  const params = new URLSearchParams(location.search);
+  qaKeyword = params.get('q') || '';
+  if (qaKeyword) $('qaSearch').value = qaKeyword;
+  const initModule = params.get('module');
+  const initSheet = params.get('sheet');
+
+  await loadModules();
+  if (qaModules.length > 0) {
+    if (initModule && qaModules.includes(initModule)) {
+      qaCurrentModule = initModule;
+    } else {
+      qaCurrentModule = qaModules[0];
+    }
+    await loadSheets();
+    if (qaSheets.length > 0) {
+      if (initSheet) {
+        const found = qaSheets.find(s => s.sheet_name === initSheet);
+        qaCurrentSheet = found ? found.sheet_name : (qaSheets.find(s => s.row_count > 0) || qaSheets[0]).sheet_name;
+      } else {
+        const firstWithData = qaSheets.find(s => s.row_count > 0) || qaSheets[0];
+        qaCurrentSheet = firstWithData.sheet_name;
+      }
+      splitColsByPrimary(qaSheets.find(s => s.sheet_name === qaCurrentSheet));
+      await loadQaData();
+    }
+  }
+  renderModuleTabs();
+  renderSheetTabs();
+  updateModuleTitle();
+  populateColFilter();
+}
+
+function updateModuleTitle() {
+  $('qaModuleTitle').textContent = qaCurrentModule || '制度答疑';
+}
+
+// ========== API loaders ==========
+async function loadModules() {
+  try {
+    qaModules = await fetch('/api/qa/modules').then(r => r.json());
+  } catch (e) { console.error(e); qaModules = []; }
+}
+
+async function loadSheets() {
+  try {
+    qaSheets = await fetch(`/api/qa/sheets?module=${encodeURIComponent(qaCurrentModule)}`).then(r => r.json());
+  } catch (e) { console.error(e); qaSheets = []; }
+}
+
+function splitColsByPrimary(sheetInfo) {
+  qaColumns = (sheetInfo && sheetInfo.columns) ? sheetInfo.columns.filter(c => c && c.trim()) : [];
+  qaPrimaryCols = [];
+  qaSecondaryCols = [];
+  const used = new Set();
+
+  // Pick primary cols in order defined by PRIMARY_KEYS
+  PRIMARY_KEYS.forEach(def => {
+    for (const k of def.keys) {
+      if (qaColumns.includes(k) && !used.has(k)) {
+        qaPrimaryCols.push(k);
+        used.add(k);
+        break;
+      }
+    }
+  });
+
+  // Anything left over -> secondary
+  qaColumns.forEach(c => { if (!used.has(c)) { qaSecondaryCols.push(c); used.add(c); } });
+
+  qaDisplayCols = [...qaPrimaryCols, ...qaSecondaryCols];
+}
+
+// ========== Render tabs / filters ==========
+function renderModuleTabs() {
+  const container = $('moduleTabs');
+  if (qaModules.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = qaModules.map(m => {
+    const active = m === qaCurrentModule ? 'active' : '';
+    return `<button class="qa-module-tab ${active}" onclick="switchModule('${escapeJsString(m)}')">${escapeHtml(m)}</button>`;
+  }).join('');
+}
+
+function renderSheetTabs() {
+  const container = $('sheetTabs');
+  if (qaSheets.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = qaSheets.map(s => {
+    const active = s.sheet_name === qaCurrentSheet ? 'active' : '';
+    const countLabel = s.row_count > 0 ? ` (${s.row_count})` : '';
+    const disabled = s.row_count === 0 ? 'disabled' : '';
+    return `<button class="qa-sheet-tab ${active}" ${disabled} onclick="switchSheet('${escapeJsString(s.sheet_name)}')">${escapeHtml(s.sheet_name)}${countLabel}</button>`;
+  }).join('');
+}
+
+function populateColFilter() {
+  const sel = $('qaColSelect');
+  sel.innerHTML = '<option value="">选择列</option>';
+  qaColumns.forEach(c => {
+    if (!c) return;
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
+}
+
+// ========== Switch module/sheet ==========
+async function switchModule(module) {
+  if (module === qaCurrentModule) return;
+  qaCurrentModule = module;
+  qaCurrentPage = 1;
+  qaTypeFilter = '__all__';
+  qaCustomCol = '';
+  qaCustomVal = '';
+  qaExtraColsVisible = false;
+  updateColToggleBtn();
+  renderModuleTabs();
+  updateModuleTitle();
+  await loadSheets();
+  if (qaSheets.length > 0) {
+    const firstWithData = qaSheets.find(s => s.row_count > 0) || qaSheets[0];
+    qaCurrentSheet = firstWithData.sheet_name;
+    splitColsByPrimary(firstWithData);
+    populateColFilter();
+    await loadQaData();
+  } else {
+    qaCurrentSheet = '';
+    qaColumns = []; qaPrimaryCols = []; qaSecondaryCols = []; qaDisplayCols = [];
+    renderQaTable([]);
+  }
+  renderSheetTabs();
+}
+
+async function switchSheet(sheetName) {
+  if (sheetName === qaCurrentSheet) return;
+  qaCurrentSheet = sheetName;
+  qaCurrentPage = 1;
+  qaTypeFilter = '__all__';
+  const sheetInfo = qaSheets.find(s => s.sheet_name === sheetName);
+  splitColsByPrimary(sheetInfo);
+  populateColFilter();
+  renderSheetTabs();
+  await loadQaData();
+}
+
+// ========== Data loading ==========
+async function loadQaData() {
+  if (!qaCurrentModule || !qaCurrentSheet) {
+    renderQaTable([]);
+    return;
+  }
+  try {
+    const params = new URLSearchParams({
+      module: qaCurrentModule,
+      sheet: qaCurrentSheet,
+      page: qaCurrentPage,
+      pageSize: QA_PAGE_SIZE
+    });
+    if (qaKeyword) params.set('q', qaKeyword);
+    if (qaTypeFilter && qaTypeFilter !== '__all__') params.set('type', qaTypeFilter);
+    if (qaCustomCol && qaCustomVal) {
+      params.set('customCol', qaCustomCol);
+      params.set('customVal', qaCustomVal);
+    }
+
+    const result = await fetch(`/api/qa/data?${params.toString()}`).then(r => r.json());
+    qaTotalCount = result.total;
+    qaCurrentRows = result.rows;
+    renderQaTable(result.rows);
+    renderQaPagination();
+  } catch (e) {
+    console.error(e);
+    renderQaTable([]);
+  }
+}
+
+// ========== Render table ==========
+function renderQaTable(rows) {
+  $('qaCount').textContent = qaTotalCount;
+  if (rows.length === 0) {
+    $('qaTable').innerHTML = '<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div><div>未找到匹配的答疑数据</div></div>';
+    $('qaPagination').style.display = 'none';
+    return;
+  }
+
+  let html = '<table class="data-table"><thead><tr>';
+  qaDisplayCols.forEach(c => {
+    const isSecondary = qaSecondaryCols.includes(c);
+    const hiddenClass = (!qaExtraColsVisible && isSecondary) ? 'col-hidden' : '';
+    html += `<th class="${hiddenClass}"><span>${escapeHtml(c)}</span><div class="resize-handle" data-col="${escapeHtml(c)}"></div></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach((row, rowIdx) => {
+    html += '<tr>';
+    qaDisplayCols.forEach(c => {
+      const val = (row && row[c] != null) ? String(row[c]) : '';
+      const isSecondary = qaSecondaryCols.includes(c);
+      const hiddenClass = (!qaExtraColsVisible && isSecondary) ? 'col-hidden' : '';
+      const isTruncatable = TRUNCATABLE_KEYS.includes(c);
+      const isDesc = DESC_KEYS.includes(c);
+
+      if (isTruncatable) {
+        html += `<td class="${hiddenClass} truncatable">${renderQaTruncateCell(rowIdx, c, val, isDesc)}</td>`;
+      } else if (isDesc) {
+        const safeCol = c.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
+        const cellId = `qac_${rowIdx}_${safeCol}_plain`;
+        html += `<td class="${hiddenClass}"><div class="cell-desc-wrap cell-inner"><span class="cell-desc">${escapeHtml(val || '—')}</span><button class="cell-copy-btn" onclick="copyQaCell('${cellId}',event)">复制</button></div><span style="display:none" id="${cellId}">${escapeHtml(val || '')}</span></td>`;
+      } else {
+        const cellClass = isDesc ? 'cell-desc' : '';
+        html += `<td class="${hiddenClass}"><div class="cell-inner"><span class="${cellClass}">${escapeHtml(val || '—')}</span></div></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  $('qaTable').innerHTML = html;
+}
+
+function renderQaTruncateCell(rowIdx, colName, val, isDesc) {
+  if (!val) return '<div class="cell-inner"><span style="color:var(--text-muted)">—</span></div>';
+  const escaped = escapeHtml(val);
+  const descClass = isDesc ? 'cell-desc' : '';
+  const wrapClass = isDesc ? 'cell-desc-wrap' : '';
+  const safeCol = colName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
+  const cellId = `qac_${rowIdx}_${safeCol}`;
+  const copyBtn = isDesc ? `<button class="cell-copy-btn" onclick="copyQaCell('${cellId}',event)">复制</button>` : '';
+  if (val.length > 36) {
+    const shortText = escapeHtml(val.substring(0, 36));
+    return `<div class="cell-content ${wrapClass} ${descClass}" id="${cellId}" onclick="toggleQaCellExpand('${cellId}')">
+      <div class="cell-text-short">${shortText}<span class="truncate-overflow">...&gt;&gt;</span></div>
+      <div class="cell-overlay">${escaped}</div>
+      ${copyBtn}
+    </div>`;
+  }
+  return `<div class="cell-content ${wrapClass} ${descClass}" id="${cellId}" onclick="toggleQaCellExpand('${cellId}')"><div class="cell-text-short">${escaped}</div>${copyBtn}</div>`;
+}
+
+function toggleQaCellExpand(cellId) {
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
+  const isExpanded = cell.classList.contains('expanded');
+  document.querySelectorAll('.cell-content.expanded').forEach(el => el.classList.remove('expanded'));
+  if (!isExpanded) cell.classList.add('expanded');
+}
+
+// ========== Copy cell content ==========
+function copyQaCell(cellId, event) {
+  event.stopPropagation();
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
+  // Get full text: from overlay if exists, else from hidden span, else from cell itself
+  const overlay = cell.querySelector('.cell-overlay');
+  const hiddenSpan = document.getElementById(cellId);
+  let text = '';
+  if (overlay) {
+    text = overlay.textContent;
+  } else if (hiddenSpan && cellId.includes('_plain')) {
+    text = hiddenSpan.textContent;
+  } else {
+    text = cell.textContent;
+  }
+  navigator.clipboard.writeText(text).then(() => showCopyToast()).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopyToast();
+  });
+}
+
+function showCopyToast() {
+  let toast = document.getElementById('copyToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'copyToast';
+    toast.className = 'copy-toast';
+    toast.textContent = '已复制';
+    document.body.appendChild(toast);
+  }
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1500);
+}
+
+function toggleQaExtraCols() {
+  qaExtraColsVisible = !qaExtraColsVisible;
+  if (qaExtraColsVisible) {
+    document.querySelectorAll('#qaTable .col-hidden').forEach(el => el.classList.remove('col-hidden'));
+  } else {
+    renderQaTable(qaCurrentRows);
+  }
+  updateColToggleBtn();
+}
+
+function updateColToggleBtn() {
+  const btn = $('qaColToggleBtn');
+  const icon = $('qaColToggleIcon');
+  if (!btn) return;
+  if (qaExtraColsVisible) {
+    btn.classList.add('expanded');
+    icon.textContent = '▾';
+    // Update text node
+    const tn = btn.childNodes[1];
+    if (tn) tn.textContent = ' 收起次要列';
+  } else {
+    btn.classList.remove('expanded');
+    icon.textContent = '▸';
+    const tn = btn.childNodes[1];
+    if (tn) tn.textContent = ' 展开全部列';
+  }
+}
+
+// ========== Pagination ==========
+function renderQaPagination() {
+  const totalPages = Math.max(1, Math.ceil(qaTotalCount / QA_PAGE_SIZE));
+  const bar = $('qaPagination');
+  if (totalPages <= 1) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  $('qaPagePrev').disabled = qaCurrentPage === 1;
+  $('qaPageNext').disabled = qaCurrentPage === totalPages;
+  // Build page number list
+  const pageNums = $('qaPageNums');
+  let html = '';
+  const maxVisible = 7;
+  let startPage, endPage;
+  if (totalPages <= maxVisible) {
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    startPage = Math.max(1, qaCurrentPage - 3);
+    endPage = Math.min(totalPages, qaCurrentPage + 3);
+    if (qaCurrentPage <= 4) { startPage = 1; endPage = maxVisible; }
+    if (qaCurrentPage >= totalPages - 3) { startPage = totalPages - maxVisible + 1; endPage = totalPages; }
+  }
+  if (startPage > 1) {
+    html += `<span class="page-num" onclick="qaGoToPage(1)">1</span>`;
+    if (startPage > 2) html += `<span class="page-ellipsis">...</span>`;
+  }
+  for (let i = startPage; i <= endPage; i++) {
+    const activeClass = i === qaCurrentPage ? 'active' : '';
+    html += `<span class="page-num ${activeClass}" onclick="qaGoToPage(${i})">${i}</span>`;
+  }
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) html += `<span class="page-ellipsis">...</span>`;
+    html += `<span class="page-num" onclick="qaGoToPage(${totalPages})">${totalPages}</span>`;
+  }
+  pageNums.innerHTML = html;
+}
+
+async function qaGoToPage(page) {
+  const totalPages = Math.max(1, Math.ceil(qaTotalCount / QA_PAGE_SIZE));
+  if (page < 1 || page > totalPages) return;
+  qaCurrentPage = page;
+  await loadQaData();
+  $('qaTable').scrollTop = 0;
+}
+
+// ========== Search / reset ==========
+async function doQaSearch() {
+  qaKeyword = $('qaSearch').value.trim();
+  qaCustomCol = $('qaColSelect').value;
+  qaCustomVal = $('qaColVal').value.trim();
+  qaCurrentPage = 1;
+  await loadQaData();
+  hideQaQSuggest();
+}
+
+function resetQaFilters() {
+  $('qaSearch').value = '';
+  $('qaColSelect').value = '';
+  $('qaColVal').value = '';
+  qaKeyword = '';
+  qaTypeFilter = '__all__';
+  qaCustomCol = '';
+  qaCustomVal = '';
+  qaCurrentPage = 1;
+  qaExtraColsVisible = false;
+  updateColToggleBtn();
+  renderQaTable(qaCurrentRows);
+  renderQaPagination();
+  hideQaQSuggest();
+}
+
+// ========== qa keyword suggest dropdown (matches 数据项名称/表名) ==========
+let qaSuggestList = [];
+let qaSuggestIndex = -1;
+let qaSuggestTimer = null;
+
+$('qaSearch').addEventListener('input', () => {
+  clearTimeout(qaSuggestTimer);
+  qaSuggestTimer = setTimeout(() => fetchQaQSuggestions(), 200);
+});
+
+$('qaSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    qaSuggestIndex = Math.min(qaSuggestIndex + 1, qaSuggestList.length - 1);
+    highlightQaQSuggest();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    qaSuggestIndex = Math.max(qaSuggestIndex - 1, -1);
+    highlightQaQSuggest();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (qaSuggestIndex >= 0 && qaSuggestList[qaSuggestIndex]) {
+      const picked = qaSuggestList[qaSuggestIndex];
+      qaKeyword = picked['数据项名称'] || '';
+      $('qaSearch').value = qaKeyword;
+      hideQaQSuggest();
+      doQaSearch();
+    } else {
+      hideQaQSuggest();
+      doQaSearch();
+    }
+  } else if (e.key === 'Escape') {
+    hideQaQSuggest();
+  }
+});
+
+async function fetchQaQSuggestions() {
+  const q = $('qaSearch').value.trim();
+  if (!q) { hideQaQSuggest(); return; }
+  try {
+    qaSuggestList = await fetch(`/api/suggest?q=${encodeURIComponent(q)}&mode=qa`).then(r => r.json());
+    qaSuggestIndex = -1;
+    renderQaQSuggestions(q);
+  } catch (e) { console.error(e); }
+}
+
+function renderQaQSuggestions(q) {
+  const box = $('qaQSuggest');
+  if (qaSuggestList.length === 0) {
+    box.innerHTML = '<div class="q-suggest-empty">无匹配结果</div>';
+    box.classList.add('show');
+    return;
+  }
+  box.innerHTML = qaSuggestList.map((item, idx) => {
+    const name = escapeHtml(item['数据项名称'] || '').replace(
+      new RegExp(`(${escapeRegex(q)})`, 'gi'),
+      '<span class="q-match">$1</span>'
+    );
+    const table = escapeHtml(item['表名'] || '');
+    const module = escapeHtml(item.module || '');
+    return `<div class="q-suggest-item" data-idx="${idx}" onclick="pickQaQSuggest(${idx})">
+      <span>${name}</span>
+      <span class="q-table">${table}${module ? ' · ' + module : ''}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('show');
+}
+
+function pickQaQSuggest(idx) {
+  const picked = qaSuggestList[idx];
+  if (!picked) return;
+  qaKeyword = picked['数据项名称'] || '';
+  $('qaSearch').value = qaKeyword;
+  // If picked has a different module, switch module first
+  if (picked.module && picked.module !== qaCurrentModule) {
+    qaCurrentModule = picked.module;
+    updateModuleTitle();
+    renderModuleTabs();
+  }
+  hideQaQSuggest();
+  qaCurrentPage = 1;
+  loadQaData();
+}
+
+function highlightQaQSuggest() {
+  document.querySelectorAll('#qaQSuggest .q-suggest-item').forEach((el, i) => {
+    el.style.background = i === qaSuggestIndex ? 'var(--bg-active)' : '';
+  });
+  if (qaSuggestIndex >= 0 && qaSuggestList[qaSuggestIndex]) {
+    $('qaSearch').value = qaSuggestList[qaSuggestIndex]['数据项名称'] || '';
+  }
+}
+
+function hideQaQSuggest() {
+  $('qaQSuggest').classList.remove('show');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.qa-filter-bar')) {
+    hideQaQSuggest();
+  }
+});
+
+// ========== Export CSV ==========
+function exportQaCSV() {
+  if (qaCurrentRows.length === 0) return alert('没有可导出的数据');
+  let csv = '\uFEFF';
+  csv += qaDisplayCols.join(',') + '\n';
+  qaCurrentRows.forEach(row => {
+    csv += qaDisplayCols.map(c => {
+      const v = (row[c] != null ? String(row[c]) : '').replace(/"/g, '""');
+      return `"${v}"`;
+    }).join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `口袋BA答疑_${qaCurrentModule}_${qaCurrentSheet}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ========== Helpers ==========
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escapeJsString(s) {
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+$('qaColVal').addEventListener('keydown', e => { if (e.key === 'Enter') doQaSearch(); });
+
+// ========== Column resize drag ==========
+(function() {
+  let dragging = null;
+  let startX = 0;
+  let startWidth = 0;
+
+  document.addEventListener('mousedown', (e) => {
+    const handle = e.target.closest('.resize-handle');
+    if (!handle) return;
+    e.preventDefault();
+    const th = handle.parentElement;
+    startX = e.pageX;
+    startWidth = th.offsetWidth;
+    handle.classList.add('active');
+    dragging = { handle, th };
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const diff = e.pageX - startX;
+    const newWidth = Math.max(60, startWidth + diff);
+    dragging.th.style.width = newWidth + 'px';
+    dragging.th.style.minWidth = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging.handle.classList.remove('active');
+    dragging = null;
+  });
+})();
+
+initQaPage();
+</script>
+</body>
+</html>

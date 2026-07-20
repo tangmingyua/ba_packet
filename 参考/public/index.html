@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>口袋 BA · 查规范</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html" class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="logo-text-wrap">
+        <div class="logo-title">Pocket BA</div>
+        <div class="logo-subtitle">口袋 BA</div>
+      </div>
+    </a>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="nav-item active">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </span>
+        查规范
+      </a>
+      <a href="qa.html" class="nav-item">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        查答疑
+      </a>
+      <a href="search.html?mode=aggregate" class="nav-item">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </span>
+        聚合查询
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      EAST V5.0 + 制度答疑<br>
+      离线查询工具
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="content" style="display:flex;align-items:center;justify-content:center;">
+      <div class="home-center">
+        <div class="home-logo">
+          <div class="home-logo-icon">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="home-logo-text">Pocket BA</div>
+        </div>
+
+        <div class="mode-tabs" id="modeTabs">
+          <button class="mode-tab active" data-mode="norm">查规范</button>
+          <button class="mode-tab" data-mode="qa">查答疑</button>
+          <button class="mode-tab" data-mode="aggregate">聚合查询</button>
+        </div>
+
+        <div class="search-container">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="M21 21l-4.35-4.35"></path>
+          </svg>
+          <input type="text" class="search-box" id="homeSearch" placeholder="搜索数据项名称，如：贷款、客户、机构..." autocomplete="off">
+          <button class="search-btn" id="searchBtn" onclick="goSearch()">查询</button>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const homeSearch = document.getElementById('homeSearch');
+const suggestions = document.getElementById('suggestions');
+const modeTabs = document.getElementById('modeTabs');
+let activeIndex = -1;
+let suggestionList = [];
+let currentMode = 'norm';
+
+const modeConfig = {
+  norm: { placeholder: '搜索数据项名称，如：贷款、客户、机构...', btn: '查询', target: 'search.html' },
+  qa: { placeholder: '搜索答疑问题或关键词...', btn: '查询', target: 'qa.html' },
+  aggregate: { placeholder: '聚合搜索规范 + 答疑...', btn: '查询', target: 'search.html' }
+};
+
+modeTabs.addEventListener('click', e => {
+  const tab = e.target.closest('.mode-tab');
+  if (!tab) return;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  currentMode = tab.dataset.mode;
+  const cfg = modeConfig[currentMode];
+  homeSearch.placeholder = cfg.placeholder;
+  document.getElementById('searchBtn').textContent = cfg.btn;
+  suggestions.classList.remove('show');
+  homeSearch.focus();
+});
+
+function fetchJson(url) {
+  return fetch(url).then(r => r.json());
+}
+
+async function updateSuggestions() {
+  const q = homeSearch.value.trim();
+  if (!q) {
+    suggestions.classList.remove('show');
+    return;
+  }
+  if (currentMode === 'aggregate') {
+    suggestions.classList.remove('show');
+    return;
+  }
+  try {
+    suggestionList = await fetchJson(`/api/suggest?q=${encodeURIComponent(q)}&mode=${currentMode}`);
+    renderSuggestions(q);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderSuggestions(q) {
+  if (suggestionList.length === 0) {
+    suggestions.innerHTML = '<div class="suggestion-empty">无匹配结果</div>';
+    suggestions.classList.add('show');
+    return;
+  }
+  suggestions.innerHTML = suggestionList.map((item, idx) => {
+    const name = (item['数据项名称'] || '').replace(new RegExp(`(${escapeRegex(q)})`, 'gi'), '<span class="match">$1</span>');
+    const table = item['表名'] || '';
+    const moduleTag = item.module ? ` · ${item.module}` : '';
+    return `<div class="suggestion-item" data-idx="${idx}" data-id="${item.id}" data-module="${item.module || ''}">
+      <div class="suggestion-title">${name}</div>
+      <div class="suggestion-meta">${table}${moduleTag}</div>
+    </div>`;
+  }).join('');
+  suggestions.classList.add('show');
+  activeIndex = -1;
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function goSearch() {
+  const q = homeSearch.value.trim();
+  const cfg = modeConfig[currentMode];
+  if (currentMode === 'qa') {
+    window.location.href = `qa.html?q=${encodeURIComponent(q)}`;
+    return;
+  }
+  if (!q) return;
+  window.location.href = `${cfg.target}?q=${encodeURIComponent(q)}&mode=${currentMode}`;
+}
+
+homeSearch.addEventListener('input', () => {
+  activeIndex = -1;
+  updateSuggestions();
+});
+
+homeSearch.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    activeIndex = Math.min(activeIndex + 1, suggestionList.length - 1);
+    highlightActive();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    activeIndex = Math.max(activeIndex - 1, -1);
+    highlightActive();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (currentMode === 'norm' && activeIndex >= 0 && suggestionList[activeIndex]) {
+      window.location.href = `search.html?id=${suggestionList[activeIndex].id}&mode=${currentMode}`;
+    } else if (currentMode === 'qa' && activeIndex >= 0 && suggestionList[activeIndex]) {
+      const item = suggestionList[activeIndex];
+      const module = item.module || '';
+      window.location.href = `qa.html?q=${encodeURIComponent(item['数据项名称'] || '')}${module ? `&module=${encodeURIComponent(module)}` : ''}`;
+    } else {
+      goSearch();
+    }
+  } else if (e.key === 'Escape') {
+    suggestions.classList.remove('show');
+  }
+});
+
+function highlightActive() {
+  document.querySelectorAll('.suggestion-item').forEach((el, i) => {
+    el.classList.toggle('active', i === activeIndex);
+  });
+  if (activeIndex >= 0 && suggestionList[activeIndex]) {
+    homeSearch.value = suggestionList[activeIndex]['数据项名称'] || '';
+  }
+}
+
+suggestions.addEventListener('click', e => {
+  const item = e.target.closest('.suggestion-item');
+  if (item) {
+    if (currentMode === 'qa') {
+      const module = item.dataset.module || '';
+      const q = encodeURIComponent(item.querySelector('.suggestion-title').textContent.trim());
+      window.location.href = `qa.html?q=${q}${module ? `&module=${encodeURIComponent(module)}` : ''}`;
+    } else {
+      window.location.href = `search.html?id=${item.dataset.id}&mode=${currentMode}`;
+    }
+  }
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-container')) {
+    suggestions.classList.remove('show');
+  }
+});
+
+homeSearch.focus();
+</script>
+</body>
+</html>

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>口袋 BA · 查询结果</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html" class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <div class="logo-text-wrap">
+        <div class="logo-title">Pocket BA</div>
+        <div class="logo-subtitle">口袋 BA</div>
+      </div>
+    </a>
+    <nav class="sidebar-nav">
+      <a href="index.html" class="nav-item active" id="navNorm">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </span>
+        查规范
+      </a>
+      <a href="qa.html" class="nav-item" id="navCheck">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        查答疑
+      </a>
+      <a href="search.html?mode=aggregate" class="nav-item" id="navAggregate">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        </span>
+        聚合查询
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      EAST V5.0 + 制度答疑<br>
+      离线查询工具
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="pageTitle">查询结果</div>
+      <div class="topbar-actions">
+        <button class="btn" onclick="history.back()">← 返回首页</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- Filter bar with keyword suggest -->
+      <div class="filter-bar">
+        <div class="filter-group" style="flex:1;min-width:220px;">
+          <label id="qLabel">关键字（匹配数据项名称）</label>
+          <input type="text" id="qInput" placeholder="输入关键字..." autocomplete="off">
+          <div class="q-suggest" id="qSuggest"></div>
+        </div>
+        <div class="filter-group">
+          <label id="tableLabel">表名筛选</label>
+          <select id="tableSelect">
+            <option value="__all__">全部</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>自定义筛选列</label>
+          <select id="customColSelect">
+            <option value="">选择列</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>自定义筛选值</label>
+          <input type="text" id="customValInput" placeholder="输入内容">
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="doSearch()">查询</button>
+          <button class="btn" onclick="resetFilters()">重置</button>
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <div class="table-wrap">
+        <div class="table-header">
+          <span class="table-title">查询结果 <span class="table-count" id="resultCount">0</span> 条</span>
+          <div class="col-toggle-wrap">
+            <button class="btn" onclick="exportCSV()">导出 CSV</button>
+            <button class="col-toggle-btn" id="colToggleBtn" onclick="toggleExtraCols()">
+              <span id="colToggleIcon">▸</span> 展开全部列
+            </button>
+          </div>
+        </div>
+        <div class="table-scroll" id="resultTable">
+          <div class="empty">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            </div>
+            <div>请输入关键字进行查询</div>
+          </div>
+        </div>
+        <div class="pagination" id="paginationBar" style="display:none;">
+          <button id="pagePrev" onclick="goToPage(currentPage - 1)">上一页</button>
+          <span id="pageNums"></span>
+          <button id="pageNext" onclick="goToPage(currentPage + 1)">下一页</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// Column configurations per mode
+const modeConfig = {
+  norm: {
+    title: '查规范 · 查询结果',
+    qLabel: '关键字（匹配数据项名称）',
+    qPlaceholder: '输入数据项名称关键字...',
+    tableLabel: '表名筛选',
+    primaryCols: ['分类', '表名', '数据项名称', '数据元说明', '备注'],
+    secondaryCols: ['分类编号', '表编号', '数据项编号', '数据项代码', '数据元', '数据元编码', '传输文件名称', '格式', '变更类型', '变更规范列', '变更说明'],
+    truncatableCols: ['数据元说明', '备注'],
+    descCol: '数据元说明',
+    codeCols: ['数据项代码', '数据项编号', '数据元编码', '分类编号', '表编号', '格式', '传输文件名称'],
+    nameCol: '数据项名称',
+    groupCols: ['分类', '表名']
+  },
+  check: {
+    title: '查校验/答疑 · 查询结果',
+    qLabel: '关键字（问题/答复）',
+    qPlaceholder: '输入问题或答复关键字...',
+    tableLabel: '问题类型筛选',
+    primaryCols: ['问题类型', '问题描述', '问答答复', '报表名', '字段名'],
+    secondaryCols: ['答疑源文件'],
+    truncatableCols: ['问题描述', '问答答复'],
+    descCol: '问题描述',
+    codeCols: [],
+    nameCol: '问题描述',
+    groupCols: ['问题类型']
+  },
+  aggregate: {
+    title: '聚合查询 · 查询结果',
+    qLabel: '关键字',
+    qPlaceholder: '跨规范 + 答疑聚合搜索...',
+    tableLabel: '来源筛选',
+    primaryCols: ['分类', '表名', '数据项名称', '数据元说明', '备注'],
+    secondaryCols: ['分类编号', '表编号', '数据项编号', '数据项代码', '数据元', '数据元编码', '传输文件名称', '格式', '变更类型', '变更规范列', '变更说明'],
+    truncatableCols: ['数据元说明', '备注'],
+    descCol: '数据元说明',
+    codeCols: ['数据项代码', '数据项编号', '数据元编码', '分类编号', '表编号', '格式', '传输文件名称'],
+    nameCol: '数据项名称',
+    groupCols: ['分类', '表名']
+  }
+};
+
+let currentMode = 'norm';
+let currentResults = [];
+let currentKeyword = '';
+let extraColsVisible = false;
+let cfg = modeConfig.norm;
+let currentPage = 1;
+const PAGE_SIZE = 10;
+
+function $(id) { return document.getElementById(id); }
+
+function applyMode() {
+  const params = new URLSearchParams(location.search);
+  currentMode = params.get('mode') || 'norm';
+  cfg = modeConfig[currentMode] || modeConfig.norm;
+  document.title = cfg.title;
+  $('pageTitle').textContent = cfg.title;
+  $('qLabel').textContent = cfg.qLabel;
+  $('qInput').placeholder = cfg.qPlaceholder;
+  $('tableLabel').textContent = cfg.tableLabel;
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (currentMode === 'check') $('navCheck').classList.add('active');
+  else if (currentMode === 'aggregate') $('navAggregate').classList.add('active');
+  else $('navNorm').classList.add('active');
+}
+
+// ========== Keyword input suggest dropdown ==========
+let qSuggestList = [];
+let qSuggestIndex = -1;
+let qSuggestTimer = null;
+
+$('qInput').addEventListener('input', () => {
+  clearTimeout(qSuggestTimer);
+  qSuggestTimer = setTimeout(() => fetchQSuggestions(), 200);
+});
+
+$('qInput').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    qSuggestIndex = Math.min(qSuggestIndex + 1, qSuggestList.length - 1);
+    highlightQSuggest();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    qSuggestIndex = Math.max(qSuggestIndex - 1, -1);
+    highlightQSuggest();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (qSuggestIndex >= 0 && qSuggestList[qSuggestIndex]) {
+      $('qInput').value = qSuggestList[qSuggestIndex]['数据项名称'];
+      hideQSuggest();
+      doSearch();
+    } else {
+      hideQSuggest();
+      doSearch();
+    }
+  } else if (e.key === 'Escape') {
+    hideQSuggest();
+  }
+});
+
+async function fetchQSuggestions() {
+  if (currentMode === 'aggregate') { hideQSuggest(); return; }
+  const q = $('qInput').value.trim();
+  if (!q) { hideQSuggest(); return; }
+  try {
+    qSuggestList = await fetch(`/api/suggest?q=${encodeURIComponent(q)}&mode=${currentMode}`).then(r => r.json());
+    qSuggestIndex = -1;
+    renderQSuggestions(q);
+  } catch (e) { console.error(e); }
+}
+
+function renderQSuggestions(q) {
+  const box = $('qSuggest');
+  if (qSuggestList.length === 0) {
+    box.innerHTML = '<div class="q-suggest-empty">无匹配结果</div>';
+    box.classList.add('show');
+    return;
+  }
+  box.innerHTML = qSuggestList.map((item, idx) => {
+    const name = escapeHtml(item['数据项名称']).replace(
+      new RegExp(`(${escapeRegex(q)})`, 'gi'),
+      '<span class="q-match">$1</span>'
+    );
+    return `<div class="q-suggest-item" data-idx="${idx}" onclick="pickQSuggest(${idx})">
+      <span>${name}</span>
+      <span class="q-table">${escapeHtml(item['表名'])}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('show');
+}
+
+function pickQSuggest(idx) {
+  $('qInput').value = qSuggestList[idx]['数据项名称'];
+  hideQSuggest();
+  doSearch();
+}
+
+function highlightQSuggest() {
+  document.querySelectorAll('#qSuggest .q-suggest-item').forEach((el, i) => {
+    el.style.background = i === qSuggestIndex ? 'var(--bg-active)' : '';
+  });
+  if (qSuggestIndex >= 0 && qSuggestList[qSuggestIndex]) {
+    $('qInput').value = qSuggestList[qSuggestIndex]['数据项名称'];
+  }
+}
+
+function hideQSuggest() {
+  $('qSuggest').classList.remove('show');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.filter-group') || !e.target.closest('#qInput')) {
+    hideQSuggest();
+  }
+});
+
+// ========== Init ==========
+async function init() {
+  applyMode();
+  await loadTables();
+  await loadColumns();
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q') || '';
+  if (q) {
+    $('qInput').value = q;
+    doSearch();
+  }
+}
+
+async function loadTables() {
+  const tables = await fetch(`/api/tables?mode=${currentMode}`).then(r => r.json());
+  const select = $('tableSelect');
+  select.innerHTML = '<option value="__all__">全部</option>';
+  tables.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t['表名'];
+    opt.textContent = `${t['表名']} (${t.item_count})`;
+    select.appendChild(opt);
+  });
+}
+
+async function loadColumns() {
+  const cols = await fetch(`/api/columns?mode=${currentMode}`).then(r => r.json());
+  const select = $('customColSelect');
+  select.innerHTML = '<option value="">选择列</option>';
+  cols.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    select.appendChild(opt);
+  });
+}
+
+async function doSearch() {
+  const q = $('qInput').value.trim();
+  const table = $('tableSelect').value;
+  const customCol = $('customColSelect').value;
+  const customVal = $('customValInput').value.trim();
+  currentKeyword = q;
+
+  const params = new URLSearchParams({ q, table, mode: currentMode });
+  if (customCol && customVal) {
+    params.set('customCol', customCol);
+    params.set('customVal', customVal);
+  }
+
+  try {
+    currentResults = await fetch(`/api/search?${params.toString()}`).then(r => r.json());
+    currentPage = 1;
+    renderResults();
+  } catch (e) {
+    console.error(e);
+    $('resultTable').innerHTML = '<div class="empty"><div>查询失败</div></div>';
+    $('paginationBar').style.display = 'none';
+  }
+}
+
+// ========== Render results ==========
+function renderResults() {
+  $('resultCount').textContent = currentResults.length;
+  if (currentResults.length === 0) {
+    $('resultTable').innerHTML = '<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div><div>未找到匹配结果</div></div>';
+    $('paginationBar').style.display = 'none';
+    return;
+  }
+
+  const allColumns = [...cfg.primaryCols, ...cfg.secondaryCols];
+  const totalPages = Math.max(1, Math.ceil(currentResults.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageData = currentResults.slice(start, start + PAGE_SIZE);
+
+  let html = '<table class="data-table"><thead><tr>';
+  allColumns.forEach(c => {
+    const isSecondary = cfg.secondaryCols.includes(c);
+    const hiddenClass = (!extraColsVisible && isSecondary) ? 'col-hidden' : '';
+    html += `<th class="${hiddenClass}"><span>${escapeHtml(c)}</span><div class="resize-handle" data-col="${escapeHtml(c)}"></div></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  pageData.forEach((row, rowIdx) => {
+    const absoluteRowIdx = start + rowIdx;
+    html += `<tr>`;
+    allColumns.forEach(c => {
+      const val = row[c] || '';
+      const isSecondary = cfg.secondaryCols.includes(c);
+      const hiddenClass = (!extraColsVisible && isSecondary) ? 'col-hidden' : '';
+      const isTruncatable = cfg.truncatableCols.includes(c);
+      const isDesc = c === cfg.descCol;
+      const isCode = cfg.codeCols.includes(c);
+      const isName = c === cfg.nameCol;
+      const isGroup = cfg.groupCols.includes(c);
+
+      if (isTruncatable) {
+        html += `<td class="${hiddenClass} truncatable">${renderTruncateCell(absoluteRowIdx, c, val, isDesc)}</td>`;
+      } else if (isCode) {
+        html += `<td class="${hiddenClass}"><div class="cell-inner"><span class="cell-code">${escapeHtml(val)}</span></div></td>`;
+      } else if (isName) {
+        html += `<td class="${hiddenClass}"><div class="cell-inner"><span class="cell-name">${highlightKeyword(escapeHtml(val))}</span></div></td>`;
+      } else if (isGroup) {
+        html += `<td class="${hiddenClass}"><div class="cell-inner"><span style="font-weight:500;">${escapeHtml(val)}</span></div></td>`;
+      } else {
+        html += `<td class="${hiddenClass}"><div class="cell-inner"><span class="cell-secondary">${escapeHtml(val)}</span></div></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  $('resultTable').innerHTML = html;
+  renderPagination(totalPages);
+}
+
+function renderTruncateCell(rowIdx, colName, val, isDesc) {
+  if (!val) return '<span style="color:var(--text-muted)">-</span>';
+  const escaped = escapeHtml(val);
+  const descClass = isDesc ? 'cell-desc' : '';
+  const safeCol = colName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
+  const cellId = `tc_${rowIdx}_${safeCol}`;
+  const copyBtn = isDesc ? `<button class="cell-copy-btn" onclick="copyCell('${cellId}',event)">复制</button>` : '';
+  if (val.length > 36) {
+    const shortText = escapeHtml(val.substring(0, 36));
+    return `<div class="cell-content cell-desc-wrap ${descClass}" id="${cellId}" onclick="toggleCellExpand('${cellId}')">
+      <div class="cell-text-short">${shortText}<span class="truncate-overflow">...&gt;&gt;</span></div>
+      <div class="cell-overlay">${escaped}</div>
+      ${copyBtn}
+    </div>`;
+  }
+  return `<div class="cell-content cell-desc-wrap ${descClass}" id="${cellId}" onclick="toggleCellExpand('${cellId}')"><div class="cell-text-short">${escaped}</div>${copyBtn}</div>`;
+}
+
+function toggleCellExpand(cellId) {
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
+  const isExpanded = cell.classList.contains('expanded');
+  // collapse any other expanded cell first
+  document.querySelectorAll('.cell-content.expanded').forEach(el => el.classList.remove('expanded'));
+  if (!isExpanded) {
+    cell.classList.add('expanded');
+  }
+}
+
+// ========== Copy cell content ==========
+function copyCell(cellId, event) {
+  event.stopPropagation();
+  const cell = document.getElementById(cellId);
+  if (!cell) return;
+  // Get raw text: overlay has full text if expanded, otherwise cell-text-short
+  const overlay = cell.querySelector('.cell-overlay');
+  const short = cell.querySelector('.cell-text-short');
+  const text = overlay ? overlay.textContent : (short ? short.textContent : cell.textContent);
+  navigator.clipboard.writeText(text).then(() => showCopyToast()).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopyToast();
+  });
+}
+
+function showCopyToast() {
+  let toast = document.getElementById('copyToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'copyToast';
+    toast.className = 'copy-toast';
+    toast.textContent = '已复制';
+    document.body.appendChild(toast);
+  }
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1500);
+}
+
+function toggleExtraCols() {
+  extraColsVisible = !extraColsVisible;
+  const btn = $('colToggleBtn');
+  const icon = $('colToggleIcon');
+  if (extraColsVisible) {
+    btn.classList.add('expanded');
+    icon.textContent = '▾';
+    document.querySelectorAll('.col-hidden').forEach(el => el.classList.remove('col-hidden'));
+  } else {
+    btn.classList.remove('expanded');
+    icon.textContent = '▸';
+    renderResults();
+  }
+  const textNode = btn.childNodes[1];
+  if (textNode) textNode.textContent = extraColsVisible ? ' 收起次要列' : ' 展开全部列';
+}
+
+function renderPagination(totalPages) {
+  const bar = $('paginationBar');
+  if (totalPages <= 1) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  $('pagePrev').disabled = currentPage === 1;
+  $('pageNext').disabled = currentPage === totalPages;
+  // Build page number list
+  const pageNums = $('pageNums');
+  let html = '';
+  const maxVisible = 7;
+  let startPage, endPage;
+  if (totalPages <= maxVisible) {
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    startPage = Math.max(1, currentPage - 3);
+    endPage = Math.min(totalPages, currentPage + 3);
+    if (currentPage <= 4) { startPage = 1; endPage = maxVisible; }
+    if (currentPage >= totalPages - 3) { startPage = totalPages - maxVisible + 1; endPage = totalPages; }
+  }
+  if (startPage > 1) {
+    html += `<span class="page-num" onclick="goToPage(1)">1</span>`;
+    if (startPage > 2) html += `<span class="page-ellipsis">...</span>`;
+  }
+  for (let i = startPage; i <= endPage; i++) {
+    const activeClass = i === currentPage ? 'active' : '';
+    html += `<span class="page-num ${activeClass}" onclick="goToPage(${i})">${i}</span>`;
+  }
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) html += `<span class="page-ellipsis">...</span>`;
+    html += `<span class="page-num" onclick="goToPage(${totalPages})">${totalPages}</span>`;
+  }
+  pageNums.innerHTML = html;
+}
+
+function goToPage(page) {
+  const totalPages = Math.max(1, Math.ceil(currentResults.length / PAGE_SIZE));
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  renderResults();
+  $('resultTable').scrollTop = 0;
+}
+
+function highlightKeyword(html) {
+  if (!currentKeyword) return html;
+  const re = new RegExp(`(${escapeRegex(currentKeyword)})`, 'gi');
+  return html.replace(re, '<span style="color:var(--text);font-weight:700;text-decoration:underline;text-decoration-color:var(--accent);">$1</span>');
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resetFilters() {
+  $('qInput').value = '';
+  $('tableSelect').value = '__all__';
+  $('customColSelect').value = '';
+  $('customValInput').value = '';
+  currentKeyword = '';
+  currentResults = [];
+  extraColsVisible = false;
+  currentPage = 1;
+  $('resultCount').textContent = '0';
+  $('resultTable').innerHTML = '<div class="empty"><div class="empty-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></div><div>请输入关键字进行查询</div></div>';
+  $('paginationBar').style.display = 'none';
+  hideQSuggest();
+}
+
+function exportCSV() {
+  if (currentResults.length === 0) return alert('没有可导出的数据');
+  const allColumns = [...cfg.primaryCols, ...cfg.secondaryCols];
+  let csv = '\uFEFF';
+  csv += allColumns.join(',') + '\n';
+  currentResults.forEach(row => {
+    csv += allColumns.map(c => {
+      const v = (row[c] || '').toString().replace(/"/g, '""');
+      return `"${v}"`;
+    }).join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `口袋BA查询结果_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+$('customValInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+// ========== Column resize drag ==========
+(function() {
+  let dragging = null;
+  let startX = 0;
+  let startWidth = 0;
+  let currentTh = null;
+
+  document.addEventListener('mousedown', (e) => {
+    const handle = e.target.closest('.resize-handle');
+    if (!handle) return;
+    e.preventDefault();
+    currentTh = handle.parentElement;
+    startX = e.pageX;
+    startWidth = currentTh.offsetWidth;
+    handle.classList.add('active');
+    dragging = { handle, th: currentTh };
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const diff = e.pageX - startX;
+    const newWidth = Math.max(60, startWidth + diff);
+    dragging.th.style.width = newWidth + 'px';
+    dragging.th.style.minWidth = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging.handle.classList.remove('active');
+    dragging = null;
+  });
+})();
+
+init();
+</script>
+</body>
+</html>

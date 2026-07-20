@@ -1,0 +1,26 @@
+[package]
+name = "ba-packet-desktop"
+version = "1.0.0"
+description = "监管资料库搜索"
+authors = ["ba-packet"]
+edition = "2021"
+
+[lib]
+name = "ba_packet_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+getrandom = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

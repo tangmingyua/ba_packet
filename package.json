@@ -1,0 +1,28 @@
+{
+  "name": "ba-packet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "监管集市主题明细层资料库搜索",
+  "workspaces": [
+    "packages/server",
+    "packages/web",
+    "packages/desktop"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w @ba-packet/server",
+    "dev:web": "npm run dev -w @ba-packet/web",
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:desktop": "npm run dev -w @ba-packet/desktop",
+    "build:web": "npm run build -w @ba-packet/web",
+    "build": "npm run build:web",
+    "import:excel": "npm run import:excel -w @ba-packet/server",
+    "import:faq": "npm run import:faq -w @ba-packet/server",
+    "dist:win": "npm run dist:win -w @ba-packet/desktop",
+    "build:desktop": "npm run build:win -w @ba-packet/desktop",
+    "test": "npm run test -w @ba-packet/server",
+    "test:server": "npm run test -w @ba-packet/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

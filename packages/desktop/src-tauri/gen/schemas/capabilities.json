@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for ba-packet desktop","local":true,"windows":["main"],"permissions":["core:default","allow-get-api-config"]}}

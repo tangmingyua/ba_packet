@@ -1,0 +1,50 @@
+{
+
+  "name": "@ba-packet/desktop",
+
+  "version": "1.0.0",
+
+  "private": true,
+
+  "type": "module",
+
+  "scripts": {
+
+    "dev": "tauri dev",
+
+    "predist:win": "node scripts/prepare-resources.js",
+
+    "dist:win": "tauri build --no-bundle",
+
+    "dist:win:portable": "npm run dist:win && node scripts/package-portable.js",
+
+    "build:win": "scripts\\build-win.cmd",
+
+    "dev:electron": "electron .",
+
+    "dist:win:electron": "npm run build -w @ba-packet/web && electron-builder --win --x64"
+
+  },
+
+  "devDependencies": {
+
+    "@tauri-apps/cli": "^2.11.4",
+
+    "electron": "34.0.0",
+
+    "electron-builder": "^25.1.8",
+
+    "esbuild": "^0.25.0",
+
+    "postject": "^1.0.0-alpha.6"
+
+  },
+
+  "dependencies": {
+
+    "@primno/dpapi": "^2.0.1"
+
+  }
+
+}
+
