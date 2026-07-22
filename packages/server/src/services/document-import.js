@@ -357,7 +357,7 @@ export function updateDocumentReportMapping(id, reportCode) {
   };
 }
 
-/** 按表样 report_code 查 document 元数据（不含节点树） */
+/** 按表样 report_code 查 document 元数据（不含节点树）；仅查 report_doc_mapping */
 export function getDocumentByReport(reportCode) {
   const normalized = normalizeReportCodeInput(reportCode);
   if (!normalized) return null;

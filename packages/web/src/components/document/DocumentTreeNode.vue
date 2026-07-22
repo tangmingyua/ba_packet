@@ -1,5 +1,5 @@
 <template>
-  <li v-if="visible" class="doc-tree-node" :class="nodeClass">
+  <li v-if="visible" ref="nodeRef" class="doc-tree-node" :class="nodeClass" :data-node-id="node.id">
     <div class="doc-tree-row" :style="{ paddingLeft: `${indent}px` }">
       <button
         v-if="collapsible"
@@ -33,13 +33,14 @@
         :node="child"
         :depth="depth + 1"
         :highlight-indicator-no="highlightIndicatorNo"
+        :highlight-node-id="highlightNodeId"
       />
     </ul>
   </li>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 defineOptions({ name: 'DocumentTreeNode' });
 
@@ -47,6 +48,7 @@ const props = defineProps({
   node: { type: Object, required: true },
   depth: { type: Number, default: 0 },
   highlightIndicatorNo: { type: Number, default: null },
+  highlightNodeId: { type: Number, default: null },
 });
 
 const COLLAPSIBLE = new Set(['part', 'section']);
@@ -75,17 +77,21 @@ const showKindBadge = computed(() =>
   ['part', 'section', 'indicator'].includes(props.node.nodeKind)
 );
 
+const nodeRef = ref(null);
+
 const expanded = ref(
-  subtreeHasHighlight(props.node, props.highlightIndicatorNo) || defaultExpanded(props.node)
+  subtreeHasHighlight(props.node, props.highlightIndicatorNo, props.highlightNodeId) ||
+    defaultExpanded(props.node)
 );
 
 const visible = computed(() => props.node.nodeKind !== 'doc_title');
 
 const highlighted = computed(
   () =>
-    props.node.nodeKind === 'indicator' &&
-    props.highlightIndicatorNo != null &&
-    props.node.indicatorNo === props.highlightIndicatorNo
+    (props.highlightNodeId != null && props.node.id === props.highlightNodeId) ||
+    (props.node.nodeKind === 'indicator' &&
+      props.highlightIndicatorNo != null &&
+      props.node.indicatorNo === props.highlightIndicatorNo)
 );
 
 const nodeClass = computed(() => [
@@ -94,10 +100,15 @@ const nodeClass = computed(() => [
 ]);
 
 watch(
-  () => props.highlightIndicatorNo,
-  (no) => {
-    if (no != null && subtreeHasHighlight(props.node, no)) {
+  () => [props.highlightIndicatorNo, props.highlightNodeId],
+  ([no, nodeId]) => {
+    if ((no != null || nodeId != null) && subtreeHasHighlight(props.node, no, nodeId)) {
       expanded.value = true;
+    }
+    if (nodeId != null && props.node.id === nodeId) {
+      nextTick(() => {
+        nodeRef.value?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      });
     }
   },
   { immediate: true }
@@ -109,10 +120,11 @@ function defaultExpanded(node) {
   return true;
 }
 
-function subtreeHasHighlight(node, no) {
-  if (!node || no == null) return false;
+function subtreeHasHighlight(node, no, nodeId) {
+  if (!node) return false;
+  if (nodeId != null && node.id === nodeId) return true;
   if (node.nodeKind === 'indicator' && node.indicatorNo === no) return true;
-  return (node.children || []).some((child) => subtreeHasHighlight(child, no));
+  return (node.children || []).some((child) => subtreeHasHighlight(child, no, nodeId));
 }
 </script>
 

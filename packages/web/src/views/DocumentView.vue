@@ -6,7 +6,10 @@
       <aside class="document-list">
         <div class="list-header">
           <h3>1104 填报说明</h3>
-          <router-link to="/import?tab=fillInstruction" class="btn-link">去导入</router-link>
+          <div class="list-header-links">
+            <router-link to="/document-search" class="btn-link">搜索</router-link>
+            <router-link to="/import?tab=fillInstruction" class="btn-link">去导入</router-link>
+          </div>
         </div>
         <p v-if="loadingList" class="muted">加载中…</p>
         <p v-else-if="!items.length" class="muted empty-hint">
@@ -303,6 +306,12 @@ refreshList();
   justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.list-header-links {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .list-header h3 {

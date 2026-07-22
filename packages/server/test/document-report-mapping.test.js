@@ -26,6 +26,7 @@ describe('document-report-mapping', () => {
     assert.equal(reportCodeToDocCode('G0100'), 'G01');
     assert.equal(reportCodeToDocCode('G5300'), 'G53');
     assert.equal(reportCodeToDocCode('G100'), 'G01');
+    assert.equal(reportCodeToDocCode('G0101A'), null);
   });
 
   it('normalizeReportCode 规范化表样代号', () => {

@@ -6,6 +6,7 @@
         :key="child.id"
         :node="child"
         :highlight-indicator-no="highlightIndicatorNo"
+        :highlight-node-id="highlightNodeId"
       />
     </ul>
     <p v-else class="muted">暂无节点内容</p>
@@ -19,6 +20,7 @@ import DocumentTreeNode from './DocumentTreeNode.vue';
 const props = defineProps({
   tree: { type: Object, default: null },
   highlightIndicatorNo: { type: Number, default: null },
+  highlightNodeId: { type: Number, default: null },
 });
 
 const rootChildren = computed(() => {

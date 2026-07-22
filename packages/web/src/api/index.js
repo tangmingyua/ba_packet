@@ -253,6 +253,18 @@ export function updateDocumentReportMapping(id, reportCode) {
   });
 }
 
+export function searchDocumentsApi(q, { maxDocuments } = {}) {
+  const query = new URLSearchParams({ q: String(q) });
+  if (maxDocuments != null) query.set('maxDocuments', String(maxDocuments));
+  return request(`/api/documents/search?${query}`);
+}
+
+export function getDocumentSearchHitsApi(id, q, { hitsLimit } = {}) {
+  const query = new URLSearchParams({ q: String(q) });
+  if (hitsLimit != null) query.set('hitsLimit', String(hitsLimit));
+  return request(`/api/documents/${id}/search-hits?${query}`);
+}
+
 /** @deprecated 兼容旧调用名 */
 export function getImportCatalog() {
   return getDatasetCatalog();

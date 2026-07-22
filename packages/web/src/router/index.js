@@ -8,6 +8,7 @@ import ImportView from '../views/ImportView.vue';
 import FormTemplateView from '../views/FormTemplateView.vue';
 import FormTemplateSearchView from '../views/FormTemplateSearchView.vue';
 import DocumentView from '../views/DocumentView.vue';
+import DocumentSearchView from '../views/DocumentSearchView.vue';
 
 export default createRouter({
   history: createWebHashHistory(),
@@ -19,6 +20,7 @@ export default createRouter({
     { path: '/form-template-search', name: 'formTemplateSearch', component: FormTemplateSearchView },
     { path: '/documents', name: 'documents', component: DocumentView },
     { path: '/documents/:id', name: 'documentDetail', component: DocumentView },
+    { path: '/document-search', name: 'documentSearch', component: DocumentSearchView },
     { path: '/fields', redirect: { path: '/import', query: { tab: 'fields' } } },
   ],
 });

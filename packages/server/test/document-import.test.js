@@ -93,6 +93,12 @@ describe('document-import step1', () => {
     assert.equal(getDocumentByReport('G9999'), null);
   });
 
+  it('getDocumentByReport 无映射时返回 null', () => {
+    importFillInstructionDocument(sampleBuffer, { fileName: 'sub.docx' });
+    assert.equal(getDocumentByReport('G0101A'), null);
+    assert.equal(getDocumentByReport('G0101B'), null);
+  });
+
   it('deleteDocument 删除记录与映射', () => {
     importFillInstructionDocument(sampleBuffer, { fileName: 'del.docx' });
     const g01 = listDocuments().find((d) => d.docCode === 'G01');

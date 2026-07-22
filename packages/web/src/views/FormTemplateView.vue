@@ -39,7 +39,7 @@
                 {{ detail.rowCount }} 行 × {{ detail.colCount }} 列 ·
                 {{ detail.merges?.length ?? 0 }} 处合并
               </p>
-              <p class="preview-hint">点击指标名称（如「4. 存放同业款项」）查看对应填报说明</p>
+              <p class="preview-hint">点击指标名称（如「4. 存放同业款项」或附表 C 列「4.1 …」）查看对应填报说明</p>
             </div>
             <button
               type="button"
@@ -125,7 +125,7 @@ import {
   getDocumentIndicator,
 } from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
-import { parseIndicatorKeyFromCell } from '../utils/formTemplateIndicator.js';
+import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -194,12 +194,12 @@ async function loadDetail(id) {
   }
 }
 
-async function onIndicatorCellClick({ row, col, text }) {
+async function onIndicatorCellClick({ row, col }) {
   selectedCell.value = { row, col };
   instruction.value = null;
   instructionError.value = '';
 
-  const key = parseIndicatorKeyFromCell(text);
+  const key = resolveIndicatorKeyAtCell(detail.value?.matrix, row, col);
   if (!key) {
     instructionError.value = '无法识别指标序号';
     return;

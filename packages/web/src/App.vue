@@ -73,6 +73,16 @@
           </span>
           填报说明
         </router-link>
+
+        <router-link to="/document-search" class="nav-item" active-class="active">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          </span>
+          说明搜索
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">
@@ -128,6 +138,7 @@ const pageTitle = computed(() => {
   if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '1104 表样';
   if (route.name === 'formTemplateSearch') return '表样搜索（测试）';
   if (route.name === 'documents' || route.name === 'documentDetail') return '1104 填报说明';
+  if (route.name === 'documentSearch') return '填报说明搜索';
   if (route.name === 'search' && searchLayoutActive.value) {
     return searchPageTitle.value || '查询结果';
   }
