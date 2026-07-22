@@ -30,6 +30,22 @@ import {
 } from './services/dataset-config.js';
 import { importDatasetExcel } from './services/dataset-import.js';
 import {
+  deleteFormTemplate,
+  getFormTemplate,
+  importFormTemplate,
+  listFormTemplates,
+} from './services/form-template-import.js';
+import { searchFormTemplates, getFormTemplateSearchHits } from './services/form-template-search.js';
+import {
+  deleteDocument,
+  getDocument,
+  getDocumentByReport,
+  getDocumentIndicator,
+  importFillInstructionDocument,
+  updateDocumentReportMapping,
+  listDocuments,
+} from './services/document-import.js';
+import {
   getDatasetStats,
   searchDatasetRecords,
   suggestDatasetItems,
@@ -250,6 +266,157 @@ app.post('/api/dataset/import', async (request, reply) => {
     return result;
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+/** 1104 表样导入（矩阵结构，剔除逻辑公式） */
+app.post('/api/form-template/import', async (request, reply) => {
+  let buffer = null;
+  let fileName = '';
+
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        buffer = await part.toBuffer();
+        fileName = part.filename || fileName;
+      } else if (part.fieldname === 'fileName') {
+        fileName = part.value || fileName;
+      }
+    }
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '解析上传内容失败' });
+  }
+
+  if (!buffer) {
+    return reply.code(400).send({ message: '请上传 Excel 文件' });
+  }
+
+  try {
+    return importFormTemplate(buffer, { fileName });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+app.get('/api/form-templates', async () => ({ items: listFormTemplates() }));
+
+app.get('/api/form-templates/search', async (request, reply) => {
+  try {
+    const { q, hitsPerTemplate, maxTemplates } = request.query || {};
+    if (!String(q ?? '').trim()) {
+      return reply.code(400).send({ message: '请提供搜索关键词 q' });
+    }
+    return searchFormTemplates(q, {
+      maxTemplates: maxTemplates ? Number(maxTemplates) : undefined,
+    });
+  } catch (error) {
+    return reply.code(500).send({ message: error.message || '搜索失败' });
+  }
+});
+
+app.get('/api/form-templates/:id/search-hits', async (request, reply) => {
+  try {
+    const { q, hitsLimit } = request.query || {};
+    if (!String(q ?? '').trim()) {
+      return reply.code(400).send({ message: '请提供搜索关键词 q' });
+    }
+    const item = getFormTemplate(Number(request.params.id));
+    if (!item) return reply.code(404).send({ message: '表样不存在' });
+    return getFormTemplateSearchHits(Number(request.params.id), q, {
+      hitsLimit: hitsLimit ? Number(hitsLimit) : undefined,
+    });
+  } catch (error) {
+    return reply.code(500).send({ message: error.message || '搜索失败' });
+  }
+});
+
+app.delete('/api/form-templates/:id', async (request, reply) => {
+  try {
+    return deleteFormTemplate(Number(request.params.id));
+  } catch (error) {
+    const msg = error.message || '删除失败';
+    if (msg.includes('不存在') || msg.includes('无效')) {
+      return reply.code(404).send({ message: msg });
+    }
+    return reply.code(400).send({ message: msg });
+  }
+});
+
+app.get('/api/form-templates/:id', async (request, reply) => {
+  const item = getFormTemplate(Number(request.params.id));
+  if (!item) return reply.code(404).send({ message: '表样不存在' });
+  return item;
+});
+
+/** 1104 合并填报说明 Word */
+app.post('/api/document/import', async (request, reply) => {
+  let buffer = null;
+  let fileName = '';
+
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        buffer = await part.toBuffer();
+        fileName = part.filename || fileName;
+      } else if (part.fieldname === 'fileName') {
+        fileName = part.value || fileName;
+      }
+    }
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '解析上传内容失败' });
+  }
+
+  if (!buffer) {
+    return reply.code(400).send({ message: '请上传 Word 文件' });
+  }
+
+  try {
+    return importFillInstructionDocument(buffer, { fileName });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+app.get('/api/documents', async () => ({ items: listDocuments() }));
+
+app.get('/api/documents/by-report/:reportCode', async (request, reply) => {
+  const item = getDocumentByReport(request.params.reportCode);
+  if (!item) return reply.code(404).send({ message: '未找到对应填报说明' });
+  return item;
+});
+
+app.get('/api/documents/:id', async (request, reply) => {
+  const item = getDocument(Number(request.params.id));
+  if (!item) return reply.code(404).send({ message: '填报说明不存在' });
+  return item;
+});
+
+app.get('/api/documents/:id/indicators/:key', async (request, reply) => {
+  const key = decodeURIComponent(request.params.key || '');
+  const result = getDocumentIndicator(Number(request.params.id), key);
+  if (!result) return reply.code(404).send({ message: '填报说明不存在' });
+  if (!result.found) return reply.code(404).send({ message: `未找到指标 ${key}`, ...result });
+  return result;
+});
+
+app.put('/api/documents/:id/report-mapping', async (request, reply) => {
+  try {
+    const reportCode = request.body?.reportCode ?? '';
+    return updateDocumentReportMapping(Number(request.params.id), reportCode);
+  } catch (error) {
+    const msg = error.message || '保存失败';
+    if (msg.includes('不存在')) return reply.code(404).send({ message: msg });
+    return reply.code(400).send({ message: msg });
+  }
+});
+
+app.delete('/api/documents/:id', async (request, reply) => {
+  try {
+    return deleteDocument(Number(request.params.id));
+  } catch (error) {
+    const msg = error.message || '删除失败';
+    if (msg.includes('不存在')) return reply.code(404).send({ message: msg });
+    return reply.code(400).send({ message: msg });
   }
 });
 

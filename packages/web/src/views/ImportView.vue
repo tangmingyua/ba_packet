@@ -39,6 +39,26 @@
         type="button"
         role="tab"
         class="qa-module-tab"
+        :class="{ active: activeTab === 'formTemplate' }"
+        :aria-selected="activeTab === 'formTemplate'"
+        @click="setTab('formTemplate')"
+      >
+        1104 表样
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="qa-module-tab"
+        :class="{ active: activeTab === 'fillInstruction' }"
+        :aria-selected="activeTab === 'fillInstruction'"
+        @click="setTab('fillInstruction')"
+      >
+        填报说明
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="qa-module-tab"
         :class="{ active: activeTab === 'data' }"
         :aria-selected="activeTab === 'data'"
         @click="setTab('data')"
@@ -148,6 +168,198 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- 标签：1104 表样 -->
+    <div v-show="activeTab === 'formTemplate'" class="tab-panel">
+      <p class="hint">
+        上传 1104 汇总指标表样。支持单表（G0100-logic_231.xls）、多 Sheet 合集（logic_231.xlsx），以及
+        整合版（1104汇总总表-整合版-20260428.xlsx，Sheet 名如 G0100_231、S2400_201）。Sheet
+        名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本已存在时需先删除再导入。
+      </p>
+      <fieldset class="form-section">
+        <legend>上传表样 Excel</legend>
+        <div class="form-grid">
+          <div class="field span-2">
+            <span class="label">Excel 文件</span>
+            <div
+              class="dropzone"
+              :class="{ active: formTemplateDragging }"
+              @dragover.prevent="formTemplateDragging = true"
+              @dragleave="formTemplateDragging = false"
+              @drop.prevent="onFormTemplateDrop"
+            >
+              <p v-if="!formTemplateFile">
+                拖拽 .xls / .xlsx 到此处，或
+                <label class="file-link"
+                  >选择文件<input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    hidden
+                    @change="onFormTemplateFile"
+                /></label>
+              </p>
+              <p v-else>
+                {{ formTemplateFile.name }}
+                <button type="button" class="btn-link" @click="formTemplateFile = null">清除</button>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!formTemplateFile || formTemplateImporting"
+            @click="doFormTemplateImport"
+          >
+            {{ formTemplateImporting ? '导入中...' : '导入表样' }}
+          </button>
+          <button type="button" class="btn" :disabled="formTemplateLoading" @click="refreshFormTemplates">
+            刷新列表
+          </button>
+          <router-link to="/form-templates" class="btn">查看表样</router-link>
+        </div>
+        <p v-if="formTemplateMessage" class="feedback form-template-feedback" :class="formTemplateMessageType">
+          {{ formTemplateMessage }}
+        </p>
+        <ul v-if="formTemplateImportItems.length" class="import-result-list">
+          <li v-for="item in formTemplateImportItems" :key="item.id">
+            {{ item.reportCode }} / 版本 {{ item.versionLabel }}
+            <span class="muted">（{{ item.rowCount }}×{{ item.colCount }}）</span>
+          </li>
+        </ul>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>已导入表样</legend>
+        <table v-if="formTemplates.length" class="simple-table">
+          <thead>
+            <tr>
+              <th>表号</th>
+              <th>表名</th>
+              <th>版本</th>
+              <th>规模</th>
+              <th>导入时间</th>
+              <th>源文件</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in formTemplates" :key="item.id">
+              <td>{{ item.reportCode }}</td>
+              <td>{{ item.reportTitle }}</td>
+              <td>{{ item.versionLabel }}</td>
+              <td>{{ item.rowCount }}×{{ item.colCount }}</td>
+              <td>{{ item.importedAt }}</td>
+              <td>{{ item.sourceFileName }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="empty-cell">暂无表样，请上传表样 Excel</p>
+      </fieldset>
+    </div>
+
+    <!-- 标签：1104 填报说明 Word -->
+    <div v-show="activeTab === 'fillInstruction'" class="tab-panel">
+      <p class="hint">
+        上传合并填报说明 Word（.docx，含多张 G 表说明）。系统将按 G01、G02…拆分为多条记录入库；同
+        doc_code 再次导入将覆盖。版本字段暂留空。表样跳转说明将在后续步骤接入。
+      </p>
+      <fieldset class="form-section">
+        <legend>上传填报说明 Word</legend>
+        <div class="form-grid">
+          <div class="field span-2">
+            <span class="label">Word 文件</span>
+            <div
+              class="dropzone"
+              :class="{ active: fillInstructionDragging }"
+              @dragover.prevent="fillInstructionDragging = true"
+              @dragleave="fillInstructionDragging = false"
+              @drop.prevent="onFillInstructionDrop"
+            >
+              <p v-if="!fillInstructionFile">
+                拖拽 .docx 到此处，或
+                <label class="file-link"
+                  >选择文件<input
+                    type="file"
+                    accept=".docx"
+                    hidden
+                    @change="onFillInstructionFile"
+                /></label>
+              </p>
+              <p v-else>
+                {{ fillInstructionFile.name }}
+                <button type="button" class="btn-link" @click="fillInstructionFile = null">清除</button>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!fillInstructionFile || fillInstructionImporting"
+            @click="doFillInstructionImport"
+          >
+            {{ fillInstructionImporting ? '导入中...' : '导入填报说明' }}
+          </button>
+          <button type="button" class="btn" :disabled="fillInstructionLoading" @click="refreshFillInstructions">
+            刷新列表
+          </button>
+          <router-link to="/documents" class="btn">查看填报说明</router-link>
+        </div>
+        <p
+          v-if="fillInstructionMessage"
+          class="feedback form-template-feedback"
+          :class="fillInstructionMessageType"
+        >
+          {{ fillInstructionMessage }}
+        </p>
+        <ul v-if="fillInstructionImportItems.length" class="import-result-list">
+          <li v-for="item in fillInstructionImportItems" :key="`${item.docCode}-${item.id}`">
+            {{ item.docCode }}（{{ item.reportCode || '未关联' }}）
+            <span class="muted">{{ item.nodeCount }} 节点</span>
+            <span v-if="item.overwritten" class="muted">覆盖</span>
+          </li>
+        </ul>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>已导入填报说明</legend>
+        <table v-if="fillInstructions.length" class="simple-table">
+          <thead>
+            <tr>
+              <th>说明代号</th>
+              <th>对应表样</th>
+              <th>标题</th>
+              <th>节点数</th>
+              <th>导入时间</th>
+              <th>源文件</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in fillInstructions" :key="item.id">
+              <td>{{ item.docCode }}</td>
+              <td>{{ item.reportCode || '—' }}</td>
+              <td>{{ item.docTitle }}</td>
+              <td>{{ item.nodeCount ?? '—' }}</td>
+              <td>{{ item.importedAt }}</td>
+              <td>{{ item.sourceFileName }}</td>
+              <td>
+                <router-link
+                  :to="{ name: 'documentDetail', params: { id: item.id } }"
+                  class="btn-link"
+                >
+                  查看
+                </router-link>
+                <button type="button" class="btn-link danger" @click="removeFillInstruction(item)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="empty-cell">暂无填报说明，请上传合并 Word</p>
+      </fieldset>
     </div>
 
     <!-- 标签：子类配置 -->
@@ -472,14 +684,19 @@ import {
   getDatasetCatalog,
   getVersionDetail,
   importDatasetExcel,
+  importFormTemplateExcel,
+  importFillInstructionDocument,
   listDatasets,
+  listFormTemplates,
+  listDocuments,
+  deleteDocument,
   saveVersionMappings,
   updateSubtype,
   updateSubtypeVersion,
   upsertModule,
 } from '../api';
 
-const VALID_TABS = ['import', 'subtypes', 'fields', 'data'];
+const VALID_TABS = ['import', 'formTemplate', 'fillInstruction', 'subtypes', 'fields', 'data'];
 
 const route = useRoute();
 const router = useRouter();
@@ -507,6 +724,24 @@ const dragging = ref(false);
 const importMessage = ref('');
 const importMessageType = ref('');
 const importResult = ref(null);
+
+const formTemplateFile = ref(null);
+const formTemplateDragging = ref(false);
+const formTemplateImporting = ref(false);
+const formTemplateLoading = ref(false);
+const formTemplateMessage = ref('');
+const formTemplateMessageType = ref('');
+const formTemplateImportItems = ref([]);
+const formTemplates = ref([]);
+
+const fillInstructionFile = ref(null);
+const fillInstructionDragging = ref(false);
+const fillInstructionImporting = ref(false);
+const fillInstructionLoading = ref(false);
+const fillInstructionMessage = ref('');
+const fillInstructionMessageType = ref('');
+const fillInstructionImportItems = ref([]);
+const fillInstructions = ref([]);
 
 const activeTab = ref(
   VALID_TABS.includes(route.query.tab) ? route.query.tab : 'import'
@@ -1004,9 +1239,114 @@ async function doImport() {
   }
 }
 
+function onFormTemplateFile(e) {
+  formTemplateFile.value = e.target.files?.[0] || null;
+}
+
+function onFormTemplateDrop(e) {
+  formTemplateDragging.value = false;
+  const f = e.dataTransfer.files?.[0];
+  if (f) formTemplateFile.value = f;
+}
+
+async function refreshFormTemplates() {
+  formTemplateLoading.value = true;
+  try {
+    const { items } = await listFormTemplates();
+    formTemplates.value = items || [];
+  } catch (e) {
+    formTemplateMessageType.value = 'error';
+    formTemplateMessage.value = e.message || '加载表样列表失败';
+  } finally {
+    formTemplateLoading.value = false;
+  }
+}
+
+async function doFormTemplateImport() {
+  if (!formTemplateFile.value) return;
+  formTemplateImporting.value = true;
+  formTemplateMessage.value = '';
+  formTemplateImportItems.value = [];
+  try {
+    const result = await importFormTemplateExcel(formTemplateFile.value);
+    formTemplateMessageType.value = 'success';
+    formTemplateMessage.value = result.message || '导入成功';
+    formTemplateImportItems.value =
+      result.sheetCount > 1 && Array.isArray(result.items) ? result.items : [];
+    formTemplateFile.value = null;
+    await refreshFormTemplates();
+  } catch (e) {
+    formTemplateMessageType.value = 'error';
+    formTemplateMessage.value = e.message || '导入失败';
+    formTemplateImportItems.value = [];
+  } finally {
+    formTemplateImporting.value = false;
+  }
+}
+
+function onFillInstructionFile(e) {
+  fillInstructionFile.value = e.target.files?.[0] || null;
+}
+
+function onFillInstructionDrop(e) {
+  fillInstructionDragging.value = false;
+  const f = e.dataTransfer.files?.[0];
+  if (f) fillInstructionFile.value = f;
+}
+
+async function refreshFillInstructions() {
+  fillInstructionLoading.value = true;
+  try {
+    const { items } = await listDocuments();
+    fillInstructions.value = items || [];
+  } catch (e) {
+    fillInstructionMessageType.value = 'error';
+    fillInstructionMessage.value = e.message || '加载填报说明列表失败';
+  } finally {
+    fillInstructionLoading.value = false;
+  }
+}
+
+async function doFillInstructionImport() {
+  if (!fillInstructionFile.value) return;
+  fillInstructionImporting.value = true;
+  fillInstructionMessage.value = '';
+  fillInstructionImportItems.value = [];
+  try {
+    const result = await importFillInstructionDocument(fillInstructionFile.value);
+    fillInstructionMessageType.value = 'success';
+    fillInstructionMessage.value = result.message || '导入成功';
+    fillInstructionImportItems.value = Array.isArray(result.items) ? result.items : [];
+    fillInstructionFile.value = null;
+    await refreshFillInstructions();
+  } catch (e) {
+    fillInstructionMessageType.value = 'error';
+    fillInstructionMessage.value = e.message || '导入失败';
+    fillInstructionImportItems.value = [];
+  } finally {
+    fillInstructionImporting.value = false;
+  }
+}
+
+async function removeFillInstruction(item) {
+  if (!item?.id) return;
+  if (!window.confirm(`确定删除填报说明 ${item.docCode}？`)) return;
+  try {
+    await deleteDocument(item.id);
+    fillInstructionMessageType.value = 'success';
+    fillInstructionMessage.value = `已删除 ${item.docCode}`;
+    await refreshFillInstructions();
+  } catch (e) {
+    fillInstructionMessageType.value = 'error';
+    fillInstructionMessage.value = e.message || '删除失败';
+  }
+}
+
 onMounted(async () => {
   await refreshCatalog();
   await refreshDatasets();
+  await refreshFormTemplates();
+  await refreshFillInstructions();
 });
 </script>
 
@@ -1077,6 +1417,21 @@ onMounted(async () => {
   text-align: center;
   color: var(--text-muted);
   padding: 16px;
+}
+
+.import-result-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.import-result-list li {
+  padding: 4px 0;
+}
+
+.form-template-feedback {
+  margin-bottom: 4px;
 }
 
 .config-header h3 {

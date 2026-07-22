@@ -8,6 +8,7 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node --test test/**/*.test.js",
+    "probe:docx": "node scripts/docx-probe-step0.js",
     "encrypt-seed": "node scripts/encrypt-seed.js"
   },
   "dependencies": {

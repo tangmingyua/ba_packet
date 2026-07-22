@@ -169,6 +169,90 @@ export async function importDatasetExcel(file, { versionIds = [], description = 
   return response.json();
 }
 
+export async function importFormTemplateExcel(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(`${getApiBase()}/api/form-template/import`, {
+    method: 'POST',
+    headers: withAuthHeaders(),
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '表样导入失败');
+  }
+  return response.json();
+}
+
+export function listFormTemplates() {
+  return request('/api/form-templates');
+}
+
+export function getFormTemplate(id) {
+  return request(`/api/form-templates/${id}`);
+}
+
+export function deleteFormTemplate(id) {
+  return request(`/api/form-templates/${id}`, { method: 'DELETE' });
+}
+
+export function searchFormTemplateCells(q, { maxTemplates } = {}) {
+  const query = new URLSearchParams({ q: String(q) });
+  if (maxTemplates != null) query.set('maxTemplates', String(maxTemplates));
+  return request(`/api/form-templates/search?${query}`);
+}
+
+export function getFormTemplateSearchHits(id, q, { hitsLimit } = {}) {
+  const query = new URLSearchParams({ q: String(q) });
+  if (hitsLimit != null) query.set('hitsLimit', String(hitsLimit));
+  return request(`/api/form-templates/${id}/search-hits?${query}`);
+}
+
+export async function importFillInstructionDocument(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const response = await fetch(`${getApiBase()}/api/document/import`, {
+    method: 'POST',
+    headers: withAuthHeaders(),
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '填报说明导入失败');
+  }
+  return response.json();
+}
+
+export function listDocuments() {
+  return request('/api/documents');
+}
+
+export function getDocument(id) {
+  return request(`/api/documents/${id}`);
+}
+
+export function getDocumentByReport(reportCode) {
+  return request(`/api/documents/by-report/${encodeURIComponent(reportCode)}`);
+}
+
+export function getDocumentIndicator(documentId, indicatorKey) {
+  return request(
+    `/api/documents/${documentId}/indicators/${encodeURIComponent(indicatorKey)}`
+  );
+}
+
+export function deleteDocument(id) {
+  return request(`/api/documents/${id}`, { method: 'DELETE' });
+}
+
+export function updateDocumentReportMapping(id, reportCode) {
+  return request(`/api/documents/${id}/report-mapping`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reportCode }),
+  });
+}
+
 /** @deprecated 兼容旧调用名 */
 export function getImportCatalog() {
   return getDatasetCatalog();

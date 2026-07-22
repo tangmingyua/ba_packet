@@ -85,3 +85,83 @@ CREATE INDEX IF NOT EXISTS idx_data_records_version ON data_records(subtype_vers
 CREATE INDEX IF NOT EXISTS idx_data_records_biz_key ON data_records(subtype_version_id, biz_key);
 CREATE INDEX IF NOT EXISTS idx_data_records_data_item ON data_records(std_data_item);
 CREATE INDEX IF NOT EXISTS idx_datasets_version ON datasets(subtype_version_id);
+
+-- 1104 表样（矩阵结构，整表一条）
+CREATE TABLE IF NOT EXISTS form_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_code TEXT NOT NULL,
+  report_title TEXT,
+  version_label TEXT NOT NULL,
+  sheet_name TEXT NOT NULL,
+  source_file_name TEXT,
+  file_hash TEXT,
+  matrix_json TEXT NOT NULL,
+  merges_json TEXT NOT NULL DEFAULT '[]',
+  row_count INTEGER NOT NULL DEFAULT 0,
+  col_count INTEGER NOT NULL DEFAULT 0,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (report_code, version_label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_form_templates_report ON form_templates(report_code);
+
+-- 1104 表样可搜索单元格索引（导入时从 matrix 提取，搜索不解析 JSON）
+CREATE TABLE IF NOT EXISTS form_template_cells (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL,
+  row_index INTEGER NOT NULL,
+  col_index INTEGER NOT NULL,
+  cell_text TEXT NOT NULL,
+  cell_kind TEXT NOT NULL DEFAULT 'header',
+  searchable INTEGER NOT NULL DEFAULT 1,
+  reserve_1 TEXT,
+  reserve_2 TEXT,
+  FOREIGN KEY (template_id) REFERENCES form_templates(id) ON DELETE CASCADE,
+  UNIQUE (template_id, row_index, col_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ftc_template ON form_template_cells(template_id);
+CREATE INDEX IF NOT EXISTS idx_ftc_searchable ON form_template_cells(template_id, searchable);
+
+-- 1104 合并填报说明 Word（按 G 表拆分存储）
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_code TEXT NOT NULL,
+  doc_title TEXT,
+  version_label TEXT NOT NULL DEFAULT '',
+  module_code TEXT NOT NULL DEFAULT '1104',
+  source_file_name TEXT,
+  file_hash TEXT,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (doc_code, version_label)
+);
+
+CREATE TABLE IF NOT EXISTS document_nodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id INTEGER NOT NULL,
+  parent_id INTEGER,
+  node_kind TEXT NOT NULL,
+  level INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  text TEXT NOT NULL,
+  path TEXT,
+  indicator_no INTEGER,
+  indicator_key TEXT,
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES document_nodes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_nodes_doc ON document_nodes(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_nodes_indicator ON document_nodes(document_id, indicator_no);
+CREATE INDEX IF NOT EXISTS idx_document_nodes_indicator_key ON document_nodes(document_id, indicator_key);
+
+CREATE TABLE IF NOT EXISTS report_doc_mapping (
+  report_code TEXT NOT NULL,
+  version_label TEXT NOT NULL DEFAULT '',
+  document_id INTEGER NOT NULL,
+  doc_code TEXT NOT NULL,
+  PRIMARY KEY (report_code, version_label),
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_doc_mapping_doc ON report_doc_mapping(document_id);

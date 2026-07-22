@@ -40,6 +40,39 @@
           </span>
           资料导入
         </router-link>
+
+        <router-link to="/form-templates" class="nav-item" active-class="active">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg>
+          </span>
+          查看表样
+        </router-link>
+
+        <router-link to="/form-template-search" class="nav-item" active-class="active">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          </span>
+          表样搜索
+        </router-link>
+
+        <router-link to="/documents" class="nav-item" active-class="active">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+          </span>
+          填报说明
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">
@@ -92,6 +125,9 @@ const isHomeCenter = computed(
 
 const pageTitle = computed(() => {
   if (route.name === 'import') return '资料导入';
+  if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '1104 表样';
+  if (route.name === 'formTemplateSearch') return '表样搜索（测试）';
+  if (route.name === 'documents' || route.name === 'documentDetail') return '1104 填报说明';
   if (route.name === 'search' && searchLayoutActive.value) {
     return searchPageTitle.value || '查询结果';
   }

@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { MATERIAL_MODULES, MATERIAL_SUBTYPES } from '../config/import-catalog-static.js';
 import { STANDARD_FIELD_SEEDS } from './seed-standard-fields.js';
+import { backfillFormTemplateCells } from '../services/form-template-cells.js';
 import {
   decryptDbBuffer,
   encryptDbBuffer,
@@ -287,15 +288,31 @@ function resolveSchemaPath() {
   return path.join(__dirname, 'dataset-schema.sql');
 }
 
+/** document_nodes：指标完整序号（25a、12.1a 等） */
+function ensureDocumentNodeIndicatorKeyColumn() {
+  const cols = queryAll('PRAGMA table_info(document_nodes)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'indicator_key')) {
+    run(`ALTER TABLE document_nodes ADD COLUMN indicator_key TEXT`);
+  }
+  run(
+    `CREATE INDEX IF NOT EXISTS idx_document_nodes_indicator_key ON document_nodes(document_id, indicator_key)`
+  );
+}
+
 /** 新模型：子类版本 / 映射 / datasets / data_records */
 function ensureDatasetModelSchema() {
   const schemaPath = resolveSchemaPath();
   const schema = fs.readFileSync(schemaPath, 'utf-8');
+  // 已有库可能缺 indicator_key，须先于 schema 中的索引语句补齐
+  ensureDocumentNodeIndicatorKeyColumn();
   db.run(schema);
 
   ensureModuleSchema();
   ensureCategoryColumns();
   ensureFieldMappingDefaultDisplayColumn();
+  ensureDocumentNodeIndicatorKeyColumn();
+  backfillFormTemplateCells();
 
   for (const f of STANDARD_FIELD_SEEDS) {
     run(
