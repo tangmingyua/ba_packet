@@ -438,10 +438,6 @@
         </p>
       </div>
 
-      <p v-if="configMessage" class="feedback sticky-feedback" :class="configMessageType">
-        {{ configMessage }}
-      </p>
-
       <!-- 步骤 1 -->
       <section class="config-card">
         <header class="config-card-head">
@@ -453,6 +449,9 @@
         </header>
 
         <div class="config-card-body">
+          <p v-if="step1Message" class="feedback step-feedback" :class="step1MessageType">
+            {{ step1Message }}
+          </p>
           <div class="setup-grid">
             <div class="setup-block">
               <h4>添加主类</h4>
@@ -561,6 +560,9 @@
         </header>
 
         <div class="config-card-body">
+          <p v-if="step2Message" class="feedback step-feedback" :class="step2MessageType">
+            {{ step2Message }}
+          </p>
           <div class="filter-bar">
             <label class="field compact">
               <span class="label">筛选子类</span>
@@ -654,6 +656,9 @@
         </header>
 
         <div class="config-card-body">
+          <p v-if="step3Message" class="feedback step-feedback" :class="step3MessageType">
+            {{ step3Message }}
+          </p>
           <p v-if="!catalog.subtypes.length" class="empty-panel">
             请先完成步骤 1，添加至少一个子类。
           </p>
@@ -902,8 +907,29 @@ const activeVersionId = ref(null);
 const versionDetail = ref(null);
 const mappingRows = ref([]);
 const saving = ref(false);
-const configMessage = ref('');
-const configMessageType = ref('');
+const step1Message = ref('');
+const step1MessageType = ref('');
+const step2Message = ref('');
+const step2MessageType = ref('');
+const step3Message = ref('');
+const step3MessageType = ref('');
+
+function setStepMessage(step, type, message) {
+  if (step === 1) {
+    step1MessageType.value = type;
+    step1Message.value = message;
+  } else if (step === 2) {
+    step2MessageType.value = type;
+    step2Message.value = message;
+  } else if (step === 3) {
+    step3MessageType.value = type;
+    step3Message.value = message;
+  }
+}
+
+function clearStepMessage(step) {
+  setStepMessage(step, '', '');
+}
 
 const file = ref(null);
 const description = ref('');
@@ -1194,12 +1220,12 @@ async function onSubtypeChange() {
   activeVersionId.value = null;
   versionDetail.value = null;
   mappingRows.value = [];
-  configMessage.value = '';
+  clearStepMessage(3);
 }
 
 async function selectVersion(id) {
   activeVersionId.value = id;
-  configMessage.value = '';
+  clearStepMessage(3);
   const detail = await getVersionDetail(id);
   versionDetail.value = detail;
   Object.assign(versionForm, {
@@ -1223,22 +1249,19 @@ async function addModule() {
   const code = newModule.code.trim().toUpperCase();
   const name = newModule.name.trim();
   if (!code || !name) {
-    configMessageType.value = 'error';
-    configMessage.value = '请填写主类 code 与名称';
+    setStepMessage(1, 'error', '请填写主类 code 与名称');
     return;
   }
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(1);
   try {
     await upsertModule(code, { name, sortOrder: catalog.value.modules.length });
     newModule.code = '';
     newModule.name = '';
     await refreshCatalog();
-    configMessageType.value = 'success';
-    configMessage.value = `主类「${name}」已添加`;
+    setStepMessage(1, 'success', `主类「${name}」已添加`);
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '添加失败';
+    setStepMessage(1, 'error', e.message || '添加失败');
   } finally {
     saving.value = false;
   }
@@ -1248,12 +1271,11 @@ async function addSubtype() {
   const code = newSubtype.code.trim();
   const name = newSubtype.name.trim();
   if (!code || !name) {
-    configMessageType.value = 'error';
-    configMessage.value = '请填写子类 code 与名称';
+    setStepMessage(1, 'error', '请填写子类 code 与名称');
     return;
   }
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(1);
   try {
     await createSubtype(code, {
       name,
@@ -1268,11 +1290,9 @@ async function addSubtype() {
     newSubtype.moduleCode = catalog.value.modules[0]?.code || 'YBT';
     await refreshCatalog();
     activeSubtypeCode.value = code;
-    configMessageType.value = 'success';
-    configMessage.value = `子类「${name}」已添加，请继续新建版本并保存映射`;
+    setStepMessage(1, 'success', `子类「${name}」已添加，请继续新建版本并保存映射`);
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '添加失败';
+    setStepMessage(1, 'error', e.message || '添加失败');
   } finally {
     saving.value = false;
   }
@@ -1286,21 +1306,20 @@ async function removeSubtype(st) {
       : `确认删除子类「${st.name}」？`;
   if (!confirm(warn)) return;
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(1);
   try {
     await deleteSubtype(st.code);
     if (activeSubtypeCode.value === st.code) {
       activeVersionId.value = null;
       versionDetail.value = null;
       mappingRows.value = [];
+      clearStepMessage(3);
     }
     await refreshCatalog();
     await refreshDatasets();
-    configMessageType.value = 'success';
-    configMessage.value = `已删除子类：${st.code}`;
+    setStepMessage(1, 'success', `已删除子类：${st.code}`);
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '删除失败';
+    setStepMessage(1, 'error', e.message || '删除失败');
   } finally {
     saving.value = false;
   }
@@ -1309,7 +1328,7 @@ async function removeSubtype(st) {
 async function saveSubtypeInfo() {
   if (!activeSubtype.value) return;
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(3);
   try {
     await updateSubtype(activeSubtypeCode.value, {
       name: subtypeNameEdit.value.trim() || activeSubtype.value.name,
@@ -1319,11 +1338,9 @@ async function saveSubtypeInfo() {
       moduleCode: subtypeModuleEdit.value,
     });
     await refreshCatalog();
-    configMessageType.value = 'success';
-    configMessage.value = '子类信息已保存';
+    setStepMessage(3, 'success', '子类信息已保存');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '保存失败';
+    setStepMessage(3, 'error', e.message || '保存失败');
   } finally {
     saving.value = false;
   }
@@ -1339,11 +1356,9 @@ async function toggleSubtypeEnabled(enabled) {
       moduleCode: subtypeModuleEdit.value,
     });
     await refreshCatalog();
-    configMessageType.value = 'success';
-    configMessage.value = enabled ? '子类已启用' : '子类已停用';
+    setStepMessage(3, 'success', enabled ? '子类已启用' : '子类已停用');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '保存失败';
+    setStepMessage(3, 'error', e.message || '保存失败');
   }
 }
 
@@ -1358,13 +1373,15 @@ async function addVersion() {
     await refreshCatalog();
     await selectVersion(version.id);
     const copied = versionDetail.value?.mappings?.length || 0;
-    configMessageType.value = 'success';
-    configMessage.value = hadPrevious
-      ? `版本已创建${copied ? `，已复制上一版本 ${copied} 条字段映射` : '（上一版本无映射可复制）'}`
-      : '版本已创建';
+    setStepMessage(
+      3,
+      'success',
+      hadPrevious
+        ? `版本已创建${copied ? `，已复制上一版本 ${copied} 条字段映射` : '（上一版本无映射可复制）'}`
+        : '版本已创建'
+    );
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '创建失败';
+    setStepMessage(3, 'error', e.message || '创建失败');
   }
 }
 
@@ -1378,15 +1395,14 @@ function resetFilters() {
 async function openOverviewRow(row) {
   activeSubtypeCode.value = row.subtypeCode;
   filterSubtypeCode.value = row.subtypeCode;
-  configMessage.value = '';
+  clearStepMessage(2);
   if (row.versionId) {
     await selectVersion(row.versionId);
   } else {
     activeVersionId.value = null;
     versionDetail.value = null;
     mappingRows.value = [];
-    configMessageType.value = 'warn';
-    configMessage.value = `子类「${row.subtypeName}」尚无版本，请在下方新建版本并保存映射。`;
+    setStepMessage(2, 'warn', `子类「${row.subtypeName}」尚无版本，请在下方新建版本并保存映射。`);
   }
 }
 
@@ -1405,17 +1421,15 @@ async function removeVersion(v) {
     }
     await refreshCatalog();
     await refreshDatasets();
-    configMessageType.value = 'success';
-    configMessage.value = '版本已删除';
+    setStepMessage(3, 'success', '版本已删除');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '删除失败';
+    setStepMessage(3, 'error', e.message || '删除失败');
   }
 }
 
 async function saveVersionSettings() {
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(3);
   try {
     await updateSubtypeVersion(activeVersionId.value, {
       sheetName: versionForm.sheetName,
@@ -1426,11 +1440,9 @@ async function saveVersionSettings() {
     });
     await refreshCatalog();
     await selectVersion(activeVersionId.value);
-    configMessageType.value = 'success';
-    configMessage.value = '版本设置已保存';
+    setStepMessage(3, 'success', '版本设置已保存');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '保存失败';
+    setStepMessage(3, 'error', e.message || '保存失败');
   } finally {
     saving.value = false;
   }
@@ -1443,11 +1455,9 @@ async function clearRecords() {
     await refreshCatalog();
     await refreshDatasets();
     await selectVersion(activeVersionId.value);
-    configMessageType.value = 'success';
-    configMessage.value = '数据已清空';
+    setStepMessage(3, 'success', '数据已清空');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '清空失败';
+    setStepMessage(3, 'error', e.message || '清空失败');
   }
 }
 
@@ -1457,16 +1467,14 @@ function addMappingRow() {
 
 async function saveMappings() {
   saving.value = true;
-  configMessage.value = '';
+  clearStepMessage(3);
   try {
     await saveVersionMappings(activeVersionId.value, toMappingPayload(mappingRows.value));
     await refreshCatalog();
     await selectVersion(activeVersionId.value);
-    configMessageType.value = 'success';
-    configMessage.value = '字段映射已保存';
+    setStepMessage(3, 'success', '字段映射已保存');
   } catch (e) {
-    configMessageType.value = 'error';
-    configMessage.value = e.message || '保存失败';
+    setStepMessage(3, 'error', e.message || '保存失败');
   } finally {
     saving.value = false;
   }
@@ -1805,8 +1813,10 @@ onMounted(async () => {
   color: var(--text-secondary);
 }
 
-.sticky-feedback {
-  margin: 0;
+.step-feedback {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .config-card {
@@ -1959,7 +1969,7 @@ onMounted(async () => {
 
 .work-split {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr);
   gap: 16px;
   align-items: start;
 }

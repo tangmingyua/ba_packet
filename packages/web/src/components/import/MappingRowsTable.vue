@@ -185,7 +185,7 @@ function onDragEnd() {
 .mapping-cell {
   overflow: visible;
   position: relative;
-  min-width: 240px;
+  min-width: 300px;
   vertical-align: top;
 }
 

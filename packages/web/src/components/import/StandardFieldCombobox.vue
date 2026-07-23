@@ -6,6 +6,7 @@
       type="text"
       class="sf-input"
       :placeholder="placeholder"
+      :title="query"
       autocomplete="off"
       @focus="onFocus"
       @blur="onBlur"
@@ -13,11 +14,15 @@
       @keydown="onKeydown"
     />
     <ul v-if="open && filteredFields.length" class="sf-list" role="listbox">
+      <li class="sf-list-hint">
+        共 {{ filteredFields.length }} 个标准字段 · 输入关键字过滤
+      </li>
       <li
         v-for="(field, index) in filteredFields"
         :key="field.code"
         role="option"
         :class="{ active: index === activeIndex }"
+        :title="`${field.label}（${field.code}）`"
         @mousedown.prevent="selectField(field)"
       >
         <span class="sf-label">{{ field.label }}</span>
@@ -57,7 +62,7 @@ const filteredFields = computed(() => {
       (f) => f.code.toLowerCase().includes(q) || f.label.toLowerCase().includes(q)
     );
   }
-  return list.slice(0, 30);
+  return list;
 });
 
 function displayText(field) {
@@ -196,7 +201,7 @@ function onKeydown(event) {
 <style scoped>
 .sf-combobox {
   position: relative;
-  min-width: 200px;
+  min-width: 260px;
 }
 
 .sf-input {
@@ -233,12 +238,13 @@ function onKeydown(event) {
 
 .sf-list li {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   padding: 8px 10px;
   cursor: pointer;
   font-size: 13px;
+  line-height: 1.4;
 }
 
 .sf-list li:hover,
@@ -246,13 +252,25 @@ function onKeydown(event) {
   background: #eff6ff;
 }
 
+.sf-list-hint {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f9fafb;
+  cursor: default;
+  pointer-events: none;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sf-list-hint:hover,
+.sf-list-hint.active {
+  background: #f9fafb;
+}
+
 .sf-label {
   color: #111827;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .sf-code {
