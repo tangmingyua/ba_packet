@@ -86,10 +86,18 @@
                   :class="{
                     'cell-num': col.field === '__rowNum',
                     'col-sticky': colIndex === 0,
+                    'has-link': col.field !== '__rowNum' && row.linkFields?.includes(col.field),
                   }"
                   :title="cellText(row, colIndex)"
                 >
                   <span class="cell-text">{{ cellText(row, colIndex) || '—' }}</span>
+                  <span
+                    v-if="col.field !== '__rowNum' && row.linkFields?.includes(col.field)"
+                    class="link-icon"
+                    title="该单元格含超链接"
+                  >
+                    🔗
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -497,6 +505,21 @@ watch(
   -webkit-line-clamp: 1;
   line-height: 36px;
   word-break: normal;
+}
+
+.has-link {
+  position: relative;
+  padding-right: 24px;
+}
+
+.link-icon {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: #2563eb;
+  cursor: help;
 }
 
 .pager {

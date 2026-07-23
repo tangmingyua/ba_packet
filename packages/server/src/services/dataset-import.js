@@ -55,7 +55,15 @@ export function parseWorkbookSheets(buffer) {
   return workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
-    return { sheetName, matrix };
+    const linkMatrix = matrix.map((row, r) => {
+      if (!row) return [];
+      return row.map((_, c) => {
+        const cellRef = XLSX.utils.encode_cell({ r, c });
+        const cell = sheet[cellRef];
+        return Boolean(cell?.l?.Target);
+      });
+    });
+    return { sheetName, matrix, linkMatrix };
   });
 }
 
@@ -92,12 +100,19 @@ export function validateHeaders(excelHeaders, mappings) {
   return { ok: true };
 }
 
-function mapRowToPayload(rowCells, excelHeaders, mappings) {
+function mapRowToPayload(rowCells, excelHeaders, mappings, linkRow) {
   const headerIndex = new Map(excelHeaders.map((h, i) => [h, i]));
   const payload = {};
+  const linkFields = [];
   for (const m of mappings) {
     const idx = headerIndex.get(m.originalColumn);
     payload[m.standardField] = idx === undefined ? '' : cellToString(rowCells[idx]);
+    if (linkRow && idx !== undefined && linkRow[idx]) {
+      linkFields.push(m.standardField);
+    }
+  }
+  if (linkFields.length) {
+    payload.__has_links = linkFields;
   }
   return payload;
 }
@@ -236,10 +251,11 @@ function importOneSheet({ sheet, version, sourceFileName, fileHash, description 
 
   for (let i = dataStart; i < sheet.matrix.length; i += 1) {
     const rowCells = sheet.matrix[i] || [];
+    const linkRow = sheet.linkMatrix?.[i] || [];
     const excelRowNum = i + 1;
     if (rowCells.every((c) => cellToString(c) === '')) continue;
 
-    const payload = mapRowToPayload(rowCells, headers, mappings);
+    const payload = mapRowToPayload(rowCells, headers, mappings, linkRow);
 
     // subtype: 仅系统
     payload.subtype = subtype.name;

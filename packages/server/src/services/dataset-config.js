@@ -666,6 +666,7 @@ export function listVersionRecordsView({
     versionId: row.subtype_version_id,
     versionLabel: row.version_label,
     cells: columns.map((col) => cellValueFromPayload(col, row)),
+    linkFields: row.payload?.__has_links || [],
   }));
 
   return {
