@@ -19,7 +19,10 @@ import {
   parseFormTemplateSheetMeta,
   parseFileNameMeta,
   trimTrailingEmptyRows,
+  trimTrailingEmptyCols,
+  trimMatrixPadding,
   findLastContentRow,
+  findLastContentCol,
 } from '../src/services/form-template-import.js';
 import { countCellsForTemplate } from '../src/services/form-template-cells.js';
 import XLSX from 'xlsx';
@@ -117,6 +120,44 @@ describe('form-template-import', () => {
 
     assert.equal(result.rowCount, 3);
     assert.equal(result.merges[0].e.r, 2);
+  });
+
+  it('trimTrailingEmptyCols 裁掉右侧空列', () => {
+    const matrix = [
+      ['标题', 'A', 'B', '', '', ''],
+      ['1. 现金', '100', '', '', '', ''],
+    ];
+    const merges = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+    const result = trimTrailingEmptyCols(matrix, merges);
+
+    assert.equal(result.colCount, 3);
+    assert.equal(result.matrix[0].length, 3);
+    assert.equal(findLastContentCol(matrix, merges), 2);
+    assert.deepEqual(result.matrix[0], ['标题', 'A', 'B']);
+  });
+
+  it('trimTrailingEmptyCols 保留 merge 向右延伸的有效列', () => {
+    const matrix = [
+      ['标题', '', '', ''],
+      ['', '', '', ''],
+    ];
+    const merges = [{ s: { r: 0, c: 0 }, e: { r: 1, c: 2 } }];
+    const result = trimTrailingEmptyCols(matrix, merges);
+
+    assert.equal(result.colCount, 3);
+    assert.equal(result.merges[0].e.c, 2);
+  });
+
+  it('trimMatrixPadding 同时裁掉末尾空行与右侧空列', () => {
+    const matrix = [
+      ['G01表', 'A', 'B', '', ''],
+      ['1. 现金', '100', '', '', ''],
+      ['', '', '', '', ''],
+    ];
+    const result = trimMatrixPadding(matrix, []);
+
+    assert.equal(result.rowCount, 2);
+    assert.equal(result.colCount, 3);
   });
 
   it('parseFormTemplate G0100 元数据与 merges', () => {

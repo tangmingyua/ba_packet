@@ -89,8 +89,8 @@
             </button>
           </header>
 
-          <div v-if="highlightIndicatorNo != null" class="highlight-banner">
-            已定位指标 #{{ highlightIndicatorNo }}
+          <div v-if="highlightIndicatorKey" class="highlight-banner">
+            已定位指标 #{{ highlightIndicatorKey }}
             <router-link
               :to="{ name: 'documentDetail', params: { id: detail.id } }"
               class="btn-link"
@@ -101,7 +101,7 @@
 
           <DocumentTree
             :tree="detail.tree"
-            :highlight-indicator-no="highlightIndicatorNo"
+            :highlight-indicator-key="highlightIndicatorKey"
           />
         </template>
         <p v-else-if="items.length && !activeId" class="muted empty-hint">请从左侧选择填报说明</p>
@@ -135,11 +135,11 @@ const activeId = computed(() => {
   return Number.isFinite(id) && id > 0 ? id : null;
 });
 
-const highlightIndicatorNo = computed(() => {
+const highlightIndicatorKey = computed(() => {
   const raw = route.query.indicator;
-  if (raw == null || raw === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
+  if (raw == null) return '';
+  const key = Array.isArray(raw) ? String(raw[0] ?? '') : String(raw);
+  return key.trim();
 });
 
 const kindSummary = computed(() => {

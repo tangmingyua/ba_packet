@@ -1,8 +1,7 @@
 <template>
   <section class="fts-page">
     <p class="hint test-banner">
-      <strong>测试页</strong>：搜索 1104 表样中的<strong>表样名称/表号</strong>、<strong>表头</strong>与<strong>指标名/项目名</strong>（数据行不含
-      A/B/C 等列维度）；英文不区分大小写；至少 1 个字即可。后续将并入主搜索。
+      搜索表样名称/表号、表头与指标名；点击指标可查看填报说明。
     </p>
 
     <form class="search-bar" @submit.prevent="runSearch">
@@ -66,14 +65,59 @@
               关键词「{{ lastKeyword }}」· 版本 {{ detail.versionLabel }}
               <span v-if="focusCell"> · 定位 R{{ focusCell.rowNum }}C{{ focusCell.colNum }}</span>
             </p>
+            <p class="preview-hint">点击指标名称可查看对应填报说明</p>
           </header>
-          <FormTemplateMatrix
-            ref="matrixRef"
-            :matrix="detail.matrix"
-            :merges="detail.merges"
-            :highlight-cells="highlightCells"
-            :focus-cell="focusCell"
-          />
+          <div class="preview-body">
+            <FormTemplateMatrix
+              ref="matrixRef"
+              :matrix="detail.matrix"
+              :merges="detail.merges"
+              :highlight-cells="highlightCells"
+              :focus-cell="focusCell"
+              :selected-cell="selectedCell"
+              enable-indicator-click
+              @cell-click="onIndicatorCellClick"
+            />
+
+            <aside v-if="instructionOpen" class="instruction-drawer">
+              <div class="instruction-header">
+                <h3>填报说明</h3>
+                <button type="button" class="btn-link" @click="clearInstruction">关闭</button>
+              </div>
+
+              <p v-if="loadingInstruction" class="muted">加载说明…</p>
+              <p v-else-if="instructionError" class="instruction-error">{{ instructionError }}</p>
+              <template v-else-if="instruction">
+                <p class="instruction-meta">
+                  {{ instruction.document?.docCode }}
+                  <span v-if="instruction.document?.reportCode">
+                    · 表样 {{ instruction.document.reportCode }}
+                  </span>
+                  · 指标 #{{ instruction.indicatorKey }}
+                </p>
+                <div class="instruction-title">{{ instruction.indicator?.text }}</div>
+                <div
+                  v-for="(body, idx) in instructionBodies"
+                  :key="idx"
+                  class="instruction-body"
+                >
+                  {{ body }}
+                </div>
+                <p v-if="!instructionBodies.length" class="muted">该指标下暂无正文</p>
+                <router-link
+                  v-if="instruction.document?.id"
+                  class="btn-link instruction-link"
+                  :to="{
+                    name: 'documentDetail',
+                    params: { id: instruction.document.id },
+                    query: { indicator: instruction.indicatorKey },
+                  }"
+                >
+                  在说明树中查看 →
+                </router-link>
+              </template>
+            </aside>
+          </div>
         </template>
         <p v-else class="muted empty-hint">点击左侧表样查看命中明细并预览</p>
       </div>
@@ -83,8 +127,15 @@
 
 <script setup>
 import { computed, nextTick, ref } from 'vue';
-import { getFormTemplate, getFormTemplateSearchHits, searchFormTemplateCells } from '../api';
+import {
+  getDocumentByReport,
+  getDocumentIndicator,
+  getFormTemplate,
+  getFormTemplateSearchHits,
+  searchFormTemplateCells,
+} from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
+import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const keyword = ref('');
 const lastKeyword = ref('');
@@ -101,6 +152,24 @@ const hitsForSelected = ref([]);
 const hitsTruncated = ref(false);
 const focusCell = ref(null);
 const matrixRef = ref(null);
+const selectedCell = ref(null);
+const instruction = ref(null);
+const instructionError = ref('');
+const loadingInstruction = ref(false);
+
+const instructionBodies = computed(() =>
+  (instruction.value?.indicator?.children || [])
+    .filter((c) => c.nodeKind === 'body')
+    .map((c) => c.text)
+);
+
+const instructionOpen = computed(
+  () =>
+    Boolean(selectedCell.value) ||
+    Boolean(instruction.value) ||
+    Boolean(instructionError.value) ||
+    loadingInstruction.value
+);
 
 const highlightCells = computed(() =>
   hitsForSelected.value
@@ -112,6 +181,49 @@ function hitPosLabel(hit) {
   if (hit.cellKind === 'template_title') return '表样名';
   if (hit.cellKind === 'template_code') return '表号';
   return `R${hit.rowNum}C${hit.colNum}`;
+}
+
+function clearInstruction() {
+  selectedCell.value = null;
+  instruction.value = null;
+  instructionError.value = '';
+}
+
+async function onIndicatorCellClick({ row, col }) {
+  selectedCell.value = { row, col };
+  instruction.value = null;
+  instructionError.value = '';
+
+  const key = resolveIndicatorKeyAtCell(detail.value?.matrix, row, col);
+  if (!key) {
+    instructionError.value = '无法识别指标序号';
+    return;
+  }
+
+  const reportCode = detail.value?.reportCode;
+  if (!reportCode) {
+    instructionError.value = '当前表样缺少表号';
+    return;
+  }
+
+  loadingInstruction.value = true;
+  try {
+    let docMeta;
+    try {
+      docMeta = await getDocumentByReport(reportCode);
+    } catch {
+      instructionError.value = `未找到表样 ${reportCode} 对应的填报说明，请先导入并关联`;
+      return;
+    }
+
+    try {
+      instruction.value = await getDocumentIndicator(docMeta.id, key);
+    } catch (e) {
+      instructionError.value = e.message || `未找到指标 ${key} 的填报说明`;
+    }
+  } finally {
+    loadingInstruction.value = false;
+  }
 }
 
 async function loadHits(id) {
@@ -143,6 +255,7 @@ async function runSearch() {
   hitsForSelected.value = [];
   hitsTruncated.value = false;
   focusCell.value = null;
+  clearInstruction();
 
   try {
     result.value = await searchFormTemplateCells(q);
@@ -161,6 +274,7 @@ async function runSearch() {
 async function selectTemplate(item) {
   selectedId.value = item.id;
   focusCell.value = null;
+  clearInstruction();
   await Promise.all([loadDetail(item.id), loadHits(item.id)]);
 }
 
@@ -183,6 +297,7 @@ async function selectHit(item, hit) {
 async function loadDetail(id) {
   if (detail.value?.id === id) return;
   loadingDetail.value = true;
+  clearInstruction();
   try {
     detail.value = await getFormTemplate(id);
   } catch (e) {
@@ -198,17 +313,17 @@ async function loadDetail(id) {
 .fts-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
   height: 100%;
 }
 
 .test-banner {
-  padding: 10px 12px;
+  padding: 6px 10px;
   background: #fffbeb;
   border: 1px solid #fde68a;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .search-bar {
@@ -239,17 +354,17 @@ async function loadDetail(id) {
 
 .fts-layout {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   align-items: stretch;
 }
 
 .hit-list {
-  width: 320px;
+  width: 220px;
   flex-shrink: 0;
   overflow: auto;
-  max-height: calc(100vh - var(--header-h) - 160px);
+  max-height: calc(100vh - var(--header-h) - 130px);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
@@ -347,9 +462,84 @@ async function loadDetail(id) {
   color: var(--text-secondary);
 }
 
-.preview-pane :deep(.form-template-matrix-wrap) {
+.preview-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.preview-body {
+  position: relative;
   flex: 1;
-  max-height: calc(100vh - var(--header-h) - 140px);
+  min-height: 0;
+  min-width: 0;
+}
+
+.preview-body :deep(.form-template-matrix-wrap) {
+  width: 100%;
+  max-height: calc(100vh - var(--header-h) - 150px);
+}
+
+.instruction-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 42%);
+  z-index: 5;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.instruction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.instruction-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.instruction-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.instruction-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  line-height: 1.45;
+}
+
+.instruction-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 10px;
+}
+
+.instruction-error {
+  font-size: 13px;
+  color: #b91c1c;
+  line-height: 1.5;
+}
+
+.instruction-link {
+  margin-top: 8px;
+  font-size: 12px;
 }
 
 .muted {

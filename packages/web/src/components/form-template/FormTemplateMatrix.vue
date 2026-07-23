@@ -130,7 +130,9 @@ defineExpose({ scrollToCell });
 .form-template-matrix {
   border-collapse: collapse;
   font-size: 12px;
+  width: max-content;
   min-width: 100%;
+  table-layout: auto;
 }
 
 .form-template-matrix td {
@@ -138,12 +140,32 @@ defineExpose({ scrollToCell });
   padding: 4px 8px;
   vertical-align: middle;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
-  min-width: 48px;
-  max-width: 320px;
+  line-height: 1.4;
+  min-width: 80px;
+  max-width: 140px;
+  overflow: hidden;
   color: var(--text);
   background: #fff;
 }
+
+/* A 列：允许换行，避免长文本溢出单元格 */
+.form-template-matrix td[data-col='0'] {
+  min-width: 48px;
+  max-width: 160px;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+/* B/C 列项目名、子项：放宽宽度，避免又窄又高 */
+.form-template-matrix td[data-col='1'],
+.form-template-matrix td[data-col='2'] {
+  min-width: 200px;
+  max-width: 520px;
+}
+
+/* 表头前几行若跨多列，合并格同样按起始列应用上述规则 */
 
 .form-template-matrix tr:nth-child(-n + 6) td {
   background: #f9fafb;

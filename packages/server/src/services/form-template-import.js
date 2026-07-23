@@ -199,6 +199,25 @@ export function findLastContentRow(matrix, merges = []) {
   return last;
 }
 
+/** 找到矩阵中有内容（含有效 merge 覆盖）的最后一列，0-based */
+export function findLastContentCol(matrix, merges = []) {
+  let last = -1;
+  for (let r = 0; r < matrix.length; r += 1) {
+    const line = matrix[r] || [];
+    for (let c = 0; c < line.length; c += 1) {
+      if (cellToString(line[c]) !== '') {
+        last = Math.max(last, c);
+      }
+    }
+  }
+  for (const merge of merges) {
+    if (mergeHasContent(matrix, merge)) {
+      last = Math.max(last, merge.e.c);
+    }
+  }
+  return last;
+}
+
 /**
  * 裁掉矩阵末尾连续空行（保留中间空行）
  */
@@ -229,6 +248,41 @@ export function trimTrailingEmptyRows(matrix, merges = []) {
 }
 
 /**
+ * 裁掉矩阵右侧连续空列（保留中间空列）
+ */
+export function trimTrailingEmptyCols(matrix, merges = []) {
+  if (!matrix.length) {
+    return { matrix: [], merges: [], rowCount: 0, colCount: 0 };
+  }
+
+  const lastCol = findLastContentCol(matrix, merges);
+  if (lastCol < 0) {
+    return { matrix: [], merges: [], rowCount: matrix.length, colCount: 0 };
+  }
+
+  const trimmedMatrix = matrix.map((row) => (row || []).slice(0, lastCol + 1));
+  const trimmedMerges = merges
+    .filter((m) => m.s.c <= lastCol)
+    .map((m) => ({
+      s: { r: m.s.r, c: m.s.c },
+      e: { r: m.e.r, c: Math.min(m.e.c, lastCol) },
+    }));
+
+  return {
+    matrix: trimmedMatrix,
+    merges: trimmedMerges,
+    rowCount: trimmedMatrix.length,
+    colCount: lastCol + 1,
+  };
+}
+
+/** 裁掉末尾空行与右侧空列 */
+export function trimMatrixPadding(matrix, merges = []) {
+  const rowTrimmed = trimTrailingEmptyRows(matrix, merges);
+  return trimTrailingEmptyCols(rowTrimmed.matrix, rowTrimmed.merges);
+}
+
+/**
  * 解析单个 Sheet 为表样（不写入库）
  */
 export function parseFormTemplateFromSheet(sheet, options = {}) {
@@ -240,7 +294,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     merges: trimmedMerges,
     rowCount,
     colCount,
-  } = trimTrailingEmptyRows(cleaned, merges);
+  } = trimMatrixPadding(cleaned, merges);
   const reportTitle = cellToString(matrix[0]?.[0]) || sheetName;
   const sheetMeta = parseFormTemplateSheetMeta(sheetName);
   const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();

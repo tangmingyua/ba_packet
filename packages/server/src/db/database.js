@@ -272,6 +272,11 @@ function ensureModuleSchema() {
     run(`ALTER TABLE subtypes ADD COLUMN module_code TEXT NOT NULL DEFAULT 'YBT'`);
   }
 
+  const versionCols = queryAll('PRAGMA table_info(subtype_versions)');
+  if (versionCols.length && !versionCols.some((c) => c.name === 'version_date')) {
+    run(`ALTER TABLE subtype_versions ADD COLUMN version_date TEXT NOT NULL DEFAULT ''`);
+  }
+
   for (const st of MATERIAL_SUBTYPES) {
     const moduleCode = st.moduleCode || 'YBT';
     run(`UPDATE subtypes SET module_code = ? WHERE code = ?`, [moduleCode, st.code]);

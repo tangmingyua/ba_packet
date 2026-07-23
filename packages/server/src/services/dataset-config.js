@@ -31,6 +31,7 @@ function rowToVersion(row) {
     isDefault: Boolean(row.is_default),
     bizKeyFields: parseJsonArray(row.biz_key_fields),
     status: row.status || 'active',
+    versionDate: row.version_date || '',
   };
 }
 
@@ -352,11 +353,17 @@ export function createSubtypeVersion(subtypeCode, body) {
     run(`UPDATE subtype_versions SET is_default = 0 WHERE subtype_code = ?`, [subtypeCode]);
   }
 
+  // 新建前取该子类「上一版本」（最新一条），用于复制字段映射
+  const previous = queryOne(
+    `SELECT id FROM subtype_versions WHERE subtype_code = ? ORDER BY id DESC LIMIT 1`,
+    [subtypeCode]
+  );
+
   run(
     `INSERT INTO subtype_versions (
       subtype_code, version_label, sheet_name, header_row, data_start_row,
-      is_default, biz_key_fields, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+      is_default, biz_key_fields, status, version_date
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
     [
       subtypeCode,
       versionLabel,
@@ -365,6 +372,7 @@ export function createSubtypeVersion(subtypeCode, body) {
       body.dataStartRow ?? 2,
       body.isDefault ? 1 : 0,
       JSON.stringify(body.bizKeyFields || []),
+      String(body.versionDate || '').trim(),
     ]
   );
   saveDb();
@@ -372,7 +380,25 @@ export function createSubtypeVersion(subtypeCode, body) {
     `SELECT * FROM subtype_versions WHERE subtype_code = ? AND version_label = ?`,
     [subtypeCode, versionLabel]
   );
-  return rowToVersion(row);
+  const created = rowToVersion(row);
+
+  if (previous?.id) {
+    const sourceMappings = listFieldMappings(Number(previous.id));
+    if (sourceMappings.length) {
+      saveFieldMappings(
+        created.id,
+        sourceMappings.map((m) => ({
+          originalColumn: m.originalColumn,
+          standardField: m.standardField,
+          fieldType: m.fieldType,
+          isRequired: m.isRequired,
+          defaultDisplay: m.defaultDisplay,
+        }))
+      );
+    }
+  }
+
+  return created;
 }
 
 export function countRecordsForVersion(versionId) {
@@ -412,7 +438,8 @@ export function updateSubtypeVersion(id, patch) {
       data_start_row = ?,
       is_default = ?,
       biz_key_fields = ?,
-      status = ?
+      status = ?,
+      version_date = ?
      WHERE id = ?`,
     [
       patch.versionLabel ?? existing.versionLabel,
@@ -422,6 +449,9 @@ export function updateSubtypeVersion(id, patch) {
       patch.isDefault !== undefined ? (patch.isDefault ? 1 : 0) : existing.isDefault ? 1 : 0,
       JSON.stringify(patch.bizKeyFields ?? existing.bizKeyFields),
       patch.status ?? existing.status,
+      patch.versionDate !== undefined
+        ? String(patch.versionDate || '').trim()
+        : existing.versionDate || '',
       id,
     ]
   );

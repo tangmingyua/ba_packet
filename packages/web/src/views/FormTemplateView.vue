@@ -60,17 +60,10 @@
               @cell-click="onIndicatorCellClick"
             />
 
-            <aside class="instruction-panel">
+            <aside v-if="instructionOpen" class="instruction-drawer">
               <div class="instruction-header">
                 <h3>填报说明</h3>
-                <button
-                  v-if="instruction || instructionError || selectedCell"
-                  type="button"
-                  class="btn-link"
-                  @click="clearInstruction"
-                >
-                  清除
-                </button>
+                <button type="button" class="btn-link" @click="clearInstruction">关闭</button>
               </div>
 
               <p v-if="loadingInstruction" class="muted">加载说明…</p>
@@ -104,7 +97,6 @@
                   在说明树中查看 →
                 </router-link>
               </template>
-              <p v-else class="muted empty-hint">点击左侧表样中的指标名称</p>
             </aside>
           </div>
         </template>
@@ -151,6 +143,14 @@ const instructionBodies = computed(() =>
   (instruction.value?.indicator?.children || [])
     .filter((c) => c.nodeKind === 'body')
     .map((c) => c.text)
+);
+
+const instructionOpen = computed(
+  () =>
+    Boolean(selectedCell.value) ||
+    Boolean(instruction.value) ||
+    Boolean(instructionError.value) ||
+    loadingInstruction.value
 );
 
 async function refreshList() {
@@ -286,14 +286,14 @@ refreshList();
 
 .form-template-layout {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
   flex: 1;
   align-items: stretch;
 }
 
 .form-template-list {
-  width: 260px;
+  width: 200px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -394,29 +394,30 @@ refreshList();
 }
 
 .preview-body {
+  position: relative;
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
+  min-width: 0;
 }
 
 .preview-body :deep(.form-template-matrix-wrap) {
-  flex: 1;
-  min-width: 0;
-  max-height: calc(100vh - var(--header-h) - 140px);
+  width: 100%;
+  max-height: calc(100vh - var(--header-h) - 130px);
 }
 
-.instruction-panel {
-  width: 320px;
-  flex-shrink: 0;
+.instruction-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 42%);
+  z-index: 5;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: #fff;
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12);
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  max-height: calc(100vh - var(--header-h) - 140px);
   overflow: auto;
   padding: 12px 14px;
 }

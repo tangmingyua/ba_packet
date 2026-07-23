@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS subtype_versions (
   is_default INTEGER NOT NULL DEFAULT 0,
   biz_key_fields TEXT,
   status TEXT NOT NULL DEFAULT 'active',
+  version_date TEXT NOT NULL DEFAULT '',
   UNIQUE (subtype_code, version_label),
   FOREIGN KEY (subtype_code) REFERENCES subtypes(code) ON DELETE CASCADE
 );

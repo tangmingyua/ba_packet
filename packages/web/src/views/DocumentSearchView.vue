@@ -66,7 +66,14 @@
             <p class="preview-meta">
               关键词「{{ lastKeyword }}」
               <span v-if="focusNodeId"> · 已定位节点 #{{ focusNodeId }}</span>
-              <router-link :to="{ name: 'documentDetail', params: { id: detail.id } }" class="btn-link">
+              <router-link
+                :to="{
+                  name: 'documentDetail',
+                  params: { id: detail.id },
+                  query: focusIndicatorKey ? { indicator: focusIndicatorKey } : {},
+                }"
+                class="btn-link"
+              >
                 在说明树中打开 →
               </router-link>
             </p>
@@ -74,7 +81,7 @@
           <DocumentTree
             :tree="detail.tree"
             :highlight-node-id="focusNodeId"
-            :highlight-indicator-no="focusIndicatorNo"
+            :highlight-indicator-key="focusIndicatorKey"
           />
         </template>
         <p v-else class="muted empty-hint">点击左侧说明查看命中明细并预览</p>
@@ -112,7 +119,7 @@ const loadingHits = ref(false);
 const hitsForSelected = ref([]);
 const hitsTruncated = ref(false);
 const focusNodeId = ref(null);
-const focusIndicatorNo = ref(null);
+const focusIndicatorKey = ref('');
 
 function hitKindLabel(hit) {
   if (hit.nodeKind === 'indicator' && hit.indicatorKey) return `#${hit.indicatorKey}`;
@@ -149,7 +156,7 @@ async function runSearch() {
   hitsForSelected.value = [];
   hitsTruncated.value = false;
   focusNodeId.value = null;
-  focusIndicatorNo.value = null;
+  focusIndicatorKey.value = '';
 
   try {
     result.value = await searchDocumentsApi(q);
@@ -168,15 +175,17 @@ async function runSearch() {
 async function selectDocument(item) {
   selectedId.value = item.id;
   focusNodeId.value = null;
-  focusIndicatorNo.value = null;
+  focusIndicatorKey.value = '';
   await Promise.all([loadDetail(item.id), loadHits(item.id)]);
 }
 
 async function selectHit(item, hit) {
   selectedId.value = item.id;
   focusNodeId.value = hit?.nodeId ?? null;
-  focusIndicatorNo.value =
-    hit?.nodeKind === 'indicator' && hit.indicatorNo != null ? hit.indicatorNo : null;
+  focusIndicatorKey.value =
+    hit?.nodeKind === 'indicator'
+      ? String(hit.indicatorKey || hit.indicatorNo || '')
+      : '';
   if (detail.value?.id !== item.id) {
     await loadDetail(item.id);
   }

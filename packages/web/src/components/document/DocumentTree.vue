@@ -5,7 +5,7 @@
         v-for="child in rootChildren"
         :key="child.id"
         :node="child"
-        :highlight-indicator-no="highlightIndicatorNo"
+        :highlight-indicator-key="resolvedHighlightKey"
         :highlight-node-id="highlightNodeId"
       />
     </ul>
@@ -19,7 +19,9 @@ import DocumentTreeNode from './DocumentTreeNode.vue';
 
 const props = defineProps({
   tree: { type: Object, default: null },
+  /** @deprecated 使用 highlightIndicatorKey */
   highlightIndicatorNo: { type: Number, default: null },
+  highlightIndicatorKey: { type: String, default: '' },
   highlightNodeId: { type: Number, default: null },
 });
 
@@ -28,6 +30,12 @@ const rootChildren = computed(() => {
   if (!tree) return [];
   if (tree.nodeKind === 'doc_title') return tree.children || [];
   return [tree];
+});
+
+const resolvedHighlightKey = computed(() => {
+  if (props.highlightIndicatorKey) return props.highlightIndicatorKey;
+  if (props.highlightIndicatorNo != null) return String(props.highlightIndicatorNo);
+  return '';
 });
 </script>
 

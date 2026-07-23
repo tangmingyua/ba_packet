@@ -72,20 +72,69 @@
       <fieldset class="form-section">
         <legend>上传 Excel</legend>
         <div class="form-grid">
-          <label class="field span-2">
+          <div class="field span-2">
             <span class="label">目标子类版本（可多选，优先于仅按 Sheet 名匹配）</span>
-            <div class="version-checks">
-              <label v-for="opt in versionOptions" :key="opt.id" class="check-item">
-                <input v-model="selectedVersionIds" type="checkbox" :value="opt.id" />
-                <span>{{ opt.label }}</span>
-              </label>
-              <p v-if="!versionOptions.length" class="feedback error">
-                当前没有可导入的版本。已启用子类须先完成：<strong>新建版本 → 保存字段映射</strong>（映射数 &gt; 0 后才会出现在此处）。
-                <span v-if="enabledButNotReady.length">待完成：{{ enabledButNotReady.join('、') }}</span>
-                <button type="button" class="btn-link" @click="setTab('subtypes')">去子类配置</button>
-              </p>
-            </div>
-          </label>
+            <p v-if="!versionOptions.length" class="feedback error">
+              当前没有可导入的版本。已启用子类须先完成：<strong>新建版本 → 保存字段映射</strong>（映射数 &gt; 0 后才会出现在此处）。
+              <span v-if="enabledButNotReady.length">待完成：{{ enabledButNotReady.join('、') }}</span>
+              <button type="button" class="btn-link" @click="setTab('subtypes')">去子类配置</button>
+            </p>
+            <template v-else>
+              <div v-if="importModuleTabs.length > 1" class="import-module-tabs" role="tablist">
+                <button
+                  v-for="mod in importModuleTabs"
+                  :key="mod.code"
+                  type="button"
+                  role="tab"
+                  class="import-module-tab"
+                  :class="{ active: importModuleFilter === mod.code }"
+                  :aria-selected="importModuleFilter === mod.code"
+                  @click="importModuleFilter = mod.code"
+                >
+                  {{ mod.name }}
+                  <span class="tab-count">{{ mod.count }}</span>
+                  <span
+                    v-if="mod.selectedCount"
+                    class="tab-selected"
+                    :title="`本主类已选 ${mod.selectedCount} 个`"
+                  >
+                    ·已选{{ mod.selectedCount }}
+                  </span>
+                </button>
+              </div>
+              <div class="version-checks-toolbar">
+                <span class="muted">
+                  当前主类 {{ filteredVersionOptions.length }} 个版本
+                  <template v-if="selectedVersionIds.length">
+                    · 全部已选 <strong>{{ selectedVersionIds.length }}</strong>
+                  </template>
+                </span>
+                <div class="version-checks-actions">
+                  <button type="button" class="btn-link" @click="selectAllFilteredVersions">
+                    全选当前主类
+                  </button>
+                  <button type="button" class="btn-link" @click="clearFilteredVersions">
+                    清空当前主类
+                  </button>
+                  <button
+                    v-if="selectedVersionIds.length"
+                    type="button"
+                    class="btn-link"
+                    @click="selectedVersionIds = []"
+                  >
+                    清空全部已选
+                  </button>
+                </div>
+              </div>
+              <div class="version-checks">
+                <label v-for="opt in filteredVersionOptions" :key="opt.id" class="check-item">
+                  <input v-model="selectedVersionIds" type="checkbox" :value="opt.id" />
+                  <span>{{ opt.label }}</span>
+                </label>
+                <p v-if="!filteredVersionOptions.length" class="muted">该主类下暂无可导入版本</p>
+              </div>
+            </template>
+          </div>
           <label class="field span-2">
             <span class="label">备注</span>
             <input v-model="description" type="text" placeholder="可选" />
@@ -363,296 +412,436 @@
     </div>
 
     <!-- 标签：子类配置 -->
-    <div v-show="activeTab === 'subtypes'" class="tab-panel config-section">
-      <fieldset class="form-section">
-        <legend>添加主类</legend>
-        <div class="add-row">
-          <input v-model="newModule.code" placeholder="code，如 EAST（大写）" />
-          <input v-model="newModule.name" placeholder="名称，如 EAST" />
-          <button type="button" class="btn" :disabled="saving" @click="addModule">添加主类</button>
-        </div>
-        <p class="muted">主类用于归类子类，如「一表通」「EAST」。已有子类引用时不可删除。</p>
-      </fieldset>
-
-      <fieldset class="form-section">
-        <legend>添加子类</legend>
-        <div class="add-row">
-          <input v-model="newSubtype.code" placeholder="code，如 MY_FAQ（大写+下划线）" />
-          <input v-model="newSubtype.name" placeholder="中文名，如 我的答疑" />
-          <select v-model="newSubtype.moduleCode">
-            <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
-              {{ m.name }}
-            </option>
-          </select>
-          <select v-model="newSubtype.category">
-            <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
-              {{ cat.label }}
-            </option>
-          </select>
-          <button type="button" class="btn btn-primary" :disabled="saving" @click="addSubtype">
-            添加子类
-          </button>
-        </div>
-        <p class="muted">code 创建后不可修改；「类型」标签与「主类」无关，用于检索过滤与业务归类。</p>
-      </fieldset>
-
-      <fieldset class="form-section">
-        <legend>子类列表</legend>
-        <table class="simple-table">
-          <thead>
-            <tr>
-              <th>code</th>
-              <th>名称</th>
-              <th>主类</th>
-              <th>类型</th>
-              <th>启用</th>
-              <th>版本数</th>
-              <th>排序</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!catalog.subtypes.length">
-              <td colspan="8" class="empty-cell">暂无子类，请先添加</td>
-            </tr>
-            <tr
-              v-for="st in catalog.subtypes"
-              :key="st.code"
-              :class="{ selected: activeSubtypeCode === st.code }"
-              @click="selectSubtype(st.code)"
-            >
-              <td><code class="code-tag">{{ st.code }}</code></td>
-              <td>{{ st.name }}</td>
-              <td>{{ st.moduleName || st.moduleCode }}</td>
-              <td>{{ st.categoryLabel || getCategoryLabel(st.category) }}</td>
-              <td>{{ st.enabled ? '是' : '否' }}</td>
-              <td>{{ st.versions?.length || 0 }}</td>
-              <td>{{ st.sortOrder }}</td>
-              <td>
-                <button type="button" class="btn-link danger" @click.stop="removeSubtype(st)">
-                  删除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </fieldset>
-
-      <header class="config-header">
-        <h3>版本与字段映射</h3>
-        <p class="hint">映射挂在子类版本上；每次导入会替换该版本全部数据。必填项由映射中的勾选决定。</p>
-      </header>
-
-      <fieldset class="form-section overview-section">
-        <legend>子类与版本总览</legend>
-        <div class="filter-bar">
-          <label class="field compact">
-            <span class="label">筛选子类</span>
-            <select v-model="filterSubtypeCode">
-              <option value="">全部子类</option>
-              <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
-                {{ st.name }}
-              </option>
-            </select>
-          </label>
-          <label class="field compact">
-            <span class="label">筛选版本 / Sheet</span>
-            <input
-              v-model="filterVersionText"
-              type="text"
-              placeholder="版本号或 Sheet 名关键词"
-            />
-          </label>
-          <label class="check-item">
-            <input v-model="filterEnabledOnly" type="checkbox" />
-            仅已启用子类
-          </label>
-          <label class="check-item">
-            <input v-model="filterReadyOnly" type="checkbox" />
-            仅可导入（已有映射）
-          </label>
-          <button type="button" class="btn" @click="resetFilters">重置筛选</button>
-        </div>
-        <p class="overview-summary">
-          共 {{ catalog.subtypes.length }} 个子类，{{ totalVersionCount }} 个版本；
-          当前显示 <strong>{{ filteredOverviewRows.length }}</strong> 条
-          <span v-if="filterSubtypeCode || filterVersionText || filterEnabledOnly || filterReadyOnly">
-            （已筛选）
-          </span>
+    <div v-show="activeTab === 'subtypes'" class="tab-panel config-section subtype-config">
+      <div class="flow-guide">
+        <div class="flow-guide-title">配置流程</div>
+        <ol class="flow-steps">
+          <li :class="{ done: catalog.modules.length > 0 && catalog.subtypes.length > 0 }">
+            <span class="step-no">1</span>
+            <span class="step-text">建主类 / 子类</span>
+          </li>
+          <li :class="{ done: totalVersionCount > 0, current: catalog.subtypes.length > 0 && !activeVersionId }">
+            <span class="step-no">2</span>
+            <span class="step-text">新建版本</span>
+          </li>
+          <li :class="{ done: hasReadyVersion, current: Boolean(activeVersionId) }">
+            <span class="step-no">3</span>
+            <span class="step-text">配置字段映射</span>
+          </li>
+          <li :class="{ done: hasReadyVersion, current: hasReadyVersion && !activeVersionId }">
+            <span class="step-no">4</span>
+            <span class="step-text">启用子类 → 去「资料导入」</span>
+          </li>
+        </ol>
+        <p class="flow-hint">
+          一个子类可有多个版本；映射挂在版本上。新建版本会默认复制上一版本的字段映射。
         </p>
-        <table class="simple-table overview-table">
-          <thead>
-            <tr>
-              <th>子类</th>
-              <th>启用</th>
-              <th>版本</th>
-              <th>Sheet 名</th>
-              <th>映射数</th>
-              <th>记录数</th>
-              <th>默认</th>
-              <th>状态</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!filteredOverviewRows.length">
-              <td colspan="9" class="empty-cell">无匹配项，请调整筛选条件</td>
-            </tr>
-            <tr
-              v-for="row in filteredOverviewRows"
-              :key="row.rowKey"
-              :class="{
-                selected: row.versionId && activeVersionId === row.versionId,
-                'no-version': !row.versionId,
-              }"
-              @click="openOverviewRow(row)"
-            >
-              <td>{{ row.subtypeName }}</td>
-              <td>{{ row.enabled ? '是' : '否' }}</td>
-              <td>{{ row.versionLabel }}</td>
-              <td>{{ row.sheetName }}</td>
-              <td>{{ row.mappingCount }}</td>
-              <td>{{ row.recordCount }}</td>
-              <td>{{ row.isDefault ? '是' : '' }}</td>
-              <td>
-                <span class="status-pill" :class="row.statusClass">{{ row.statusText }}</span>
-              </td>
-              <td>
-                <button
-                  v-if="row.versionId"
-                  type="button"
-                  class="btn-link"
-                  @click.stop="openOverviewRow(row)"
-                >
-                  配置
-                </button>
-                <button v-else type="button" class="btn-link" @click.stop="openOverviewRow(row)">
-                  去新建
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </fieldset>
-
-      <div v-if="catalog.subtypes.length" class="config-toolbar">
-        <label class="field compact">
-          <span class="label">当前子类</span>
-          <select v-model="activeSubtypeCode" @change="onSubtypeChange">
-            <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
-              {{ st.name }}{{ st.enabled ? '' : '（未启用）' }}
-            </option>
-          </select>
-        </label>
-        <label class="field compact">
-          <span class="label">子类名称</span>
-          <input v-model="subtypeNameEdit" type="text" />
-        </label>
-        <label class="field compact">
-          <span class="label">所属主类</span>
-          <select v-model="subtypeModuleEdit">
-            <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
-              {{ m.name }}
-            </option>
-          </select>
-        </label>
-        <label class="field compact">
-          <span class="label">类型标签</span>
-          <select v-model="subtypeCategoryEdit">
-            <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
-              {{ cat.label }}
-            </option>
-          </select>
-        </label>
-        <label class="check-item">
-          <input
-            type="checkbox"
-            :checked="activeSubtype?.enabled"
-            @change="toggleSubtypeEnabled($event.target.checked)"
-          />
-          启用该子类
-        </label>
-        <button type="button" class="btn" :disabled="saving" @click="saveSubtypeInfo">
-          保存子类信息
-        </button>
       </div>
-      <p v-else class="muted">请先添加至少一个子类。</p>
 
-      <p v-if="configMessage" class="feedback" :class="configMessageType">{{ configMessage }}</p>
+      <p v-if="configMessage" class="feedback sticky-feedback" :class="configMessageType">
+        {{ configMessage }}
+      </p>
 
-      <template v-if="activeSubtype">
-        <fieldset class="form-section">
-          <legend>新建版本（当前子类：{{ activeSubtype.name }}）</legend>
-          <div class="add-version">
-            <input v-model="newVersion.versionLabel" placeholder="版本号，如 v1" />
-            <input v-model="newVersion.sheetName" placeholder="Sheet 名" />
-            <label class="check-item"
-              ><input v-model="newVersion.isDefault" type="checkbox" />默认</label
-            >
-            <button type="button" class="btn" @click="addVersion">新建版本</button>
+      <!-- 步骤 1 -->
+      <section class="config-card">
+        <header class="config-card-head">
+          <span class="card-step">步骤 1</span>
+          <div>
+            <h3>主类与子类</h3>
+            <p>先有主类（如一表通、EAST），再在主类下添加子类资料类型。</p>
           </div>
-        </fieldset>
+        </header>
 
-        <template v-if="versionDetail">
-          <fieldset class="form-section">
-            <legend>版本设置 — {{ versionDetail.version.versionLabel }}</legend>
-            <div class="form-grid">
-              <label class="field">
-                <span class="label">Sheet 名</span>
-                <input v-model="versionForm.sheetName" type="text" />
-              </label>
-              <label class="field">
-                <span class="label">表头行</span>
-                <input v-model.number="versionForm.headerRow" type="number" min="1" />
-              </label>
-              <label class="field">
-                <span class="label">数据起始行</span>
-                <input v-model.number="versionForm.dataStartRow" type="number" min="2" />
-              </label>
-              <label class="check-item">
-                <input v-model="versionForm.isDefault" type="checkbox" />设为默认版本
-              </label>
+        <div class="config-card-body">
+          <div class="setup-grid">
+            <div class="setup-block">
+              <h4>添加主类</h4>
+              <div class="form-grid-2">
+                <label class="field">
+                  <span class="label">code</span>
+                  <input v-model="newModule.code" placeholder="如 EAST（大写）" />
+                </label>
+                <label class="field">
+                  <span class="label">名称</span>
+                  <input v-model="newModule.name" placeholder="如 EAST" />
+                </label>
+              </div>
+              <button type="button" class="btn" :disabled="saving" @click="addModule">添加主类</button>
+              <p class="muted">已有子类引用的主类不可删除。</p>
             </div>
-            <div class="inline-actions">
-              <button type="button" class="btn" :disabled="saving" @click="saveVersionSettings">
-                保存版本设置
+
+            <div class="setup-block">
+              <h4>添加子类</h4>
+              <div class="form-grid-2">
+                <label class="field">
+                  <span class="label">code</span>
+                  <input v-model="newSubtype.code" placeholder="如 MY_FAQ（大写+下划线）" />
+                </label>
+                <label class="field">
+                  <span class="label">中文名</span>
+                  <input v-model="newSubtype.name" placeholder="如 我的答疑" />
+                </label>
+                <label class="field">
+                  <span class="label">所属主类</span>
+                  <select v-model="newSubtype.moduleCode">
+                    <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
+                      {{ m.name }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="label">类型标签</span>
+                  <select v-model="newSubtype.category">
+                    <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
+                      {{ cat.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <button type="button" class="btn btn-primary" :disabled="saving" @click="addSubtype">
+                添加子类
               </button>
-              <button type="button" class="btn danger" @click="removeActiveVersion">
-                删除此版本
-              </button>
-              <button
-                v-if="versionDetail.recordCount > 0"
-                type="button"
-                class="btn danger"
-                @click="clearRecords"
+              <p class="muted">code 创建后不可改；类型标签用于检索过滤，与主类无关。</p>
+            </div>
+          </div>
+
+          <div class="subtype-list-block">
+            <div class="block-title-row">
+              <h4>子类列表</h4>
+              <span class="muted">点击一行，进入下方步骤 2 / 3 配置</span>
+            </div>
+            <table class="simple-table">
+              <thead>
+                <tr>
+                  <th>code</th>
+                  <th>名称</th>
+                  <th>主类</th>
+                  <th>类型</th>
+                  <th>启用</th>
+                  <th>版本数</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!catalog.subtypes.length">
+                  <td colspan="7" class="empty-cell">暂无子类，请先在上方添加</td>
+                </tr>
+                <tr
+                  v-for="st in catalog.subtypes"
+                  :key="st.code"
+                  :class="{ selected: activeSubtypeCode === st.code }"
+                  @click="selectSubtype(st.code)"
+                >
+                  <td><code class="code-tag">{{ st.code }}</code></td>
+                  <td>{{ st.name }}</td>
+                  <td>{{ st.moduleName || st.moduleCode }}</td>
+                  <td>{{ st.categoryLabel || getCategoryLabel(st.category) }}</td>
+                  <td>{{ st.enabled ? '是' : '否' }}</td>
+                  <td>{{ st.versions?.length || 0 }}</td>
+                  <td>
+                    <button type="button" class="btn-link danger" @click.stop="removeSubtype(st)">
+                      删除
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 步骤 2 -->
+      <section class="config-card">
+        <header class="config-card-head">
+          <span class="card-step">步骤 2</span>
+          <div>
+            <h3>版本总览</h3>
+            <p>查看各子类版本状态；点击「配置 / 去新建」进入步骤 3。</p>
+          </div>
+        </header>
+
+        <div class="config-card-body">
+          <div class="filter-bar">
+            <label class="field compact">
+              <span class="label">筛选子类</span>
+              <select v-model="filterSubtypeCode">
+                <option value="">全部子类</option>
+                <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
+                  {{ st.name }}
+                </option>
+              </select>
+            </label>
+            <label class="field compact">
+              <span class="label">版本 / Sheet</span>
+              <input
+                v-model="filterVersionText"
+                type="text"
+                placeholder="版本号或 Sheet 名"
+              />
+            </label>
+            <label class="check-item">
+              <input v-model="filterEnabledOnly" type="checkbox" />
+              仅已启用
+            </label>
+            <label class="check-item">
+              <input v-model="filterReadyOnly" type="checkbox" />
+              仅可导入
+            </label>
+            <button type="button" class="btn" @click="resetFilters">重置</button>
+          </div>
+          <p class="overview-summary">
+            共 {{ catalog.subtypes.length }} 个子类 · {{ totalVersionCount }} 个版本 ·
+            显示 <strong>{{ filteredOverviewRows.length }}</strong> 条
+          </p>
+          <table class="simple-table overview-table">
+            <thead>
+              <tr>
+                <th>子类</th>
+                <th>启用</th>
+                <th>版本</th>
+                <th>版本日期</th>
+                <th>Sheet</th>
+                <th>映射</th>
+                <th>记录</th>
+                <th>默认</th>
+                <th>状态</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!filteredOverviewRows.length">
+                <td colspan="10" class="empty-cell">无匹配项</td>
+              </tr>
+              <tr
+                v-for="row in filteredOverviewRows"
+                :key="row.rowKey"
+                :class="{
+                  selected: row.versionId && activeVersionId === row.versionId,
+                  'no-version': !row.versionId,
+                }"
+                @click="openOverviewRow(row)"
               >
-                清空该版本数据（{{ versionDetail.recordCount }}，导入时也会自动清空）
-              </button>
-            </div>
-          </fieldset>
+                <td>{{ row.subtypeName }}</td>
+                <td>{{ row.enabled ? '是' : '否' }}</td>
+                <td>{{ row.versionLabel }}</td>
+                <td>{{ row.versionDate || '—' }}</td>
+                <td>{{ row.sheetName }}</td>
+                <td>{{ row.mappingCount }}</td>
+                <td>{{ row.recordCount }}</td>
+                <td>{{ row.isDefault ? '是' : '' }}</td>
+                <td>
+                  <span class="status-pill" :class="row.statusClass">{{ row.statusText }}</span>
+                </td>
+                <td>
+                  <button type="button" class="btn-link" @click.stop="openOverviewRow(row)">
+                    {{ row.versionId ? '配置' : '去新建' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-          <fieldset class="form-section">
-            <legend>字段映射</legend>
-            <p class="muted">
-              标准字段共 {{ catalog.standardFields.length }} 个。
-              <button type="button" class="btn-link" @click="setTab('fields')">去标准字段标签</button>
-              可添加自定义字段。
-            </p>
-            <MappingRowsTable v-model="mappingRows" :fields="catalog.standardFields" />
-            <div class="inline-actions">
-              <button type="button" class="btn" @click="addMappingRow">添加映射</button>
-              <button type="button" class="btn btn-primary" :disabled="saving" @click="saveMappings">
-                保存字段映射
+      <!-- 步骤 3 -->
+      <section class="config-card config-card-work">
+        <header class="config-card-head">
+          <span class="card-step">步骤 3</span>
+          <div>
+            <h3>版本设置与字段映射</h3>
+            <p>选定子类后新建版本，再配置 Excel 列到标准字段的映射。</p>
+          </div>
+        </header>
+
+        <div class="config-card-body">
+          <p v-if="!catalog.subtypes.length" class="empty-panel">
+            请先完成步骤 1，添加至少一个子类。
+          </p>
+
+          <template v-else>
+            <div class="work-context">
+              <label class="field">
+                <span class="label">当前子类</span>
+                <select v-model="activeSubtypeCode" @change="onSubtypeChange">
+                  <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
+                    {{ st.name }}{{ st.enabled ? '' : '（未启用）' }}
+                  </option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">子类名称</span>
+                <input v-model="subtypeNameEdit" type="text" />
+              </label>
+              <label class="field">
+                <span class="label">所属主类</span>
+                <select v-model="subtypeModuleEdit">
+                  <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
+                    {{ m.name }}
+                  </option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">类型标签</span>
+                <select v-model="subtypeCategoryEdit">
+                  <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
+                    {{ cat.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="check-item enable-check">
+                <input
+                  type="checkbox"
+                  :checked="activeSubtype?.enabled"
+                  @change="toggleSubtypeEnabled($event.target.checked)"
+                />
+                启用该子类（导入前须启用）
+              </label>
+              <button type="button" class="btn" :disabled="saving" @click="saveSubtypeInfo">
+                保存子类信息
               </button>
             </div>
-            <p class="muted">
-              拖动左侧 ⋮⋮ 可调整映射顺序，保存后按该顺序写入配置。
-              是否必填请在「必填」列勾选；子类、版本由系统在导入时写入。
-              标准字段支持输入中文名或 code 搜索后选择。
-            </p>
-          </fieldset>
-        </template>
-      </template>
+
+            <template v-if="activeSubtype">
+              <div class="work-split">
+                <div class="work-panel">
+                  <h4>3.1 新建版本</h4>
+                  <div class="form-grid-2">
+                    <label class="field">
+                      <span class="label">版本号</span>
+                      <input v-model="newVersion.versionLabel" placeholder="如 v1 / 202601" />
+                    </label>
+                    <label class="field">
+                      <span class="label">Sheet 名</span>
+                      <input v-model="newVersion.sheetName" placeholder="Excel 中的 Sheet 名称" />
+                    </label>
+                    <label class="field">
+                      <span class="label">版本日期</span>
+                      <input v-model="newVersion.versionDate" type="date" />
+                    </label>
+                    <label class="check-item enable-check">
+                      <input v-model="newVersion.isDefault" type="checkbox" />
+                      设为默认版本
+                    </label>
+                  </div>
+                  <button type="button" class="btn btn-primary" @click="addVersion">新建版本</button>
+                  <p class="muted">
+                    当前子类：{{ activeSubtype.name }}。若已有版本，新建时会复制上一版字段映射。
+                  </p>
+
+                  <template v-if="versionDetail">
+                    <h4 class="panel-subhead">
+                      3.2 版本设置
+                      <code class="code-tag">{{ versionDetail.version.versionLabel }}</code>
+                    </h4>
+                    <div class="form-grid-2">
+                      <label class="field">
+                        <span class="label">Sheet 名</span>
+                        <input v-model="versionForm.sheetName" type="text" />
+                      </label>
+                      <label class="field">
+                        <span class="label">版本日期</span>
+                        <input v-model="versionForm.versionDate" type="date" />
+                      </label>
+                      <label class="field">
+                        <span class="label">表头行</span>
+                        <input v-model.number="versionForm.headerRow" type="number" min="1" />
+                      </label>
+                      <label class="field">
+                        <span class="label">数据起始行</span>
+                        <input v-model.number="versionForm.dataStartRow" type="number" min="2" />
+                      </label>
+                      <label class="check-item enable-check">
+                        <input v-model="versionForm.isDefault" type="checkbox" />
+                        设为默认版本
+                      </label>
+                    </div>
+                    <div class="inline-actions">
+                      <button
+                        type="button"
+                        class="btn"
+                        :disabled="saving"
+                        @click="saveVersionSettings"
+                      >
+                        保存版本设置
+                      </button>
+                      <button type="button" class="btn danger" @click="removeActiveVersion">
+                        删除此版本
+                      </button>
+                      <button
+                        v-if="versionDetail.recordCount > 0"
+                        type="button"
+                        class="btn danger"
+                        @click="clearRecords"
+                      >
+                        清空数据（{{ versionDetail.recordCount }}）
+                      </button>
+                    </div>
+                  </template>
+                  <p v-else class="empty-panel soft">请先新建版本，或从步骤 2 总览中点「配置」。</p>
+                </div>
+
+                <div class="work-panel mapping-panel">
+                  <h4>
+                    3.3 字段映射
+                    <span v-if="versionDetail" class="muted">
+                      · {{ versionDetail.version.versionLabel }}
+                    </span>
+                  </h4>
+                  <template v-if="versionDetail">
+                    <p class="muted">
+                      标准字段共 {{ catalog.standardFields.length }} 个。
+                      <button type="button" class="btn-link" @click="setTab('fields')">
+                        管理标准字段
+                      </button>
+                    </p>
+                    <MappingRowsTable v-model="mappingRows" :fields="catalog.standardFields" />
+                    <div class="inline-actions">
+                      <button type="button" class="btn" @click="addMappingRow">添加映射</button>
+                      <button
+                        type="button"
+                        class="btn btn-primary"
+                        :disabled="saving"
+                        @click="saveMappings"
+                      >
+                        保存字段映射
+                      </button>
+                    </div>
+                    <p class="muted">
+                      拖动 ⋮⋮ 调整顺序；勾选「必填」。映射数 &gt; 0 且子类已启用后，即可在「资料导入」中上传
+                      Excel。
+                    </p>
+                  </template>
+                  <p v-else class="empty-panel soft">选定版本后，在此配置 Excel 列与标准字段的对应关系。</p>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+      </section>
+
+      <!-- 步骤 4 -->
+      <section class="config-card">
+        <header class="config-card-head">
+          <span class="card-step">步骤 4</span>
+          <div>
+            <h3>启用并去导入</h3>
+            <p>子类已启用、版本字段映射 &gt; 0 后，即可在「资料导入」上传 Excel。</p>
+          </div>
+        </header>
+        <div class="config-card-body">
+          <p v-if="hasReadyVersion" class="status success">
+            已有可导入版本。请到「资料导入」选择对应子类与版本上传文件。
+          </p>
+          <p v-else class="muted">
+            尚未就绪：请确认步骤 3 已保存字段映射，并勾选「启用该子类」。
+          </p>
+          <div class="inline-actions">
+            <button type="button" class="btn btn-primary" @click="setTab('import')">
+              去资料导入
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- 标签：标准字段 -->
@@ -756,11 +945,13 @@ const newSubtype = reactive({ code: '', name: '', category: 'qa', moduleCode: 'Y
 const newVersion = reactive({
   versionLabel: '',
   sheetName: '',
+  versionDate: '',
   isDefault: false,
 });
 
 const versionForm = reactive({
   sheetName: '',
+  versionDate: '',
   headerRow: 1,
   dataStartRow: 2,
   isDefault: false,
@@ -779,6 +970,12 @@ const totalVersionCount = computed(() =>
   catalog.value.subtypes.reduce((n, st) => n + (st.versions?.length || 0), 0)
 );
 
+const hasReadyVersion = computed(() =>
+  catalog.value.subtypes.some(
+    (st) => st.enabled && (st.versions || []).some((v) => (v.mappingCount || 0) > 0)
+  )
+);
+
 const allOverviewRows = computed(() => {
   const rows = [];
   for (const st of catalog.value.subtypes) {
@@ -791,6 +988,7 @@ const allOverviewRows = computed(() => {
         enabled: st.enabled,
         versionId: null,
         versionLabel: '—',
+        versionDate: '—',
         sheetName: '—',
         mappingCount: 0,
         recordCount: 0,
@@ -817,6 +1015,7 @@ const allOverviewRows = computed(() => {
         enabled: st.enabled,
         versionId: v.id,
         versionLabel: v.versionLabel,
+        versionDate: v.versionDate || '',
         sheetName: v.sheetName,
         mappingCount: v.mappingCount,
         recordCount: v.recordCount,
@@ -852,6 +1051,8 @@ const filteredOverviewRows = computed(() => {
   return rows;
 });
 
+const importModuleFilter = ref('');
+
 const versionOptions = computed(() =>
   catalog.value.subtypes
     .filter((s) => s.enabled)
@@ -860,10 +1061,71 @@ const versionOptions = computed(() =>
         .filter((v) => v.mappingCount > 0)
         .map((v) => ({
           id: v.id,
+          moduleCode: s.moduleCode || 'OTHER',
+          moduleName: s.moduleName || s.moduleCode || '其他',
           label: `${s.name} / ${v.versionLabel}（sheet: ${v.sheetName}）`,
         }))
     )
 );
+
+const importModuleTabs = computed(() => {
+  const selected = new Set(selectedVersionIds.value);
+  const byCode = new Map();
+  for (const opt of versionOptions.value) {
+    const prev = byCode.get(opt.moduleCode);
+    if (prev) {
+      prev.count += 1;
+      if (selected.has(opt.id)) prev.selectedCount += 1;
+    } else {
+      byCode.set(opt.moduleCode, {
+        code: opt.moduleCode,
+        name: opt.moduleName,
+        count: 1,
+        selectedCount: selected.has(opt.id) ? 1 : 0,
+      });
+    }
+  }
+  const order = new Map(
+    (catalog.value.modules || []).map((m, i) => [m.code, i])
+  );
+  return [...byCode.values()].sort((a, b) => {
+    const ai = order.has(a.code) ? order.get(a.code) : 999;
+    const bi = order.has(b.code) ? order.get(b.code) : 999;
+    if (ai !== bi) return ai - bi;
+    return a.name.localeCompare(b.name, 'zh');
+  });
+});
+
+const filteredVersionOptions = computed(() => {
+  const code = importModuleFilter.value;
+  if (!code) return versionOptions.value;
+  return versionOptions.value.filter((o) => o.moduleCode === code);
+});
+
+watch(
+  importModuleTabs,
+  (tabs) => {
+    if (!tabs.length) {
+      importModuleFilter.value = '';
+      return;
+    }
+    if (!tabs.some((t) => t.code === importModuleFilter.value)) {
+      importModuleFilter.value = tabs[0].code;
+    }
+  },
+  { immediate: true }
+);
+
+function selectAllFilteredVersions() {
+  const ids = new Set(selectedVersionIds.value);
+  for (const opt of filteredVersionOptions.value) ids.add(opt.id);
+  selectedVersionIds.value = [...ids];
+}
+
+function clearFilteredVersions() {
+  const drop = new Set(filteredVersionOptions.value.map((o) => o.id));
+  selectedVersionIds.value = selectedVersionIds.value.filter((id) => !drop.has(id));
+}
 
 const enabledButNotReady = computed(() =>
   catalog.value.subtypes
@@ -942,6 +1204,7 @@ async function selectVersion(id) {
   versionDetail.value = detail;
   Object.assign(versionForm, {
     sheetName: detail.version.sheetName,
+    versionDate: detail.version.versionDate || '',
     headerRow: detail.version.headerRow,
     dataStartRow: detail.version.dataStartRow,
     isDefault: detail.version.isDefault,
@@ -1086,14 +1349,19 @@ async function toggleSubtypeEnabled(enabled) {
 
 async function addVersion() {
   try {
+    const hadPrevious = (activeSubtype.value?.versions?.length || 0) > 0;
     const { version } = await createSubtypeVersion(activeSubtypeCode.value, { ...newVersion });
     newVersion.versionLabel = '';
     newVersion.sheetName = '';
+    newVersion.versionDate = '';
     newVersion.isDefault = false;
     await refreshCatalog();
     await selectVersion(version.id);
+    const copied = versionDetail.value?.mappings?.length || 0;
     configMessageType.value = 'success';
-    configMessage.value = '版本已创建';
+    configMessage.value = hadPrevious
+      ? `版本已创建${copied ? `，已复制上一版本 ${copied} 条字段映射` : '（上一版本无映射可复制）'}`
+      : '版本已创建';
   } catch (e) {
     configMessageType.value = 'error';
     configMessage.value = e.message || '创建失败';
@@ -1151,6 +1419,7 @@ async function saveVersionSettings() {
   try {
     await updateSubtypeVersion(activeVersionId.value, {
       sheetName: versionForm.sheetName,
+      versionDate: versionForm.versionDate,
       headerRow: versionForm.headerRow,
       dataStartRow: versionForm.dataStartRow,
       isDefault: versionForm.isDefault,
@@ -1381,26 +1650,270 @@ onMounted(async () => {
   align-items: center;
 }
 
-.config-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: end;
-  margin: 12px 0;
+.field.compact {
+  min-width: 160px;
 }
 
-.field.compact {
-  min-width: 200px;
+.import-module-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.import-module-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.import-module-tab:hover {
+  color: var(--text);
+  border-color: #93c5fd;
+}
+
+.import-module-tab.active {
+  color: #1e40af;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  font-weight: 600;
+}
+
+.tab-count {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.import-module-tab.active .tab-count {
+  color: #1d4ed8;
+}
+
+.tab-selected {
+  color: #047857;
+  font-size: 12px;
+}
+
+.version-checks-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.version-checks-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .version-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px 12px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
 }
 
-.overview-section {
-  margin-top: 12px;
+/* —— 子类配置：流程化布局 —— */
+.subtype-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.flow-guide {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.flow-guide-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.flow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.flow-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.flow-steps li.done {
+  color: #047857;
+}
+
+.flow-steps li.current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.flow-steps li.done .step-no {
+  background: #a7f3d0;
+  color: #065f46;
+}
+
+.flow-steps li.current .step-no {
+  background: #bfdbfe;
+  color: #1e40af;
+}
+
+.flow-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sticky-feedback {
+  margin: 0;
+}
+
+.config-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  overflow: hidden;
+}
+
+.config-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.card-step {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 3px 10px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.config-card-head h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.config-card-head p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-card-body {
+  padding: 16px;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 960px) {
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setup-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: #fafafa;
+}
+
+.setup-block h4,
+.work-panel h4,
+.block-title-row h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 720px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.block-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.block-title-row h4 {
+  margin: 0;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 10px;
 }
 
 .overview-summary {
@@ -1411,6 +1924,86 @@ onMounted(async () => {
 
 .overview-table tbody tr.no-version {
   background: #fffbeb;
+}
+
+.overview-table tbody tr,
+.subtype-list-block tbody tr {
+  cursor: pointer;
+}
+
+.overview-table tbody tr.selected,
+.subtype-list-block tbody tr.selected {
+  background: #eff6ff;
+}
+
+.work-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+}
+
+.work-context .field {
+  min-width: 140px;
+}
+
+.enable-check {
+  align-self: center;
+  padding-bottom: 4px;
+}
+
+.work-split {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .work-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.work-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  background: #fff;
+  min-width: 0;
+}
+
+.panel-subhead {
+  margin-top: 20px !important;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.empty-panel {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+}
+
+.empty-panel.soft {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.mapping-panel {
+  min-height: 200px;
 }
 
 .empty-cell {
@@ -1432,20 +2025,6 @@ onMounted(async () => {
 
 .form-template-feedback {
   margin-bottom: 4px;
-}
-
-.config-header h3 {
-  margin: 16px 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.add-version {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  align-items: center;
 }
 
 .log-section {

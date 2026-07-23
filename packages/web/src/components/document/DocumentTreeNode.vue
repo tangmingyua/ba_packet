@@ -32,7 +32,7 @@
         :key="child.id"
         :node="child"
         :depth="depth + 1"
-        :highlight-indicator-no="highlightIndicatorNo"
+        :highlight-indicator-key="highlightIndicatorKey"
         :highlight-node-id="highlightNodeId"
       />
     </ul>
@@ -41,13 +41,17 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import {
+  indicatorNodeMatches,
+  subtreeHasIndicatorMatch,
+} from '../../utils/documentIndicator.js';
 
 defineOptions({ name: 'DocumentTreeNode' });
 
 const props = defineProps({
   node: { type: Object, required: true },
   depth: { type: Number, default: 0 },
-  highlightIndicatorNo: { type: Number, default: null },
+  highlightIndicatorKey: { type: String, default: '' },
   highlightNodeId: { type: Number, default: null },
 });
 
@@ -79,20 +83,20 @@ const showKindBadge = computed(() =>
 
 const nodeRef = ref(null);
 
+const isMatchTarget = computed(
+  () =>
+    (props.highlightNodeId != null && props.node.id === props.highlightNodeId) ||
+    indicatorNodeMatches(props.node, props.highlightIndicatorKey)
+);
+
 const expanded = ref(
-  subtreeHasHighlight(props.node, props.highlightIndicatorNo, props.highlightNodeId) ||
+  subtreeHasIndicatorMatch(props.node, props.highlightIndicatorKey, props.highlightNodeId) ||
     defaultExpanded(props.node)
 );
 
 const visible = computed(() => props.node.nodeKind !== 'doc_title');
 
-const highlighted = computed(
-  () =>
-    (props.highlightNodeId != null && props.node.id === props.highlightNodeId) ||
-    (props.node.nodeKind === 'indicator' &&
-      props.highlightIndicatorNo != null &&
-      props.node.indicatorNo === props.highlightIndicatorNo)
-);
+const highlighted = computed(() => isMatchTarget.value);
 
 const nodeClass = computed(() => [
   `kind-${props.node.nodeKind}`,
@@ -100,14 +104,19 @@ const nodeClass = computed(() => [
 ]);
 
 watch(
-  () => [props.highlightIndicatorNo, props.highlightNodeId],
-  ([no, nodeId]) => {
-    if ((no != null || nodeId != null) && subtreeHasHighlight(props.node, no, nodeId)) {
+  () => [props.highlightIndicatorKey, props.highlightNodeId],
+  ([key, nodeId]) => {
+    if ((key || nodeId != null) && subtreeHasIndicatorMatch(props.node, key, nodeId)) {
       expanded.value = true;
     }
-    if (nodeId != null && props.node.id === nodeId) {
+    if (isMatchTarget.value) {
+      // 等祖先 section/part 展开、子节点挂载后再滚动
       nextTick(() => {
-        nodeRef.value?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        nextTick(() => {
+          setTimeout(() => {
+            nodeRef.value?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+          }, 50);
+        });
       });
     }
   },
@@ -118,13 +127,6 @@ function defaultExpanded(node) {
   if (node.nodeKind === 'part') return node.sortOrder === 1;
   if (node.nodeKind === 'section') return false;
   return true;
-}
-
-function subtreeHasHighlight(node, no, nodeId) {
-  if (!node) return false;
-  if (nodeId != null && node.id === nodeId) return true;
-  if (node.nodeKind === 'indicator' && node.indicatorNo === no) return true;
-  return (node.children || []).some((child) => subtreeHasHighlight(child, no, nodeId));
 }
 </script>
 
