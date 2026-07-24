@@ -1,0 +1,36 @@
+---
+description: 数据库破坏性改动前必须提醒用户
+alwaysApply: true
+---
+
+# 数据库安全：改动前提醒用户
+
+涉及以下操作时，**必须先向用户明确说明风险并征得同意**，不得静默执行：
+
+## 会清空或重建整个库
+
+- `initDb({ fresh: true })`、`resetDbForTests()`
+- 删除或覆盖 `catalog.db`（`fs.unlinkSync`、空文件重建、无法识别格式时重建）
+- 替换/覆盖 seed 预置库且无迁移路径
+
+## 会删除业务数据表或大量数据
+
+- 对 `data_records`、`datasets`、`field_mappings`、`subtype_versions` 等**非** `LEGACY_TABLES` 表执行 `DROP TABLE`
+- 无 `WHERE` 的全表 `DELETE` / `TRUNCATE`
+- 改 UNIQUE / 主键导致必须「删表重建」而非 `ALTER TABLE`
+
+## 会全量替换某类数据（需说明范围）
+
+- 码值导入：同模块 `module_code_values` 全量替换（业务预期，但仍应说明）
+- 子类/版本重新导入覆盖已有 dataset
+
+## 说明时应包含
+
+1. **影响范围**（哪些表、多少数据、是否可恢复）
+2. **替代方案**（增量迁移、`ALTER TABLE`、备份后操作）
+3. **是否需要用户先备份** `catalog.db` 或保留源 Excel
+
+## 优先做法
+
+- 新表 / 加列：用 `CREATE TABLE IF NOT EXISTS`、`PRAGMA table_info` + `ALTER TABLE ADD COLUMN`
+- 仅清理旧模型：沿用 `LEGACY_TABLES` + `dropLegacyTables()`，不要扩大 DROP 范围

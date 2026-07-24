@@ -152,6 +152,48 @@ export function listVersionRecords(params = {}) {
   return request(`/api/dataset/records${qs ? `?${qs}` : ''}`);
 }
 
+export function listCodeValues(moduleCode, dictName) {
+  const query = new URLSearchParams({
+    module: moduleCode,
+    dict_name: dictName,
+  });
+  return request(`/api/dataset/code-values?${query}`);
+}
+
+export function listCodeValueDictNames(moduleCode) {
+  const query = new URLSearchParams({ module: moduleCode });
+  return request(`/api/dataset/code-values/dict-names?${query}`);
+}
+
+export function getCodeValueSummary(moduleCode) {
+  const query = new URLSearchParams({ module: moduleCode });
+  return request(`/api/dataset/code-values/summary?${query}`);
+}
+
+export async function importCodeValuesExcel(file, moduleCode) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('moduleCode', moduleCode);
+  const response = await fetch(`${getApiBase()}/api/dataset/code-values/import`, {
+    method: 'POST',
+    headers: withAuthHeaders(),
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '码值导入失败');
+  }
+  return response.json();
+}
+
+export function saveCodeValueDisplay(moduleCode, dictName, fields) {
+  return request('/api/dataset/code-value-display', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ moduleCode, dictName, fields }),
+  });
+}
+
 export async function importDatasetExcel(file, { versionIds = [], description = '' } = {}) {
   const form = new FormData();
   form.append('file', file);

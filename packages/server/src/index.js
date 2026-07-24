@@ -30,6 +30,14 @@ import {
 } from './services/dataset-config.js';
 import { importDatasetExcel } from './services/dataset-import.js';
 import {
+  getModuleCodeValueSummary,
+  importModuleCodeValues,
+  listCodeValueDisplay,
+  listModuleCodeValueDictNames,
+  listModuleCodeValues,
+  saveCodeValueDisplay,
+} from './services/code-value.js';
+import {
   deleteFormTemplate,
   getFormTemplate,
   importFormTemplate,
@@ -111,6 +119,80 @@ app.get('/api/search', async (request, reply) => {
 app.get('/api/dataset/catalog', async () => getDatasetCatalog());
 
 app.get('/api/dataset/modules', async () => ({ items: listModules() }));
+
+/** 模块码值：查询 / 导入 / 展示映射 */
+app.get('/api/dataset/code-values', async (request, reply) => {
+  try {
+    const { module: moduleCode, dict_name: dictName } = request.query || {};
+    if (!moduleCode || !dictName) {
+      return reply.code(400).send({ message: '请提供 module 与 dict_name 参数' });
+    }
+    return listModuleCodeValues(moduleCode, dictName);
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '查询失败' });
+  }
+});
+
+app.get('/api/dataset/code-values/dict-names', async (request, reply) => {
+  try {
+    const { module: moduleCode } = request.query || {};
+    if (!moduleCode) {
+      return reply.code(400).send({ message: '请提供 module 参数' });
+    }
+    return { items: listModuleCodeValueDictNames(moduleCode) };
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '查询失败' });
+  }
+});
+
+app.get('/api/dataset/code-values/summary', async (request, reply) => {
+  try {
+    const { module: moduleCode } = request.query || {};
+    if (!moduleCode) {
+      return reply.code(400).send({ message: '请提供 module 参数' });
+    }
+    return getModuleCodeValueSummary(moduleCode);
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '查询失败' });
+  }
+});
+
+app.post('/api/dataset/code-values/import', async (request, reply) => {
+  let buffer = null;
+  const fields = {};
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        buffer = await part.toBuffer();
+        if (!fields.fileName) fields.fileName = part.filename;
+      } else if (part.fieldname) {
+        fields[part.fieldname] = part.value;
+      }
+    }
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '解析上传内容失败' });
+  }
+  if (!buffer) {
+    return reply.code(400).send({ message: '请上传 Excel 文件' });
+  }
+  try {
+    return importModuleCodeValues(buffer, {
+      moduleCode: fields.moduleCode,
+      fileName: fields.fileName || fields.uploadFileName,
+    });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+app.put('/api/dataset/code-value-display', async (request, reply) => {
+  try {
+    const { moduleCode, dictName, fields } = request.body || {};
+    return saveCodeValueDisplay(moduleCode, dictName, fields || []);
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '保存失败' });
+  }
+});
 
 app.put('/api/dataset/modules/:code', async (request, reply) => {
   try {

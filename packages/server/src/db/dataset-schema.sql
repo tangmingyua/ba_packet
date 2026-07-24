@@ -166,3 +166,43 @@ CREATE TABLE IF NOT EXISTS report_doc_mapping (
 );
 
 CREATE INDEX IF NOT EXISTS idx_report_doc_mapping_doc ON report_doc_mapping(document_id);
+
+-- 模块码值（码值更新格式 Sheet 批量导入）
+CREATE TABLE IF NOT EXISTS module_code_values (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  module_code     TEXT NOT NULL,
+  dict_name       TEXT NOT NULL,
+  code            TEXT NOT NULL,
+  meaning         TEXT,
+  extend_1        TEXT,
+  extend_2        TEXT,
+  extend_3        TEXT,
+  extend_4        TEXT,
+  extend_5        TEXT,
+  extend_6        TEXT,
+  extend_7        TEXT,
+  extend_8        TEXT,
+  extend_9        TEXT,
+  extend_10       TEXT,
+  extend_11       TEXT,
+  source_file     TEXT,
+  source_sheet    TEXT DEFAULT '码值更新格式',
+  imported_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (module_code, dict_name, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcv_module_dict ON module_code_values (module_code, dict_name);
+
+-- 模块码值字段展示映射（页面维护：dict_name/code/meaning + extend_1..11）
+CREATE TABLE IF NOT EXISTS module_code_dict_display (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  module_code     TEXT NOT NULL,
+  dict_name       TEXT NOT NULL,
+  field_key       TEXT NOT NULL,
+  display_label   TEXT NOT NULL,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  visible         INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (module_code, dict_name, field_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcdd_module_dict ON module_code_dict_display (module_code, dict_name);

@@ -56,9 +56,27 @@
             <td
               v-for="col in visibleColumns"
               :key="col"
-              :class="cellClass(col)"
+              :class="cellClass(row, col)"
             >
-              <template v-if="isTruncatable(col)">
+              <template v-if="isLinkCell(row, col)">
+                <div
+                  class="cell-inner cell-link"
+                  role="button"
+                  tabindex="0"
+                  title="点击查看码值表"
+                  @click.stop="openCodeValueLookup(row, col)"
+                  @keydown.enter.prevent="openCodeValueLookup(row, col)"
+                >
+                  <span
+                    class="cell-link-text"
+                    :class="{ 'cell-desc': isDesc(col), 'cell-keyword': isKeywordHighlight(col) }"
+                    v-html="isKeywordHighlight(col) ? renderCellHtml(row, col) || '—' : escapeCellHtml(cellText(row, col)) || '—'"
+                  />
+                  <span class="link-icon" aria-hidden="true">🔗</span>
+                </div>
+              </template>
+
+              <template v-else-if="isTruncatable(col)">
                 <TruncatableCell
                   :ref="(el) => setCellRef(cellId(rowIdx, col), el)"
                   :text="cellText(row, col)"
@@ -145,20 +163,33 @@
     </Teleport>
 
     <div class="copy-toast" :class="{ show: toastVisible }">已复制</div>
+
+    <CodeValueLookupModal
+      v-if="codeValueModal"
+      :module-code="codeValueModal.moduleCode"
+      :dict-name="codeValueModal.dictName"
+      :source-text="codeValueModal.sourceText"
+      :parse-error="codeValueModal.parseError"
+      @close="closeCodeValueModal"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import TruncatableCell from './TruncatableCell.vue';
+import CodeValueLookupModal from './CodeValueLookupModal.vue';
 import {
   PAGE_SIZE,
+  ROW_LINK_COLUMNS_KEY,
+  ROW_MODULE_CODE_KEY,
   buildPageList,
   copyText,
   exportRowsCsv,
   highlightKeyword,
   paginateRows,
 } from '../../composables/useDynamicTable.js';
+import { extractDictNameFromCellText } from '../../utils/codeValueDictName.js';
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -181,6 +212,7 @@ const colWidths = ref({});
 const scrollRef = ref(null);
 const popoverRef = ref(null);
 const cellRefs = new Map();
+const codeValueModal = ref(null);
 let resizing = null;
 
 const displayCols = computed(() => props.columnMeta.displayCols || []);
@@ -203,6 +235,7 @@ watch(
   () => {
     currentPage.value = 1;
     closePopover();
+    closeCodeValueModal();
     extraColsVisible.value = false;
     cellRefs.clear();
   }
@@ -216,10 +249,59 @@ function isColHidden(col) {
   return !extraColsVisible.value && secondaryCols.value.includes(col);
 }
 
-function cellClass(col) {
+function cellClass(row, col) {
   return {
     'col-hidden': isColHidden(col),
-    truncatable: isTruncatable(col),
+    truncatable: isTruncatable(col) && !isLinkCell(row, col),
+    'has-link': isLinkCell(row, col),
+  };
+}
+
+function isLinkCell(row, col) {
+  const links = row[ROW_LINK_COLUMNS_KEY];
+  return Array.isArray(links) && links.includes(col);
+}
+
+function escapeCellHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function closeCodeValueModal() {
+  codeValueModal.value = null;
+}
+
+function openCodeValueLookup(row, col) {
+  closePopover();
+  const sourceText = cellText(row, col);
+  const moduleCode = row[ROW_MODULE_CODE_KEY] || '';
+  const dictName = extractDictNameFromCellText(sourceText);
+
+  if (!moduleCode) {
+    codeValueModal.value = {
+      moduleCode: '',
+      dictName: '',
+      sourceText,
+      parseError: '无法确定所属模块，无法查询码值',
+    };
+    return;
+  }
+
+  if (!dictName) {
+    codeValueModal.value = {
+      moduleCode,
+      dictName: '',
+      sourceText,
+      parseError: '无法从字段内容识别码表名称（需包含「详见附录A1」前缀）',
+    };
+    return;
+  }
+
+  codeValueModal.value = {
+    moduleCode,
+    dictName,
+    sourceText,
+    parseError: '',
   };
 }
 
@@ -361,12 +443,14 @@ async function copyPopover() {
 function toggleExtraCols() {
   extraColsVisible.value = !extraColsVisible.value;
   closePopover();
+  closeCodeValueModal();
 }
 
 function goToPage(page) {
   if (page < 1 || page > totalPages.value) return;
   currentPage.value = page;
   closePopover();
+  closeCodeValueModal();
   emit('page-change', page);
   scrollRef.value?.scrollTo({ top: 0 });
 }
@@ -431,10 +515,38 @@ onUnmounted(() => {
   window.removeEventListener('resize', onWindowChange);
   scrollRef.value?.removeEventListener('scroll', onWindowChange);
   closePopover();
+  closeCodeValueModal();
 });
 </script>
 
 <style scoped>
+.cell-link {
+  position: relative;
+  padding-right: 24px;
+  cursor: pointer;
+}
+
+.cell-link:hover .cell-link-text {
+  color: #2563eb;
+}
+
+.cell-link-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-icon {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: #2563eb;
+  pointer-events: none;
+}
+
 .cell-group {
   font-weight: 500;
   display: -webkit-box;

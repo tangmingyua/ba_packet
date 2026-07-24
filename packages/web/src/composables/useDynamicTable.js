@@ -109,7 +109,12 @@ export function mergeFieldMappingOrdersByVersion(ordersByVersion) {
 export function mergeFieldMappingDefaultDisplayByVersion(defaultDisplayByVersion) {
   return mergeFieldMappingDefaultDisplayByVersionFromUtil(defaultDisplayByVersion);
 }
-const SKIP_PAYLOAD_KEYS = new Set(['subtype', 'version']);
+const SKIP_PAYLOAD_KEYS = new Set(['subtype', 'version', '__has_links']);
+
+/** 行元数据：主类模块 code（搜索查码值用） */
+export const ROW_MODULE_CODE_KEY = '$moduleCode';
+/** 行元数据：可点击查码值的 Excel 列名列表 */
+export const ROW_LINK_COLUMNS_KEY = '$linkColumns';
 
 function resolveLabelsForCodes(codeGroups, allKeys) {
   const labels = [];
@@ -178,6 +183,33 @@ export function itemToDisplayRow(item, report, block, mode) {
       row[label] = val != null ? String(val) : '';
     }
   }
+
+  const rawLinkFields = payload.__has_links;
+  const linkFields = Array.isArray(rawLinkFields)
+    ? rawLinkFields
+    : typeof rawLinkFields === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(rawLinkFields);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  const linkColumns = [];
+  const linkSeen = new Set();
+  for (const fieldKey of linkFields) {
+    const key = String(fieldKey || '').trim();
+    if (!key) continue;
+    const label = col(key);
+    if (label && !linkSeen.has(label)) {
+      linkColumns.push(label);
+      linkSeen.add(label);
+    }
+  }
+  row[ROW_MODULE_CODE_KEY] = item.moduleCode || report?.moduleCode || '';
+  row[ROW_LINK_COLUMNS_KEY] = linkColumns;
 
   return row;
 }

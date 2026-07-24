@@ -39,6 +39,16 @@
         type="button"
         role="tab"
         class="qa-module-tab"
+        :class="{ active: activeTab === 'codeValues' }"
+        :aria-selected="activeTab === 'codeValues'"
+        @click="setTab('codeValues')"
+      >
+        码值维护
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="qa-module-tab"
         :class="{ active: activeTab === 'formTemplate' }"
         :aria-selected="activeTab === 'formTemplate'"
         @click="setTab('formTemplate')"
@@ -854,6 +864,11 @@
       <StandardFieldsPanel @changed="refreshCatalog" />
     </div>
 
+    <!-- 标签：码值维护 -->
+    <div v-show="activeTab === 'codeValues'" class="tab-panel">
+      <CodeValuesPanel :modules="catalog.modules" />
+    </div>
+
     <!-- 标签：数据查看 -->
     <div v-show="activeTab === 'data'" class="tab-panel">
       <VersionDataPanel :catalog="catalog" :active="activeTab === 'data'" />
@@ -865,6 +880,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import StandardFieldsPanel from '../components/import/StandardFieldsPanel.vue';
+import CodeValuesPanel from '../components/import/CodeValuesPanel.vue';
 import VersionDataPanel from '../components/import/VersionDataPanel.vue';
 import MappingRowsTable from '../components/import/MappingRowsTable.vue';
 import { createMappingRow, toMappingPayload } from '../components/import/mapping-row.js';
@@ -890,7 +906,7 @@ import {
   upsertModule,
 } from '../api';
 
-const VALID_TABS = ['import', 'formTemplate', 'fillInstruction', 'subtypes', 'fields', 'data'];
+const VALID_TABS = ['import', 'formTemplate', 'fillInstruction', 'subtypes', 'fields', 'codeValues', 'data'];
 
 const route = useRoute();
 const router = useRouter();
