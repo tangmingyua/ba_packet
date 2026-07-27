@@ -53,6 +53,12 @@ import {
   updateDocumentReportMapping,
   listDocuments,
 } from './services/document-import.js';
+import {
+  deleteConversionScript,
+  getConversionScript,
+  importConversionScript,
+  listConversionScripts,
+} from './services/conversion-script-import.js';
 import { searchDocuments, getDocumentSearchHits } from './services/document-search.js';
 import {
   getDatasetStats,
@@ -538,6 +544,68 @@ app.put('/api/documents/:id/report-mapping', async (request, reply) => {
 app.delete('/api/documents/:id', async (request, reply) => {
   try {
     return deleteDocument(Number(request.params.id));
+  } catch (error) {
+    const msg = error.message || '删除失败';
+    if (msg.includes('不存在')) return reply.code(404).send({ message: msg });
+    return reply.code(400).send({ message: msg });
+  }
+});
+
+/** 转1104 脚本（SQL/TXT） */
+app.post('/api/conversion-script/import', async (request, reply) => {
+  let buffer = null;
+  let fileName = '';
+  let moduleCode = '';
+
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        buffer = await part.toBuffer();
+        fileName = part.filename || fileName;
+      } else if (part.fieldname === 'fileName') {
+        fileName = part.value || fileName;
+      } else if (part.fieldname === 'moduleCode') {
+        moduleCode = part.value || moduleCode;
+      }
+    }
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '解析上传内容失败' });
+  }
+
+  if (!buffer) {
+    return reply.code(400).send({ message: '请上传脚本文件' });
+  }
+
+  if (!String(moduleCode || '').trim()) {
+    return reply.code(400).send({ message: '请选择模块' });
+  }
+
+  try {
+    return importConversionScript(buffer, { fileName, moduleCode });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+app.get('/api/conversion-scripts', async (request) => {
+  const { moduleCode, reportCode } = request.query || {};
+  return {
+    items: listConversionScripts({
+      moduleCode: moduleCode ? String(moduleCode) : undefined,
+      reportCode: reportCode ? String(reportCode) : undefined,
+    }),
+  };
+});
+
+app.get('/api/conversion-scripts/:id', async (request, reply) => {
+  const item = getConversionScript(Number(request.params.id));
+  if (!item) return reply.code(404).send({ message: '脚本不存在' });
+  return item;
+});
+
+app.delete('/api/conversion-scripts/:id', async (request, reply) => {
+  try {
+    return deleteConversionScript(Number(request.params.id));
   } catch (error) {
     const msg = error.message || '删除失败';
     if (msg.includes('不存在')) return reply.code(404).send({ message: msg });

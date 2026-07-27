@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS form_template_cells (
 CREATE INDEX IF NOT EXISTS idx_ftc_template ON form_template_cells(template_id);
 CREATE INDEX IF NOT EXISTS idx_ftc_searchable ON form_template_cells(template_id, searchable);
 
+-- 转1104 SQL/TXT 脚本（一表通等模块）
+CREATE TABLE IF NOT EXISTS conversion_scripts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  module_code TEXT NOT NULL,
+  report_code TEXT NOT NULL,
+  version_label TEXT NOT NULL,
+  source_file_name TEXT NOT NULL,
+  file_hash TEXT,
+  script_text TEXT NOT NULL,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (module_code, report_code, version_label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_scripts_report ON conversion_scripts(report_code);
+CREATE INDEX IF NOT EXISTS idx_conversion_scripts_module ON conversion_scripts(module_code);
+
 -- 1104 合并填报说明 Word（按 G 表拆分存储）
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

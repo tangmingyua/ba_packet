@@ -252,6 +252,20 @@ textarea {
   justify-content: center;
 }
 
+.content-fill {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.content-fill > * {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 /* ========== Home search ========== */
 .home-center {
   width: 100%;

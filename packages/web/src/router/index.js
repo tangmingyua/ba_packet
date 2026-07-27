@@ -9,6 +9,7 @@ import FormTemplateView from '../views/FormTemplateView.vue';
 import FormTemplateSearchView from '../views/FormTemplateSearchView.vue';
 import DocumentView from '../views/DocumentView.vue';
 import DocumentSearchView from '../views/DocumentSearchView.vue';
+import ConversionScriptView from '../views/ConversionScriptView.vue';
 
 export default createRouter({
   history: createWebHashHistory(),
@@ -21,6 +22,12 @@ export default createRouter({
     { path: '/documents', name: 'documents', component: DocumentView },
     { path: '/documents/:id', name: 'documentDetail', component: DocumentView },
     { path: '/document-search', name: 'documentSearch', component: DocumentSearchView },
+    { path: '/conversion-scripts', name: 'conversionScripts', component: ConversionScriptView },
+    {
+      path: '/conversion-scripts/:id',
+      name: 'conversionScriptDetail',
+      component: ConversionScriptView,
+    },
     { path: '/fields', redirect: { path: '/import', query: { tab: 'fields' } } },
   ],
 });

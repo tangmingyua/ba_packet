@@ -83,6 +83,16 @@
           </span>
           说明搜索
         </router-link>
+
+        <router-link to="/conversion-scripts" class="nav-item" active-class="active">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+          </span>
+          转1104 脚本
+        </router-link>
       </nav>
 
       <div class="sidebar-footer">
@@ -105,7 +115,10 @@
         </div>
       </header>
 
-      <div class="content" :class="{ 'content-center': isHomeCenter }">
+      <div
+        class="content"
+        :class="{ 'content-center': isHomeCenter, 'content-fill': isFillPage }"
+      >
         <router-view @search-state="onSearchState" />
       </div>
     </main>
@@ -133,12 +146,19 @@ const isHomeCenter = computed(
   () => route.name === 'search' && !searchLayoutActive.value
 );
 
+const isFillPage = computed(() =>
+  route.name === 'conversionScripts' || route.name === 'conversionScriptDetail'
+);
+
 const pageTitle = computed(() => {
   if (route.name === 'import') return '资料导入';
   if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '1104 表样';
   if (route.name === 'formTemplateSearch') return '表样搜索（测试）';
   if (route.name === 'documents' || route.name === 'documentDetail') return '1104 填报说明';
   if (route.name === 'documentSearch') return '填报说明搜索';
+  if (route.name === 'conversionScripts' || route.name === 'conversionScriptDetail') {
+    return '转1104 脚本';
+  }
   if (route.name === 'search' && searchLayoutActive.value) {
     return searchPageTitle.value || '查询结果';
   }

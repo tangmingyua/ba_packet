@@ -69,6 +69,16 @@
         type="button"
         role="tab"
         class="qa-module-tab"
+        :class="{ active: activeTab === 'conversionScript' }"
+        :aria-selected="activeTab === 'conversionScript'"
+        @click="setTab('conversionScript')"
+      >
+        转1104 脚本
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="qa-module-tab"
         :class="{ active: activeTab === 'data' }"
         :aria-selected="activeTab === 'data'"
         @click="setTab('data')"
@@ -327,6 +337,110 @@
           </tbody>
         </table>
         <p v-else class="empty-cell">暂无表样，请上传表样 Excel</p>
+      </fieldset>
+    </div>
+
+    <!-- 标签：转1104 脚本 -->
+    <div v-show="activeTab === 'conversionScript'" class="tab-panel">
+      <p class="hint">
+        上传转 1104 SQL/TXT 脚本。须选择模块（与子类配置主类一致）。文件名格式为「表号_版本.sql/.txt」或「表号.sql/.txt」（无版本时记为
+        LASTEST）。同模块+表号+版本再次导入将覆盖。删除请在本页已导入列表中操作。
+      </p>
+      <fieldset class="form-section">
+        <legend>上传脚本</legend>
+        <div class="form-grid">
+          <label class="field">
+            <span class="label">模块 <span class="required">*</span></span>
+            <select v-model="conversionScriptModuleCode">
+              <option v-for="mod in conversionScriptModules" :key="mod.code" :value="mod.code">
+                {{ mod.name }}
+              </option>
+            </select>
+          </label>
+          <div class="field span-2">
+            <span class="label">脚本文件（.sql / .txt）</span>
+            <div
+              class="dropzone"
+              :class="{ active: conversionScriptDragging }"
+              @dragover.prevent="conversionScriptDragging = true"
+              @dragleave="conversionScriptDragging = false"
+              @drop.prevent="onConversionScriptDrop"
+            >
+              <p v-if="!conversionScriptFile">
+                拖拽文件到此处，或
+                <label class="file-link"
+                  >选择文件<input
+                    type="file"
+                    accept=".sql,.txt"
+                    hidden
+                    @change="onConversionScriptFile"
+                /></label>
+              </p>
+              <p v-else>
+                {{ conversionScriptFile.name }}
+                <button type="button" class="btn-link" @click="conversionScriptFile = null">清除</button>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!conversionScriptFile || !conversionScriptModuleCode || conversionScriptImporting"
+            @click="doConversionScriptImport"
+          >
+            {{ conversionScriptImporting ? '导入中...' : '导入脚本' }}
+          </button>
+          <button type="button" class="btn" :disabled="conversionScriptLoading" @click="refreshConversionScripts">
+            刷新列表
+          </button>
+          <router-link to="/conversion-scripts" class="btn">查询脚本</router-link>
+        </div>
+        <p
+          v-if="conversionScriptMessage"
+          class="feedback form-template-feedback"
+          :class="conversionScriptMessageType"
+        >
+          {{ conversionScriptMessage }}
+        </p>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>已导入脚本</legend>
+        <table v-if="conversionScripts.length" class="simple-table">
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>表号</th>
+              <th>文件名</th>
+              <th>版本</th>
+              <th>导入时间</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in conversionScripts" :key="item.id">
+              <td>{{ moduleNameByCode(item.moduleCode) }}</td>
+              <td>{{ item.reportCode }}</td>
+              <td>{{ item.sourceFileName }}</td>
+              <td>{{ item.versionLabel }}</td>
+              <td>{{ item.importedAt }}</td>
+              <td>
+                <router-link
+                  :to="{ name: 'conversionScriptDetail', params: { id: item.id } }"
+                  class="btn-link"
+                >
+                  查看
+                </router-link>
+                <button type="button" class="btn-link danger" @click="removeConversionScript(item)">
+                  删除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="empty-cell">暂无脚本，请上传 .sql 或 .txt 文件</p>
       </fieldset>
     </div>
 
@@ -929,17 +1043,29 @@ import {
   importDatasetExcel,
   importFormTemplateExcel,
   importFillInstructionDocument,
+  importConversionScriptFile,
   listDatasets,
   listFormTemplates,
+  listConversionScripts,
   listDocuments,
   deleteDocument,
+  deleteConversionScript,
   saveVersionMappings,
   updateSubtype,
   updateSubtypeVersion,
   upsertModule,
 } from '../api';
 
-const VALID_TABS = ['import', 'formTemplate', 'fillInstruction', 'subtypes', 'fields', 'codeValues', 'data'];
+const VALID_TABS = [
+  'import',
+  'formTemplate',
+  'fillInstruction',
+  'conversionScript',
+  'subtypes',
+  'fields',
+  'codeValues',
+  'data',
+];
 
 const route = useRoute();
 const router = useRouter();
@@ -1007,6 +1133,15 @@ const fillInstructionMessage = ref('');
 const fillInstructionMessageType = ref('');
 const fillInstructionImportItems = ref([]);
 const fillInstructions = ref([]);
+
+const conversionScriptFile = ref(null);
+const conversionScriptModuleCode = ref('YBT');
+const conversionScriptDragging = ref(false);
+const conversionScriptImporting = ref(false);
+const conversionScriptLoading = ref(false);
+const conversionScriptMessage = ref('');
+const conversionScriptMessageType = ref('');
+const conversionScripts = ref([]);
 
 const activeTab = ref(
   VALID_TABS.includes(route.query.tab) ? route.query.tab : 'import'
@@ -1182,6 +1317,22 @@ const filteredVersionOptions = computed(() => {
 
 const formTemplateModules = computed(() => catalog.value.modules || []);
 
+const conversionScriptModules = computed(() => catalog.value.modules || []);
+
+watch(
+  conversionScriptModules,
+  (mods) => {
+    if (!mods.length) {
+      conversionScriptModuleCode.value = '';
+      return;
+    }
+    if (!mods.some((m) => m.code === conversionScriptModuleCode.value)) {
+      conversionScriptModuleCode.value = mods.find((m) => m.code === 'YBT')?.code || mods[0].code;
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   formTemplateModules,
   (mods) => {
@@ -1250,6 +1401,10 @@ watch(activeSubtype, (st) => {
   subtypeCategoryEdit.value = st?.category || 'norm';
   subtypeModuleEdit.value = st?.moduleCode || catalog.value.modules[0]?.code || 'YBT';
 });
+
+function moduleNameByCode(code) {
+  return catalog.value.modules.find((m) => m.code === code)?.name || code || '—';
+}
 
 function statusLabel(status) {
   if (status === 'success') return '成功';
@@ -1733,11 +1888,69 @@ async function removeFillInstruction(item) {
   }
 }
 
+function onConversionScriptFile(e) {
+  conversionScriptFile.value = e.target.files?.[0] || null;
+}
+
+function onConversionScriptDrop(e) {
+  conversionScriptDragging.value = false;
+  const f = e.dataTransfer.files?.[0];
+  if (f) conversionScriptFile.value = f;
+}
+
+async function refreshConversionScripts() {
+  conversionScriptLoading.value = true;
+  try {
+    const { items } = await listConversionScripts();
+    conversionScripts.value = items || [];
+  } catch (e) {
+    conversionScriptMessageType.value = 'error';
+    conversionScriptMessage.value = e.message || '加载脚本列表失败';
+  } finally {
+    conversionScriptLoading.value = false;
+  }
+}
+
+async function doConversionScriptImport() {
+  if (!conversionScriptFile.value || !conversionScriptModuleCode.value) return;
+  conversionScriptImporting.value = true;
+  conversionScriptMessage.value = '';
+  try {
+    const result = await importConversionScriptFile(conversionScriptFile.value, {
+      moduleCode: conversionScriptModuleCode.value,
+    });
+    conversionScriptMessageType.value = 'success';
+    conversionScriptMessage.value = result.message || '导入成功';
+    conversionScriptFile.value = null;
+    await refreshConversionScripts();
+  } catch (e) {
+    conversionScriptMessageType.value = 'error';
+    conversionScriptMessage.value = e.message || '导入失败';
+  } finally {
+    conversionScriptImporting.value = false;
+  }
+}
+
+async function removeConversionScript(item) {
+  if (!item?.id) return;
+  if (!window.confirm(`确定删除脚本 ${item.sourceFileName}？`)) return;
+  try {
+    await deleteConversionScript(item.id);
+    conversionScriptMessageType.value = 'success';
+    conversionScriptMessage.value = `已删除 ${item.sourceFileName}`;
+    await refreshConversionScripts();
+  } catch (e) {
+    conversionScriptMessageType.value = 'error';
+    conversionScriptMessage.value = e.message || '删除失败';
+  }
+}
+
 onMounted(async () => {
   await refreshCatalog();
   await refreshDatasets();
   await refreshFormTemplates();
   await refreshFillInstructions();
+  await refreshConversionScripts();
 });
 </script>
 

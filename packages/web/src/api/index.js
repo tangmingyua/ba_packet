@@ -313,6 +313,41 @@ export function getDocumentSearchHitsApi(id, q, { hitsLimit } = {}) {
   return request(`/api/documents/${id}/search-hits?${query}`);
 }
 
+export async function importConversionScriptFile(file, { moduleCode } = {}) {
+  const form = new FormData();
+  form.append('file', file);
+  if (!moduleCode) {
+    throw new Error('请选择模块');
+  }
+  form.append('moduleCode', moduleCode);
+  const response = await fetch(`${getApiBase()}/api/conversion-script/import`, {
+    method: 'POST',
+    headers: withAuthHeaders(),
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '脚本导入失败');
+  }
+  return response.json();
+}
+
+export function listConversionScripts({ moduleCode, reportCode } = {}) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (reportCode) query.set('reportCode', String(reportCode));
+  const qs = query.toString();
+  return request(`/api/conversion-scripts${qs ? `?${qs}` : ''}`);
+}
+
+export function getConversionScript(id) {
+  return request(`/api/conversion-scripts/${id}`);
+}
+
+export function deleteConversionScript(id) {
+  return request(`/api/conversion-scripts/${id}`, { method: 'DELETE' });
+}
+
 /** @deprecated 兼容旧调用名 */
 export function getImportCatalog() {
   return getDatasetCatalog();
