@@ -206,7 +206,7 @@ describe('dataset import model', () => {
     assert.ok(catalog.standardFields.some((f) => f.code === 'question_desc'));
     assert.ok(catalog.standardFields.length >= 50);
     assert.ok(catalog.subtypes.some((s) => s.code === 'TO_EAST_FAQ'));
-    assert.equal(catalog.categories.length, 5);
+    assert.equal(catalog.categories.length, 6);
     const east = catalog.subtypes.find((s) => s.code === 'TO_EAST_FAQ');
     assert.equal(east.category, 'qa');
     assert.equal(east.categoryLabel, '答疑');

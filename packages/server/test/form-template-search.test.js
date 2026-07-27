@@ -56,7 +56,10 @@ describe('form-template-search', () => {
 
     tmpDir = await setupTestDb();
 
-    const imported = importFormTemplate(fs.readFileSync(SAMPLE), { fileName: 'G0100-logic_231.xls' });
+    const imported = importFormTemplate(fs.readFileSync(SAMPLE), {
+      fileName: 'G0100-logic_231.xls',
+      moduleCode: '1104',
+    });
 
     g0100Id = imported.id;
 
@@ -126,6 +129,19 @@ describe('form-template-search', () => {
     assert.ok(result.items.some((x) => x.reportCode === 'G0100'));
   });
 
+  it('searchFormTemplates 可按模块与表号/表名筛选', () => {
+    const byModule = searchFormTemplates('现金', { moduleCode: '1104' });
+    assert.ok(byModule.totalTemplates >= 1);
+    assert.ok(byModule.items.every((x) => x.moduleCode === '1104'));
+
+    const byReport = searchFormTemplates('现金', { reportQuery: 'G0100' });
+    assert.equal(byReport.totalTemplates, 1);
+    assert.equal(byReport.items[0].reportCode, 'G0100');
+
+    const miss = searchFormTemplates('现金', { reportQuery: 'NR01' });
+    assert.equal(miss.totalTemplates, 0);
+  });
+
   it('getFormTemplateSearchHits 表样名称命中返回 meta 项', () => {
     const hits = getFormTemplateSearchHits(g0100Id, '资产负债项目统计表');
     assert.ok(hits.hitCount >= 1);
@@ -168,7 +184,7 @@ describe('form-template-search', () => {
 
     );
 
-    importFormTemplate(buffer, { fileName: 'G0200-logic_241.xls' });
+    importFormTemplate(buffer, { fileName: 'G0200-logic_241.xls', moduleCode: '1104' });
 
     const result = searchFormTemplates('表一');
 

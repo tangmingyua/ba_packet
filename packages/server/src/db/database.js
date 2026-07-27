@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { MATERIAL_MODULES, MATERIAL_SUBTYPES } from '../config/import-catalog-static.js';
 import { STANDARD_FIELD_SEEDS } from './seed-standard-fields.js';
 import { backfillFormTemplateCells } from '../services/form-template-cells.js';
+import { backfillFormTemplateLayouts } from '../services/form-template-layout.js';
 import {
   decryptDbBuffer,
   encryptDbBuffer,
@@ -285,6 +286,14 @@ function ensureModuleSchema() {
     `UPDATE subtypes SET module_code = 'YBT'
      WHERE module_code IS NULL OR module_code = ''`
   );
+
+  run(`INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES ('IMAS', 'IMAS', 3, 1)`);
+  for (const table of ['form_templates', 'documents']) {
+    const cols = queryAll(`PRAGMA table_info(${table})`);
+    if (cols.some((c) => c.name === 'module_code')) {
+      run(`UPDATE ${table} SET module_code = 'IMAS' WHERE module_code = 'IMAS-NR'`);
+    }
+  }
 }
 
 function resolveSchemaPath() {
@@ -305,19 +314,63 @@ function ensureDocumentNodeIndicatorKeyColumn() {
   );
 }
 
+/** form_templates：导入时预计算的展示布局（方案 B） */
+function ensureFormTemplateLayoutColumn() {
+  const cols = queryAll('PRAGMA table_info(form_templates)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'layout_json')) {
+    run(`ALTER TABLE form_templates ADD COLUMN layout_json TEXT NOT NULL DEFAULT '{}'`);
+  }
+}
+
+/** form_templates：导入时选择的模块 */
+function ensureFormTemplateModuleColumn() {
+  const cols = queryAll('PRAGMA table_info(form_templates)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'module_code')) {
+    run(`ALTER TABLE form_templates ADD COLUMN module_code TEXT NOT NULL DEFAULT '1104'`);
+  }
+}
+
+/** documents / word_sources：Word 结构层导入扩展列 */
+function ensureWordImportSchema() {
+  const docCols = queryAll('PRAGMA table_info(documents)');
+  if (docCols.length) {
+    if (!docCols.some((c) => c.name === 'source_id')) {
+      run(`ALTER TABLE documents ADD COLUMN source_id INTEGER`);
+    }
+    if (!docCols.some((c) => c.name === 'block_start')) {
+      run(`ALTER TABLE documents ADD COLUMN block_start INTEGER`);
+    }
+    if (!docCols.some((c) => c.name === 'block_end')) {
+      run(`ALTER TABLE documents ADD COLUMN block_end INTEGER`);
+    }
+    if (!docCols.some((c) => c.name === 'split_mode')) {
+      run(`ALTER TABLE documents ADD COLUMN split_mode TEXT`);
+    }
+  }
+}
+
 /** 新模型：子类版本 / 映射 / datasets / data_records */
 function ensureDatasetModelSchema() {
   const schemaPath = resolveSchemaPath();
   const schema = fs.readFileSync(schemaPath, 'utf-8');
   // 已有库可能缺 indicator_key，须先于 schema 中的索引语句补齐
   ensureDocumentNodeIndicatorKeyColumn();
+  ensureFormTemplateLayoutColumn();
+  ensureFormTemplateModuleColumn();
+  ensureWordImportSchema();
   db.run(schema);
 
   ensureModuleSchema();
   ensureCategoryColumns();
   ensureFieldMappingDefaultDisplayColumn();
   ensureDocumentNodeIndicatorKeyColumn();
+  ensureFormTemplateLayoutColumn();
+  ensureFormTemplateModuleColumn();
+  ensureWordImportSchema();
   backfillFormTemplateCells();
+  backfillFormTemplateLayouts({ queryAll, run, saveDb });
 
   for (const f of STANDARD_FIELD_SEEDS) {
     run(

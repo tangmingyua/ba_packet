@@ -6,6 +6,7 @@ export const MATERIAL_MODULES = [
   { code: 'YBT', name: '一表通', sortOrder: 0 },
   { code: 'EAST', name: 'EAST', sortOrder: 1 },
   { code: '1104', name: '1104', sortOrder: 2 },
+  { code: 'IMAS', name: 'IMAS', sortOrder: 3 },
 ];
 
 export const MATERIAL_CATEGORIES = [

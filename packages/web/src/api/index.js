@@ -211,9 +211,13 @@ export async function importDatasetExcel(file, { versionIds = [], description = 
   return response.json();
 }
 
-export async function importFormTemplateExcel(file) {
+export async function importFormTemplateExcel(file, { moduleCode } = {}) {
   const form = new FormData();
   form.append('file', file);
+  if (!moduleCode) {
+    throw new Error('请选择模块');
+  }
+  form.append('moduleCode', moduleCode);
   const response = await fetch(`${getApiBase()}/api/form-template/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -238,9 +242,11 @@ export function deleteFormTemplate(id) {
   return request(`/api/form-templates/${id}`, { method: 'DELETE' });
 }
 
-export function searchFormTemplateCells(q, { maxTemplates } = {}) {
+export function searchFormTemplateCells(q, { maxTemplates, moduleCode, reportQuery } = {}) {
   const query = new URLSearchParams({ q: String(q) });
   if (maxTemplates != null) query.set('maxTemplates', String(maxTemplates));
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (reportQuery) query.set('reportQuery', String(reportQuery));
   return request(`/api/form-templates/search?${query}`);
 }
 

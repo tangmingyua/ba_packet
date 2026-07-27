@@ -3,7 +3,16 @@
  */
 
 /** 参与全文搜索的 node_kind（不含 doc_title，标题在 documents 表单独匹配） */
-export const SEARCHABLE_NODE_KINDS = ['part', 'body', 'general_item', 'section', 'indicator'];
+export const SEARCHABLE_NODE_KINDS = [
+  'part',
+  'body',
+  'general_item',
+  'section',
+  'indicator',
+  'heading',
+  'paragraph',
+  'placeholder',
+];
 
 export const NODE_KIND_LABELS = {
   part: '部分',
@@ -11,6 +20,9 @@ export const NODE_KIND_LABELS = {
   section: '分节',
   indicator: '指标',
   body: '正文',
+  heading: '标题',
+  paragraph: '段落',
+  placeholder: '表样占位',
   doc_title: '标题',
   document_code: '代号',
   document_title: '标题',

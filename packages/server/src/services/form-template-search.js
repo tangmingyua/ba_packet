@@ -3,6 +3,7 @@
  */
 import { queryAll, queryOne } from '../db/database.js';
 import { cellText } from './form-template-search-scope.js';
+import { inferFormTemplateModule } from '../config/form-template-catalog.js';
 
 const DEFAULT_HITS_PER_TEMPLATE = 30;
 const DEFAULT_MAX_TEMPLATES = 50;
@@ -84,16 +85,40 @@ function countTemplateMetaHits(template, keyword) {
   return buildTemplateMetaHits(template, keyword).length;
 }
 
+function normalizeFilterText(value) {
+  return String(value ?? '').trim();
+}
+
+function matchesTemplateFilters(template, filters = {}) {
+  const moduleCode = normalizeFilterText(filters.moduleCode);
+  const reportQuery = normalizeFilterText(filters.reportQuery).toLowerCase();
+
+  if (moduleCode) {
+    const mod = template.module_code || inferFormTemplateModule(template.report_code);
+    if (mod !== moduleCode) return false;
+  }
+
+  if (reportQuery) {
+    const code = String(template.report_code || '').toLowerCase();
+    const title = String(template.report_title || '').toLowerCase();
+    if (!code.includes(reportQuery) && !title.includes(reportQuery)) return false;
+  }
+
+  return true;
+}
+
 /**
  * 阶段 1：按表样聚合命中数（不含具体坐标）
  * @param {string} keyword
- * @param {{ maxTemplates?: number }} [options]
+ * @param {{ maxTemplates?: number, moduleCode?: string, reportQuery?: string }} [options]
  */
 export function searchFormTemplates(keyword, options = {}) {
   const q = String(keyword ?? '').trim();
   if (!q) {
     return {
       keyword: q,
+      moduleCode: normalizeFilterText(options.moduleCode) || null,
+      reportQuery: normalizeFilterText(options.reportQuery) || null,
       totalTemplates: 0,
       totalHits: 0,
       items: [],
@@ -103,12 +128,16 @@ export function searchFormTemplates(keyword, options = {}) {
 
   const maxTemplates = options.maxTemplates ?? DEFAULT_MAX_TEMPLATES;
   const like = matchesKeywordSql(q);
+  const filters = {
+    moduleCode: options.moduleCode,
+    reportQuery: options.reportQuery,
+  };
 
   const templates = queryAll(
-    `SELECT id, report_code, report_title, version_label, sheet_name
+    `SELECT id, report_code, report_title, version_label, module_code, sheet_name
      FROM form_templates
      ORDER BY report_code, version_label`
-  );
+  ).filter((template) => matchesTemplateFilters(template, filters));
 
   const cellHitRows = queryAll(
     `SELECT template_id, COUNT(*) AS hit_count
@@ -138,6 +167,7 @@ export function searchFormTemplates(keyword, options = {}) {
       reportTitle: template.report_title || '',
       versionLabel: template.version_label,
       sheetName: template.sheet_name,
+      moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
       hitCount,
     });
 
@@ -146,6 +176,8 @@ export function searchFormTemplates(keyword, options = {}) {
 
   return {
     keyword: q,
+    moduleCode: normalizeFilterText(options.moduleCode) || null,
+    reportQuery: normalizeFilterText(options.reportQuery) || null,
     totalTemplates: items.length,
     totalHits,
     items,

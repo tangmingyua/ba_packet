@@ -11,6 +11,7 @@
               :rowspan="cellSpan(r, c)?.rowspan"
               :colspan="cellSpan(r, c)?.colspan"
               :class="cellClass(r, c)"
+              :style="cellStyle(r, c)"
               @click="onCellClick(r, c, cell)"
             >
               {{ formatCell(cell) }}
@@ -24,14 +25,20 @@
 
 <script setup>
 import { computed, ref } from 'vue';
-import { buildMergeRenderMap, formatMatrixCell } from '../../utils/formTemplateMatrix.js';
+import { formatMatrixCell } from '../../utils/formTemplateMatrix.js';
+import {
+  buildFormTemplateLayout,
+  buildMergeRenderMap,
+  getLayoutCellPresentation,
+} from '../../utils/formTemplateLayout.js';
 import { shouldSearchCell } from '../../utils/formTemplateSearchScope.js';
 import { isClickableIndicatorCell } from '../../utils/formTemplateIndicator.js';
 
 const props = defineProps({
   matrix: { type: Array, default: () => [] },
   merges: { type: Array, default: () => [] },
-  /** @deprecated 优先使用 highlightCells */
+  /** 导入时预计算的展示布局（方案 B） */
+  layout: { type: Object, default: null },
   highlightKeyword: { type: String, default: '' },
   highlightCells: { type: Array, default: () => [] },
   focusCell: { type: Object, default: null },
@@ -43,6 +50,10 @@ const emit = defineEmits(['cell-click']);
 
 const wrapRef = ref(null);
 const renderMap = computed(() => buildMergeRenderMap(props.merges));
+const effectiveLayout = computed(() => {
+  if (props.layout?.kinds?.length) return props.layout;
+  return buildFormTemplateLayout(props.matrix, props.merges);
+});
 
 const highlightSet = computed(() => {
   if (props.highlightCells?.length) {
@@ -74,27 +85,36 @@ function formatCell(value) {
   return formatMatrixCell(value);
 }
 
+function cellPresentation(r, c) {
+  return getLayoutCellPresentation(effectiveLayout.value, renderMap.value, r, c);
+}
+
 function cellClass(r, c) {
   const classes = [];
+  const { kind } = cellPresentation(r, c);
+  if (kind && kind !== 'empty') {
+    classes.push(`cell-kind-${kind}`);
+  }
   if (highlightSet.value.has(`${r},${c}`)) classes.push('cell-hit');
-  if (
-    props.focusCell &&
-    props.focusCell.row === r &&
-    props.focusCell.col === c
-  ) {
+  if (props.focusCell && props.focusCell.row === r && props.focusCell.col === c) {
     classes.push('cell-focus');
   }
-  if (
-    props.selectedCell &&
-    props.selectedCell.row === r &&
-    props.selectedCell.col === c
-  ) {
+  if (props.selectedCell && props.selectedCell.row === r && props.selectedCell.col === c) {
     classes.push('cell-selected');
   }
   if (props.enableIndicatorClick && isClickableIndicatorCell(props.matrix, r, c)) {
     classes.push('cell-clickable');
   }
   return classes;
+}
+
+function cellStyle(r, c) {
+  const { align } = cellPresentation(r, c);
+  const width = effectiveLayout.value.colWidths?.[c];
+  return {
+    textAlign: align,
+    ...(width ? { minWidth: `${width}px`, width: `${width}px` } : {}),
+  };
 }
 
 function onCellClick(r, c, cell) {
@@ -129,47 +149,60 @@ defineExpose({ scrollToCell });
 
 .form-template-matrix {
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
   width: max-content;
   min-width: 100%;
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 .form-template-matrix td {
   border: 1px solid #d1d5db;
-  padding: 4px 8px;
+  padding: 6px 10px;
   vertical-align: middle;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  line-height: 1.4;
-  min-width: 80px;
-  max-width: 140px;
-  overflow: hidden;
+  line-height: 1.45;
   color: var(--text);
   background: #fff;
 }
 
-/* A 列：允许换行，避免长文本溢出单元格 */
-.form-template-matrix td[data-col='0'] {
-  min-width: 48px;
-  max-width: 160px;
-  text-align: left;
-  white-space: pre-wrap;
+.cell-kind-title {
+  font-size: 16px;
+  font-weight: 600;
+  background: #eef2ff;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
-/* B/C 列项目名、子项：放宽宽度，避免又窄又高 */
-.form-template-matrix td[data-col='1'],
-.form-template-matrix td[data-col='2'] {
-  min-width: 200px;
-  max-width: 520px;
-}
-
-/* 表头前几行若跨多列，合并格同样按起始列应用上述规则 */
-
-.form-template-matrix tr:nth-child(-n + 6) td {
+.cell-kind-section {
+  font-size: 14px;
+  font-weight: 600;
   background: #f9fafb;
+}
+
+.cell-kind-header {
+  font-size: 12px;
+  font-weight: 600;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.cell-kind-seq {
   font-weight: 500;
+  color: #4b5563;
+}
+
+.cell-kind-label {
+  font-size: 13px;
+}
+
+.cell-kind-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-kind-empty {
+  background: #fafafa;
 }
 
 .form-template-matrix td.cell-hit {

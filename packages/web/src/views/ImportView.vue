@@ -53,7 +53,7 @@
         :aria-selected="activeTab === 'formTemplate'"
         @click="setTab('formTemplate')"
       >
-        1104 表样
+        表样导入
       </button>
       <button
         type="button"
@@ -229,16 +229,23 @@
       </div>
     </div>
 
-    <!-- 标签：1104 表样 -->
+    <!-- 标签：表样导入 -->
     <div v-show="activeTab === 'formTemplate'" class="tab-panel">
       <p class="hint">
-        上传 1104 汇总指标表样。支持单表（G0100-logic_231.xls）、多 Sheet 合集（logic_231.xlsx），以及
-        整合版（1104汇总总表-整合版-20260428.xlsx，Sheet 名如 G0100_231、S2400_201）。Sheet
-        名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本已存在时需先删除再导入。
+        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。仅导入 Sheet 名以字母开头且可解析表号的
+        Sheet（如 G0100_231、S2400_201、NR0100_231）；Sheet 名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
       </p>
       <fieldset class="form-section">
         <legend>上传表样 Excel</legend>
         <div class="form-grid">
+          <label class="field">
+            <span class="label">模块 <span class="required">*</span></span>
+            <select v-model="formTemplateModuleCode">
+              <option v-for="mod in formTemplateModules" :key="mod.code" :value="mod.code">
+                {{ mod.name }}
+              </option>
+            </select>
+          </label>
           <div class="field span-2">
             <span class="label">Excel 文件</span>
             <div
@@ -269,7 +276,7 @@
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="!formTemplateFile || formTemplateImporting"
+            :disabled="!formTemplateFile || !formTemplateModuleCode || formTemplateImporting"
             @click="doFormTemplateImport"
           >
             {{ formTemplateImporting ? '导入中...' : '导入表样' }}
@@ -283,7 +290,10 @@
           {{ formTemplateMessage }}
         </p>
         <ul v-if="formTemplateImportItems.length" class="import-result-list">
-          <li v-for="item in formTemplateImportItems" :key="item.id">
+          <li v-for="(item, idx) in formTemplateImportItems" :key="`${item.reportCode}-${item.versionLabel}-${idx}`">
+            <span class="import-action-tag" :class="item.importAction">
+              {{ item.importAction === 'replaced' ? '覆盖' : '新增' }}
+            </span>
             {{ item.reportCode }} / 版本 {{ item.versionLabel }}
             <span class="muted">（{{ item.rowCount }}×{{ item.colCount }}）</span>
           </li>
@@ -295,6 +305,7 @@
         <table v-if="formTemplates.length" class="simple-table">
           <thead>
             <tr>
+              <th>模块</th>
               <th>表号</th>
               <th>表名</th>
               <th>版本</th>
@@ -305,6 +316,7 @@
           </thead>
           <tbody>
             <tr v-for="item in formTemplates" :key="item.id">
+              <td>{{ item.moduleCode || '—' }}</td>
               <td>{{ item.reportCode }}</td>
               <td>{{ item.reportTitle }}</td>
               <td>{{ item.versionLabel }}</td>
@@ -321,8 +333,9 @@
     <!-- 标签：1104 填报说明 Word -->
     <div v-show="activeTab === 'fillInstruction'" class="tab-panel">
       <p class="hint">
-        上传合并填报说明 Word（.docx，含多张 G 表说明）。系统将按 G01、G02…拆分为多条记录入库；同
-        doc_code 再次导入将覆盖。版本字段暂留空。表样跳转说明将在后续步骤接入。
+        上传填报说明 Word（.docx）。系统自动识别 1104 合并说明或 IMAS 采集规范，按表号拆分为多条记录；
+        无法识别切分锚点时将整本导入为 1 条。Word 内表格不解析，显示「表样见 xx Excel 导入」。同 doc_code
+        再次导入将覆盖。
       </p>
       <fieldset class="form-section">
         <legend>上传填报说明 Word</legend>
@@ -661,7 +674,7 @@
           <span class="card-step">步骤 3</span>
           <div>
             <h3>版本设置与字段映射</h3>
-            <p>选定子类后新建版本，再配置 Excel 列到标准字段的映射。</p>
+            <p>选定子类与版本后，配置 Excel 列到标准字段的映射（映射保存在当前所选版本下）。</p>
           </div>
         </header>
 
@@ -717,6 +730,26 @@
             </div>
 
             <template v-if="activeSubtype">
+              <div v-if="activeSubtypeVersions.length" class="version-picker-bar">
+                <label class="field">
+                  <span class="label">当前配置版本</span>
+                  <select :value="activeVersionId ?? ''" @change="onActiveVersionChange">
+                    <option v-for="v in activeSubtypeVersions" :key="v.id" :value="v.id">
+                      {{ v.versionLabel }}（Sheet: {{ v.sheetName || '—' }} · 映射
+                      {{ v.mappingCount ?? 0 }}）
+                      {{ v.isDefault ? '· 默认' : '' }}
+                    </option>
+                  </select>
+                </label>
+                <p class="muted version-picker-hint">
+                  下方「版本设置」与「字段映射」均作用于所选版本；保存字段映射后，资料导入时按 Sheet
+                  名匹配该版本。
+                </p>
+              </div>
+              <p v-else class="muted version-picker-empty">
+                当前子类尚无版本，请先在下方「3.1 新建版本」创建。
+              </p>
+
               <div class="work-split">
                 <div class="work-panel">
                   <h4>3.1 新建版本</h4>
@@ -792,7 +825,7 @@
                       </button>
                     </div>
                   </template>
-                  <p v-else class="empty-panel soft">请先新建版本，或从步骤 2 总览中点「配置」。</p>
+                  <p v-else class="empty-panel soft">请先新建版本，或在上方选择要配置的版本。</p>
                 </div>
 
                 <div class="work-panel mapping-panel">
@@ -957,6 +990,7 @@ const importMessageType = ref('');
 const importResult = ref(null);
 
 const formTemplateFile = ref(null);
+const formTemplateModuleCode = ref('1104');
 const formTemplateDragging = ref(false);
 const formTemplateImporting = ref(false);
 const formTemplateLoading = ref(false);
@@ -1007,6 +1041,8 @@ const filterReadyOnly = ref(false);
 const activeSubtype = computed(() =>
   catalog.value.subtypes.find((s) => s.code === activeSubtypeCode.value)
 );
+
+const activeSubtypeVersions = computed(() => activeSubtype.value?.versions || []);
 
 const totalVersionCount = computed(() =>
   catalog.value.subtypes.reduce((n, st) => n + (st.versions?.length || 0), 0)
@@ -1144,6 +1180,22 @@ const filteredVersionOptions = computed(() => {
   return versionOptions.value.filter((o) => o.moduleCode === code);
 });
 
+const formTemplateModules = computed(() => catalog.value.modules || []);
+
+watch(
+  formTemplateModules,
+  (mods) => {
+    if (!mods.length) {
+      formTemplateModuleCode.value = '';
+      return;
+    }
+    if (!mods.some((m) => m.code === formTemplateModuleCode.value)) {
+      formTemplateModuleCode.value = mods.find((m) => m.code === '1104')?.code || mods[0].code;
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   importModuleTabs,
   (tabs) => {
@@ -1220,6 +1272,22 @@ async function refreshCatalog() {
   if (!activeSubtypeCode.value && catalog.value.subtypes.length) {
     activeSubtypeCode.value = catalog.value.subtypes[0].code;
   }
+
+  const st = catalog.value.subtypes.find((s) => s.code === activeSubtypeCode.value);
+  const versions = st?.versions || [];
+  if (!versions.length) {
+    if (activeVersionId.value) {
+      activeVersionId.value = null;
+      versionDetail.value = null;
+      mappingRows.value = [];
+    }
+    return;
+  }
+  const stillSelected = versions.some((v) => v.id === activeVersionId.value);
+  if (!stillSelected) {
+    const preferred = versions.find((v) => v.isDefault) || versions[0];
+    await selectVersion(preferred.id);
+  }
 }
 
 async function refreshDatasets() {
@@ -1233,10 +1301,26 @@ function selectSubtype(code) {
 }
 
 async function onSubtypeChange() {
-  activeVersionId.value = null;
-  versionDetail.value = null;
-  mappingRows.value = [];
   clearStepMessage(3);
+  const versions = activeSubtype.value?.versions || [];
+  if (!versions.length) {
+    activeVersionId.value = null;
+    versionDetail.value = null;
+    mappingRows.value = [];
+    return;
+  }
+  const preferred =
+    versions.find((v) => v.id === activeVersionId.value) ||
+    versions.find((v) => v.isDefault) ||
+    versions[0];
+  await selectVersion(preferred.id);
+}
+
+async function onActiveVersionChange(event) {
+  const id = Number(event.target.value);
+  if (!id || id === activeVersionId.value) return;
+  clearStepMessage(3);
+  await selectVersion(id);
 }
 
 async function selectVersion(id) {
@@ -1556,16 +1640,30 @@ async function refreshFormTemplates() {
 }
 
 async function doFormTemplateImport() {
-  if (!formTemplateFile.value) return;
+  if (!formTemplateFile.value || !formTemplateModuleCode.value) return;
   formTemplateImporting.value = true;
   formTemplateMessage.value = '';
   formTemplateImportItems.value = [];
   try {
-    const result = await importFormTemplateExcel(formTemplateFile.value);
+    const result = await importFormTemplateExcel(formTemplateFile.value, {
+      moduleCode: formTemplateModuleCode.value,
+    });
     formTemplateMessageType.value = 'success';
     formTemplateMessage.value = result.message || '导入成功';
-    formTemplateImportItems.value =
-      result.sheetCount > 1 && Array.isArray(result.items) ? result.items : [];
+    formTemplateImportItems.value = Array.isArray(result.items)
+      ? result.items
+      : result.reportCode
+        ? [
+            {
+              id: result.id,
+              reportCode: result.reportCode,
+              versionLabel: result.versionLabel,
+              rowCount: result.rowCount,
+              colCount: result.colCount,
+              importAction: result.importAction,
+            },
+          ]
+        : [];
     formTemplateFile.value = null;
     await refreshFormTemplates();
   } catch (e) {
@@ -1983,6 +2081,30 @@ onMounted(async () => {
   padding-bottom: 4px;
 }
 
+.version-picker-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+}
+
+.version-picker-bar .field {
+  min-width: 280px;
+  flex: 1;
+}
+
+.version-picker-hint,
+.version-picker-empty {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12px;
+}
+
 .work-split {
   display: grid;
   grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr);
@@ -2047,6 +2169,27 @@ onMounted(async () => {
 
 .import-result-list li {
   padding: 4px 0;
+}
+
+.import-action-tag {
+  display: inline-block;
+  min-width: 2.5em;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.import-action-tag.created {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.import-action-tag.replaced {
+  color: #9a3412;
+  background: #ffedd5;
 }
 
 .form-template-feedback {

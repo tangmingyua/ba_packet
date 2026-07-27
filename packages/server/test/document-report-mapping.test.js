@@ -10,9 +10,10 @@ import {
 } from '../src/config/document-report-mapping.js';
 
 describe('document-report-mapping', () => {
-  it('defaultReportCodeForDocCode 仅 G+数字可推导表样', () => {
+  it('defaultReportCodeForDocCode 仅 G+数字可推导表样，NR 恒等映射', () => {
     assert.equal(defaultReportCodeForDocCode('G01'), 'G0100');
     assert.equal(defaultReportCodeForDocCode('G53'), 'G5300');
+    assert.equal(defaultReportCodeForDocCode('NR01'), 'NR01');
     assert.equal(defaultReportCodeForDocCode('GF01'), null);
     assert.equal(defaultReportCodeForDocCode('G01_III'), null);
   });

@@ -1,12 +1,18 @@
 /**
  * 1104 表样 report_code ↔ 填报说明 doc_code 映射
- * 例：G0100 → G01，G5300 → G53
+ * 例：G0100 → G01，G5300 → G53，NR01 → NR01
  * GF01、G01_III 等附注/变体代号默认不自动映射表样
  */
 
 /** 仅 G01、G53 等纯 G+数字代号可推导默认表样 */
 export function defaultReportCodeForDocCode(docCode) {
-  const m = String(docCode || '').toUpperCase().match(/^G(\d+)$/);
+  const raw = String(docCode || '').trim().toUpperCase();
+  if (!raw) return null;
+
+  const nr = raw.match(/^(NR\d{2})$/);
+  if (nr) return nr[1];
+
+  const m = raw.match(/^G(\d+)$/);
   if (!m) return null;
   const n = parseInt(m[1], 10);
   if (!Number.isFinite(n)) return null;

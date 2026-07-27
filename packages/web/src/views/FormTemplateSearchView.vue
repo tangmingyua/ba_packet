@@ -14,6 +14,24 @@
           autocomplete="off"
         />
       </label>
+      <label class="search-field filter-field">
+        <span class="label">模块</span>
+        <select v-model="moduleCode">
+          <option value="">全部</option>
+          <option v-for="mod in moduleOptions" :key="mod.code" :value="mod.code">
+            {{ mod.name }}
+          </option>
+        </select>
+      </label>
+      <label class="search-field filter-field">
+        <span class="label">表号/表名</span>
+        <input
+          v-model="reportQuery"
+          type="search"
+          placeholder="如：G0100、NR01、资产负债"
+          autocomplete="off"
+        />
+      </label>
       <button type="submit" class="btn btn-primary" :disabled="searching || !keyword.trim()">
         {{ searching ? '搜索中…' : '搜索表样' }}
       </button>
@@ -21,10 +39,11 @@
 
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="searched && !result?.totalTemplates" class="feedback">
-      未在表样名称、表头或指标名/项目名列中找到「{{ lastKeyword }}」
+      未在{{ filterSummary }}表样名称、表头或指标名/项目名列中找到「{{ lastKeyword }}」
     </p>
     <p v-else-if="result?.totalTemplates" class="result-summary">
       共 {{ result.totalTemplates }} 张表样、{{ result.totalHits }} 处命中
+      <span v-if="filterSummary">（{{ filterSummary.trim() }}）</span>
       <span v-if="result.truncated">（结果已截断）</span>
     </p>
 
@@ -39,7 +58,9 @@
           <button type="button" class="hit-group-head" @click="selectTemplate(item)">
             <span class="code">{{ item.reportCode }}</span>
             <span class="title">{{ item.reportTitle }}</span>
-            <span class="meta">版本 {{ item.versionLabel }} · {{ item.hitCount }} 处命中</span>
+            <span class="meta">
+              {{ item.moduleCode || '1104' }} · 版本 {{ item.versionLabel }} · {{ item.hitCount }} 处命中
+            </span>
           </button>
           <ul v-if="selectedId === item.id" class="hit-rows">
             <li v-if="loadingHits" class="muted">加载命中…</li>
@@ -72,6 +93,7 @@
               ref="matrixRef"
               :matrix="detail.matrix"
               :merges="detail.merges"
+              :layout="detail.layout"
               :highlight-cells="highlightCells"
               :focus-cell="focusCell"
               :selected-cell="selectedCell"
@@ -126,8 +148,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import {
+  getDatasetCatalog,
   getDocumentByReport,
   getDocumentIndicator,
   getFormTemplate,
@@ -138,6 +161,11 @@ import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.v
 import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const keyword = ref('');
+const moduleCode = ref('');
+const reportQuery = ref('');
+const lastModuleCode = ref('');
+const lastReportQuery = ref('');
+const moduleOptions = ref([]);
 const lastKeyword = ref('');
 const searching = ref(false);
 const searched = ref(false);
@@ -170,6 +198,16 @@ const instructionOpen = computed(
     Boolean(instructionError.value) ||
     loadingInstruction.value
 );
+
+const filterSummary = computed(() => {
+  const parts = [];
+  if (lastModuleCode.value) {
+    const mod = moduleOptions.value.find((m) => m.code === lastModuleCode.value);
+    parts.push(`模块 ${mod?.name || lastModuleCode.value}`);
+  }
+  if (lastReportQuery.value) parts.push(`表号/表名「${lastReportQuery.value}」`);
+  return parts.length ? `${parts.join(' · ')} · ` : '';
+});
 
 const highlightCells = computed(() =>
   hitsForSelected.value
@@ -258,8 +296,13 @@ async function runSearch() {
   clearInstruction();
 
   try {
-    result.value = await searchFormTemplateCells(q);
+    result.value = await searchFormTemplateCells(q, {
+      moduleCode: moduleCode.value || undefined,
+      reportQuery: reportQuery.value.trim() || undefined,
+    });
     lastKeyword.value = q;
+    lastModuleCode.value = moduleCode.value;
+    lastReportQuery.value = reportQuery.value.trim();
     searched.value = true;
     if (result.value.items?.length) {
       await selectTemplate(result.value.items[0]);
@@ -307,6 +350,15 @@ async function loadDetail(id) {
     loadingDetail.value = false;
   }
 }
+
+onMounted(async () => {
+  try {
+    const catalog = await getDatasetCatalog();
+    moduleOptions.value = catalog.modules || [];
+  } catch {
+    moduleOptions.value = [];
+  }
+});
 </script>
 
 <style scoped>
@@ -345,6 +397,18 @@ async function loadDetail(id) {
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+.search-field select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.filter-field {
+  flex: 0 1 160px;
+  min-width: 140px;
 }
 
 .result-summary {

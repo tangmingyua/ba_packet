@@ -1,14 +1,12 @@
 /**
- * 1104 合并填报说明 Word 导入与查询
+ * 填报说明 Word 导入与查询（结构层 + Profile 切分）
  */
 import crypto from 'crypto';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { defaultReportCodeForDocCode, normalizeReportCodeInput } from '../config/document-report-mapping.js';
-import {
-  parseFillInstructionDocumentXml,
-  stripRomanIndicatorPrefix,
-} from './docx-fill-instruction-parser.js';
+import { stripRomanIndicatorPrefix } from './docx-fill-instruction-parser.js';
 import { readDocumentXmlFromDocx } from './docx-file.js';
+import { parseWordImportDocument, countTreeNodes } from './word-import-pipeline.js';
 
 const EMPTY_VERSION = '';
 
@@ -25,6 +23,10 @@ function mapDocumentRow(row) {
     moduleCode: row.module_code || '1104',
     sourceFileName: row.source_file_name || '',
     fileHash: row.file_hash || '',
+    sourceId: row.source_id == null ? null : Number(row.source_id),
+    blockStart: row.block_start == null ? null : Number(row.block_start),
+    blockEnd: row.block_end == null ? null : Number(row.block_end),
+    splitMode: row.split_mode || null,
     importedAt: row.imported_at,
   };
 }
@@ -115,31 +117,110 @@ function findDocument(docCode, versionLabel = EMPTY_VERSION) {
   );
 }
 
-function saveDocumentTree(parsedDoc, fileHash, fileName, existingId = null) {
+function saveWordSource(fileName, fileHash, profileId, splitMode, blockCount) {
+  run(
+    `INSERT INTO word_sources (source_file_name, file_hash, profile_id, split_mode, block_count)
+     VALUES (?, ?, ?, ?, ?)`,
+    [fileName, fileHash, profileId, splitMode, blockCount]
+  );
+  return Number(queryOne('SELECT last_insert_rowid() AS id').id);
+}
+
+function saveWordBlocks(sourceId, blocks) {
+  /** @type {Map<number, number>} */
+  const idBySort = new Map();
+  /** @type {Array<{ sortOrder: number, level: number }>} */
+  const headingStack = [];
+
+  for (const block of blocks) {
+    if (block.blockKind === 'heading') {
+      while (headingStack.length && headingStack[headingStack.length - 1].level >= block.level) {
+        headingStack.pop();
+      }
+    }
+
+    const parentId = headingStack.length
+      ? idBySort.get(headingStack[headingStack.length - 1].sortOrder)
+      : null;
+
+    run(
+      `INSERT INTO word_blocks (source_id, parent_id, block_kind, level, sort_order, text, meta_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sourceId,
+        parentId ?? null,
+        block.blockKind,
+        block.level ?? 0,
+        block.sortOrder,
+        block.text,
+        block.meta ? JSON.stringify(block.meta) : null,
+      ]
+    );
+    const rowId = Number(queryOne('SELECT last_insert_rowid() AS id').id);
+    idBySort.set(block.sortOrder, rowId);
+
+    if (block.blockKind === 'heading') {
+      headingStack.push({ sortOrder: block.sortOrder, level: block.level });
+    }
+  }
+}
+
+function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta, existingId = null) {
+  const {
+    sourceId = null,
+    blockStart = null,
+    blockEnd = null,
+    splitMode = null,
+  } = sourceMeta || {};
+
   if (existingId) {
     run('DELETE FROM document_nodes WHERE document_id = ?', [existingId]);
     run(
       `UPDATE documents SET
-         doc_title = ?, source_file_name = ?, file_hash = ?, imported_at = datetime('now')
+         doc_title = ?, source_file_name = ?, file_hash = ?, module_code = ?,
+         source_id = ?, block_start = ?, block_end = ?, split_mode = ?,
+         imported_at = datetime('now')
        WHERE id = ?`,
-      [parsedDoc.docTitle, fileName, fileHash, existingId]
+      [
+        parsedDoc.docTitle,
+        fileName,
+        fileHash,
+        moduleCode || '1104',
+        sourceId,
+        blockStart,
+        blockEnd,
+        splitMode,
+        existingId,
+      ]
     );
     insertNodeTree(existingId, parsedDoc.tree);
     upsertReportMapping(existingId, parsedDoc.docCode, { onImport: true });
-    return { id: Number(existingId), overwritten: true };
+    return { id: Number(existingId), overwritten: true, importAction: 'replaced' };
   }
 
   run(
     `INSERT INTO documents (
-       doc_code, doc_title, version_label, module_code, source_file_name, file_hash
-     ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [parsedDoc.docCode, parsedDoc.docTitle, EMPTY_VERSION, '1104', fileName, fileHash]
+       doc_code, doc_title, version_label, module_code, source_file_name, file_hash,
+       source_id, block_start, block_end, split_mode
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      parsedDoc.docCode,
+      parsedDoc.docTitle,
+      EMPTY_VERSION,
+      moduleCode || '1104',
+      fileName,
+      fileHash,
+      sourceId,
+      blockStart,
+      blockEnd,
+      splitMode,
+    ]
   );
   const inserted = queryOne('SELECT last_insert_rowid() AS id');
   const documentId = Number(inserted.id);
   insertNodeTree(documentId, parsedDoc.tree);
   upsertReportMapping(documentId, parsedDoc.docCode, { onImport: true });
-  return { id: documentId, overwritten: false };
+  return { id: documentId, overwritten: false, importAction: 'created' };
 }
 
 function buildTreeFromRows(rows) {
@@ -171,56 +252,96 @@ function buildTreeFromRows(rows) {
   return root;
 }
 
-function countTreeNodes(node) {
-  return 1 + (node.children || []).reduce((sum, c) => sum + countTreeNodes(c), 0);
-}
-
 /**
- * 导入合并填报说明 docx（按 G 表拆分为多条 document）
+ * 导入填报说明 docx（结构层 + Profile 切分；合并类自动切多条，失败则整本 1 条）
  */
 export function importFillInstructionDocument(buffer, options = {}) {
   const fileName = options.fileName || 'upload.docx';
   const fileHash = hashBuffer(buffer);
   const documentXml = readDocumentXmlFromDocx(buffer);
-  const { documents: parsedDocs } = parseFillInstructionDocumentXml(documentXml);
+  const parsed = parseWordImportDocument(documentXml, {
+    fileName,
+    profileId: options.profileId,
+  });
+
+  const sourceId = saveWordSource(
+    fileName,
+    fileHash,
+    parsed.profile.id,
+    parsed.splitMode,
+    parsed.blocks.length
+  );
+  saveWordBlocks(sourceId, parsed.blocks);
 
   const items = [];
   let imported = 0;
   let overwritten = 0;
+  let createdCount = 0;
+  let replacedCount = 0;
 
-  for (const doc of parsedDocs) {
+  for (const doc of parsed.documents) {
     const existing = findDocument(doc.docCode, EMPTY_VERSION);
-    const result = saveDocumentTree(doc, fileHash, fileName, existing?.id);
-    if (result.overwritten) overwritten += 1;
-    else imported += 1;
+    const result = saveDocumentTree(
+      doc,
+      fileHash,
+      fileName,
+      parsed.profile.moduleCode || '1104',
+      {
+        sourceId,
+        blockStart: doc.blockStart,
+        blockEnd: doc.blockEnd,
+        splitMode: doc.splitMode || parsed.splitMode,
+      },
+      existing?.id
+    );
 
+    if (result.overwritten) {
+      overwritten += 1;
+      replacedCount += 1;
+    } else {
+      imported += 1;
+      createdCount += 1;
+    }
+
+    const actionLabel = result.importAction === 'replaced' ? '覆盖' : '新增';
     items.push({
       ok: true,
       id: result.id,
       overwritten: result.overwritten,
+      importAction: result.importAction,
       docCode: doc.docCode,
       docTitle: doc.docTitle,
       reportCode: getMappedReportCode(result.id),
       suggestedReportCode: defaultReportCodeForDocCode(doc.docCode),
       nodeCount: countTreeNodes(doc.tree),
-      message: result.overwritten
-        ? `已覆盖填报说明 ${doc.docCode}（${doc.docTitle}）`
-        : `导入成功：${doc.docCode}（${doc.docTitle}）`,
+      blockCount: doc.blocks.length,
+      message: `${actionLabel}：${doc.docCode}（${doc.docTitle}）`,
     });
   }
 
   saveDb();
 
-  const message =
+  const fallbackHint = parsed.fallback
+    ? '未识别合并切分锚点，已整本导入为 1 条'
+    : '';
+  const countHint =
     items.length === 1
       ? items[0].message
-      : `共处理 ${items.length} 张表说明（新增 ${imported}，覆盖 ${overwritten}）`;
+      : `共处理 ${items.length} 张表说明（新增 ${createdCount}，覆盖 ${replacedCount}）`;
+  const message = [countHint, fallbackHint].filter(Boolean).join('；');
 
   const base = {
     ok: true,
+    sourceId,
+    profileId: parsed.profile.id,
+    profileLabel: parsed.profile.label,
+    splitMode: parsed.splitMode,
+    fallback: parsed.fallback,
     documentCount: items.length,
     imported,
     overwritten,
+    createdCount,
+    replacedCount,
     items,
     message,
   };

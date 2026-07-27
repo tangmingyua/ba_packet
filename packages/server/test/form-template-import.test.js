@@ -18,6 +18,7 @@ import {
   resolveFormTemplateVersionLabel,
   parseFormTemplateSheetMeta,
   parseFileNameMeta,
+  FORM_TEMPLATE_LATEST_VERSION,
   trimTrailingEmptyRows,
   trimTrailingEmptyCols,
   trimMatrixPadding,
@@ -70,6 +71,9 @@ function buildMultiSheetWorkbookWithSuffixNames() {
 function authHeaders(extra = {}) {
   return { authorization: `Bearer ${getApiToken()}`, ...extra };
 }
+
+const IMPORT_1104 = { moduleCode: '1104' };
+const IMPORT_NR = { moduleCode: 'IMAS' };
 
 describe('form-template-import', () => {
   let tmpDir;
@@ -198,14 +202,19 @@ describe('form-template-import', () => {
     }
   });
 
-  it('isFormTemplateReportCode 识别 G/S 表 Sheet 名', () => {
+  it('isFormTemplateReportCode 识别字母开头 Sheet 名', () => {
     assert.equal(isFormTemplateReportCode('G0100'), true);
     assert.equal(isFormTemplateReportCode('G0100_231'), true);
     assert.equal(isFormTemplateReportCode('G0100资产负债'), true);
     assert.equal(isFormTemplateReportCode('G4A00X2_241'), true);
     assert.equal(isFormTemplateReportCode('S2400_201'), true);
+    assert.equal(isFormTemplateReportCode('NR0100'), true);
+    assert.equal(isFormTemplateReportCode('NR0100_231'), true);
+    assert.equal(isFormTemplateReportCode('NR0100非利率衍生'), true);
+    assert.equal(isFormTemplateReportCode('ABC01_100'), true);
     assert.equal(isFormTemplateReportCode('说明'), false);
     assert.equal(isFormTemplateReportCode('目录'), false);
+    assert.equal(isFormTemplateReportCode('1G0100'), false);
   });
 
   it('parseFormTemplateSheetMeta 解析整合版 Sheet 名', () => {
@@ -233,7 +242,19 @@ describe('form-template-import', () => {
       reportCode: 'S2400',
       versionLabel: '201',
     });
-    assert.equal(resolveFormTemplateVersionLabel(parseFormTemplateSheetMeta('G4400X2'), null), '');
+    assert.deepEqual(parseFormTemplateSheetMeta('NR0100_231'), {
+      reportCode: 'NR0100',
+      versionLabel: '231',
+    });
+    assert.deepEqual(parseFormTemplateSheetMeta('NR0200'), {
+      reportCode: 'NR0200',
+      versionLabel: null,
+    });
+    assert.equal(resolveFormTemplateVersionLabel(parseFormTemplateSheetMeta('G4400X2'), null), FORM_TEMPLATE_LATEST_VERSION);
+    assert.equal(
+      resolveFormTemplateVersionLabel(parseFormTemplateSheetMeta('NR0200'), null),
+      FORM_TEMPLATE_LATEST_VERSION
+    );
     assert.equal(
       resolveFormTemplateVersionLabel(parseFormTemplateSheetMeta('G0100'), {
         reportCode: 'G0100',
@@ -244,29 +265,41 @@ describe('form-template-import', () => {
     assert.equal(parseFileNameMeta('1104汇总总表-整合版-20260428.xlsx'), null);
   });
 
-  it('importFormTemplate 入库且拒绝重复导入', () => {
+  it('importFormTemplate 未选模块时报错', () => {
     const buffer = readSample('G0100-logic_231.xls');
-    const first = importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' });
+    assert.throws(
+      () => importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' }),
+      /请选择模块/
+    );
+  });
+
+  it('importFormTemplate 同版本再次导入会覆盖', () => {
+    const buffer = readSample('G0100-logic_231.xls');
+    const first = importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
     assert.ok(first.id > 0);
+    assert.equal(first.importAction, 'created');
+    assert.equal(first.moduleCode, '1104');
 
     const g0100Items = listFormTemplates().filter(
       (x) => x.reportCode === 'G0100' && x.versionLabel === '231'
     );
     assert.equal(g0100Items.length, 1);
+    assert.equal(g0100Items[0].moduleCode, '1104');
 
-    assert.throws(
-      () => importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' }),
-      /已存在，请先删除/
-    );
+    const second = importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
+    assert.equal(second.importAction, 'replaced');
     assert.equal(
       listFormTemplates().filter((x) => x.reportCode === 'G0100' && x.versionLabel === '231').length,
       1
     );
+    assert.notEqual(second.id, first.id);
 
-    const detail = getFormTemplate(first.id);
+    const detail = getFormTemplate(second.id);
     assert.ok(Array.isArray(detail.matrix));
     assert.equal(detail.merges.length, 8);
-    assert.ok(countCellsForTemplate(first.id) > 0);
+    assert.ok(detail.layout?.kinds?.length === detail.rowCount);
+    assert.ok(countCellsForTemplate(second.id) > 0);
+    assert.equal(getFormTemplate(first.id), null);
   });
 
   it('parseFormTemplateWorkbook 多 Sheet 按表号导入', () => {
@@ -278,24 +311,79 @@ describe('form-template-import', () => {
       parsed.sheets.map((s) => s.reportCode).sort(),
       ['G0100', 'G0200']
     );
-    assert.equal(parsed.sheets[0].versionLabel, '');
-    assert.equal(parsed.sheets[1].versionLabel, '');
+    assert.equal(parsed.sheets[0].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+    assert.equal(parsed.sheets[1].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
     assert.equal(parsed.skipped.length, 0);
+  });
+
+  it('parseFormTemplateWorkbook 多 Sheet 含 NR 表一并导入', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['G01表'], ['1. 现金']]),
+      'G0100_231'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['NR表'], ['1. 项目']]),
+      'NR0100_231'
+    );
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'logic_231.xlsx' });
+
+    assert.equal(parsed.sheets.length, 2);
+    assert.deepEqual(
+      parsed.sheets.map((s) => s.reportCode).sort(),
+      ['G0100', 'NR0100']
+    );
+    assert.ok(parsed.sheets.every((s) => s.versionLabel === '231'));
+  });
+
+  it('parseFormTemplateWorkbook 字母开头 Sheet 可导入', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['自定义表'], ['1. 项目']]),
+      'ABC01_100'
+    );
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明页');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'custom.xlsx', ...IMPORT_1104 });
+    assert.equal(parsed.sheets.length, 1);
+    assert.equal(parsed.sheets[0].reportCode, 'ABC01');
+    assert.equal(parsed.sheets[0].versionLabel, '100');
   });
 
   it('importFormTemplate 多 Sheet 一次入库', () => {
     const buffer = buildMultiSheetWorkbook();
-    const result = importFormTemplate(buffer, { fileName: 'logic_888.xlsx' });
+    const result = importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
 
     assert.equal(result.sheetCount, 2);
     assert.equal(result.imported, 2);
     assert.equal(result.items.length, 2);
-    assert.ok(listFormTemplates().some((x) => x.reportCode === 'G0100' && x.versionLabel === ''));
-    assert.ok(listFormTemplates().some((x) => x.reportCode === 'G0200' && x.versionLabel === ''));
+    assert.ok(
+      listFormTemplates().some(
+        (x) => x.reportCode === 'G0100' && x.versionLabel === FORM_TEMPLATE_LATEST_VERSION
+      )
+    );
+    assert.ok(
+      listFormTemplates().some(
+        (x) => x.reportCode === 'G0200' && x.versionLabel === FORM_TEMPLATE_LATEST_VERSION
+      )
+    );
 
-    assert.throws(
-      () => importFormTemplate(buffer, { fileName: 'logic_888.xlsx' }),
-      /已存在，请先删除/
+    const second = importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
+    assert.equal(second.imported, 2);
+    assert.equal(second.replacedCount, 2);
+    assert.equal(second.createdCount, 0);
+    assert.equal(
+      listFormTemplates().filter(
+        (x) =>
+          (x.reportCode === 'G0100' || x.reportCode === 'G0200') &&
+          x.versionLabel === FORM_TEMPLATE_LATEST_VERSION
+      ).length,
+      2
     );
   });
 
@@ -308,7 +396,7 @@ describe('form-template-import', () => {
       ['G0300', 'G0400']
     );
 
-    const result = importFormTemplate(buffer, { fileName: 'logic_999.xlsx' });
+    const result = importFormTemplate(buffer, { fileName: 'logic_999.xlsx', ...IMPORT_1104 });
     assert.equal(result.imported, 2);
   });
 
@@ -322,10 +410,40 @@ describe('form-template-import', () => {
     );
     const byCode = Object.fromEntries(parsed.sheets.map((s) => [s.reportCode, s.versionLabel]));
     assert.equal(byCode.G0100, '777');
-    assert.equal(byCode.G0200, '');
+    assert.equal(byCode.G0200, FORM_TEMPLATE_LATEST_VERSION);
   });
 
-  it('POST /api/form-template/import', async () => {
+  it('NR 表无 _ 版本时导入为 LASTEST 且再次导入覆盖', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['NR表 v1'], ['1. 项目']]),
+      'NR0100'
+    );
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const first = importFormTemplate(buffer, { fileName: 'nr.xlsx', ...IMPORT_NR });
+    assert.equal(first.reportCode, 'NR0100');
+    assert.equal(first.versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+    assert.equal(first.moduleCode, 'IMAS');
+    assert.equal(first.importAction, 'created');
+
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb2,
+      XLSX.utils.aoa_to_sheet([['NR表 v2'], ['2. 更新']]),
+      'NR0100'
+    );
+    const buffer2 = XLSX.write(wb2, { type: 'buffer', bookType: 'xlsx' });
+    const second = importFormTemplate(buffer2, { fileName: 'nr.xlsx', ...IMPORT_NR });
+    assert.equal(second.importAction, 'replaced');
+    assert.equal(second.versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+
+    const items = listFormTemplates().filter((x) => x.reportCode === 'NR0100');
+    assert.equal(items.length, 1);
+    assert.equal(getFormTemplate(items[0].id).matrix[0][0], 'NR表 v2');
+  });
+
+  it('POST /api/form-template/import 须传 moduleCode', async () => {
     const buffer = readSample('G0200-logic_241.xls');
     const boundary = '----formtest';
     const body = Buffer.concat([
@@ -346,10 +464,51 @@ describe('form-template-import', () => {
       payload: body,
     });
 
+    assert.equal(res.statusCode, 400);
+    assert.match(res.json().message, /模块/);
+  });
+
+  it('POST /api/form-template/import', async () => {
+    const buffer = readSample('G0200-logic_241.xls');
+    const boundary = '----formtest';
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="moduleCode"\r\n\r\n1104\r\n`
+      ),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="G0200-logic_241.xls"\r\nContent-Type: application/vnd.ms-excel\r\n\r\n`
+      ),
+      buffer,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/form-template/import',
+      headers: {
+        ...authHeaders(),
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+
     assert.equal(res.statusCode, 200);
     const json = res.json();
     assert.equal(json.reportCode, 'G0200');
+    assert.equal(json.moduleCode, '1104');
     assert.equal(json.rowCount, 104);
+  });
+
+  it('GET /api/dataset/modules 含 IMAS 主类', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/dataset/modules',
+      headers: authHeaders(),
+    });
+    assert.equal(res.statusCode, 200);
+    const { items } = res.json();
+    assert.ok(items.some((m) => m.code === 'IMAS'));
+    assert.ok(items.some((m) => m.code === '1104'));
   });
 
   it('GET /api/form-templates 与 GET /api/form-templates/:id', async () => {

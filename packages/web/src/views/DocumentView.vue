@@ -5,7 +5,7 @@
     <div class="document-layout">
       <aside class="document-list">
         <div class="list-header">
-          <h3>1104 填报说明</h3>
+          <h3>填报说明</h3>
           <div class="list-header-links">
             <router-link to="/document-search" class="btn-link">搜索</router-link>
             <router-link to="/import?tab=fillInstruction" class="btn-link">去导入</router-link>
@@ -159,6 +159,9 @@ function kindLabel(kind) {
     section: '分节',
     indicator: '指标',
     body: '正文',
+    heading: '标题',
+    paragraph: '段落',
+    placeholder: '表样',
   };
   return map[kind] || kind;
 }

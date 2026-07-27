@@ -5,6 +5,7 @@ export const MATERIAL_CATEGORIES = [
   { code: 'qa', label: '答疑' },
   { code: 'logic', label: '逻辑' },
   { code: 'peer', label: '同业经验' },
+  { code: 'changelog', label: '变更记录' },
 ];
 
 export function getCategoryLabel(code) {

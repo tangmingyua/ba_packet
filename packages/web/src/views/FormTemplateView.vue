@@ -55,6 +55,7 @@
             <FormTemplateMatrix
               :matrix="detail.matrix"
               :merges="detail.merges"
+              :layout="detail.layout"
               :selected-cell="selectedCell"
               enable-indicator-click
               @cell-click="onIndicatorCellClick"

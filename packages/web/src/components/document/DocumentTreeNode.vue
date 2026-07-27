@@ -55,13 +55,16 @@ const props = defineProps({
   highlightNodeId: { type: Number, default: null },
 });
 
-const COLLAPSIBLE = new Set(['part', 'section']);
+const COLLAPSIBLE = new Set(['part', 'section', 'heading']);
 const KIND_LABELS = {
   part: '部分',
   general_item: '条目',
   section: '分节',
   indicator: '指标',
   body: '正文',
+  heading: '标题',
+  paragraph: '段落',
+  placeholder: '表样',
 };
 
 const collapsible = computed(() => COLLAPSIBLE.has(props.node.nodeKind));
@@ -78,7 +81,7 @@ const leafPartBody = computed(() => leafPartSplit.value?.body || '');
 const indent = computed(() => Math.min(props.depth * 16, 96));
 const kindLabel = computed(() => KIND_LABELS[props.node.nodeKind] || props.node.nodeKind);
 const showKindBadge = computed(() =>
-  ['part', 'section', 'indicator'].includes(props.node.nodeKind)
+  ['part', 'section', 'indicator', 'heading', 'placeholder'].includes(props.node.nodeKind)
 );
 
 const nodeRef = ref(null);
@@ -126,6 +129,7 @@ watch(
 function defaultExpanded(node) {
   if (node.nodeKind === 'part') return node.sortOrder === 1;
   if (node.nodeKind === 'section') return false;
+  if (node.nodeKind === 'heading') return node.level <= 2;
   return true;
 }
 </script>
@@ -227,6 +231,11 @@ function defaultExpanded(node) {
 
 .kind-indicator > .doc-tree-row .doc-tree-text {
   font-weight: 600;
+}
+
+.kind-placeholder > .doc-tree-row .doc-tree-text {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .kind-body > .doc-tree-row .doc-tree-text {

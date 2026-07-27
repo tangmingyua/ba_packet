@@ -5,8 +5,12 @@ import crypto from 'crypto';
 import path from 'path';
 import XLSX from 'xlsx';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
-import { matchFormTemplateFileName } from '../config/form-template-catalog.js';
+import { matchFormTemplateFileName, normalizeFormTemplateModuleCode } from '../config/form-template-catalog.js';
 import { replaceCellsForTemplate } from './form-template-cells.js';
+import { buildFormTemplateLayout, parseFormTemplateLayoutJson } from './form-template-layout.js';
+
+/** Sheet/文件名均无「_数字」版本时使用的默认版本（表示最新，再次导入同表号会覆盖） */
+export const FORM_TEMPLATE_LATEST_VERSION = 'LASTEST';
 
 function hashBuffer(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -47,7 +51,7 @@ export function parseFileNameMeta(fileName) {
   return null;
 }
 
-/** Sheet/文件名均无版本时留空；仅单表文件且 Sheet 表号一致时沿用文件名版本 */
+/** Sheet/文件名均无「_数字」版本时用 LASTEST；单表文件名 logic_231 且表号一致时仍沿用文件名版本 */
 export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
   if (sheetMeta?.versionLabel) return sheetMeta.versionLabel;
   if (
@@ -57,37 +61,41 @@ export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
   ) {
     return fileMeta.versionLabel;
   }
-  return '';
+  return FORM_TEMPLATE_LATEST_VERSION;
 }
+
+/** Sheet 名以字母开头即可作为表样 Sheet */
+const FORM_TEMPLATE_SHEET_LETTER_START_RE = /^[A-Za-z]/;
+/** 表号段：字母开头 + 字母数字，如 G0100、S2400、NR0100 */
+const FORM_TEMPLATE_REPORT_CODE_RE = '([A-Za-z][A-Za-z0-9]*)';
 
 /**
  * 从 Sheet 名解析表号与版本
- * 例：G0100_231、G0101a_231、G4A00X2_241、G4400X2、G1700-221（非最新）、S2400_201
+ * 例：G0100_231、G0101a_231、NR0100_231、ABC01_100
  * @returns {null | { reportCode: string, versionLabel: string | null }}
  */
 export function parseFormTemplateSheetMeta(sheetName) {
   let t = String(sheetName || '').trim();
-  if (!/^[GS]/i.test(t)) return null;
+  if (!FORM_TEMPLATE_SHEET_LETTER_START_RE.test(t)) return null;
 
   t = t.replace(/（[^）]*）$/g, '').trim();
 
-  const dash = t.match(/^([GS][A-Za-z0-9]+)-(\d+)$/i);
+  const dash = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}-(\\d+)$`, 'i'));
   if (dash) {
     return { reportCode: dash[1].toUpperCase(), versionLabel: dash[2] };
   }
 
-  const under = t.match(/^([GS][A-Za-z0-9]+)_(\d+)$/i);
+  const under = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}_(\\d+)$`, 'i'));
   if (under) {
     return { reportCode: under[1].toUpperCase(), versionLabel: under[2] };
   }
 
-  const codeOnly = t.match(/^([GS][A-Za-z0-9]+)$/i);
+  const codeOnly = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}$`, 'i'));
   if (codeOnly) {
     return { reportCode: codeOnly[1].toUpperCase(), versionLabel: null };
   }
 
-  // logic 合集旧格式：G0100资产负债、G0200衍生产品
-  const legacyPrefix = t.match(/^([GS]\d+[a-zA-Z]?)/i);
+  const legacyPrefix = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}`, 'i'));
   if (legacyPrefix) {
     return { reportCode: legacyPrefix[1].toUpperCase(), versionLabel: null };
   }
@@ -100,7 +108,7 @@ export function parseFormTemplateReportCodeFromSheetName(name) {
   return parseFormTemplateSheetMeta(name)?.reportCode || null;
 }
 
-/** Sheet 名是否为表样 Sheet（G/S 开头且可解析表号） */
+/** Sheet 名是否为表样 Sheet（字母开头且可解析表号） */
 export function isFormTemplateReportCode(name) {
   return Boolean(parseFormTemplateSheetMeta(name));
 }
@@ -108,7 +116,7 @@ export function isFormTemplateReportCode(name) {
 function resolveImportSheetNames(workbook, fileMeta) {
   const templateSheets = workbook.SheetNames.filter((n) => isFormTemplateReportCode(n));
 
-  if (templateSheets.length > 1) {
+  if (templateSheets.length > 0) {
     return templateSheets;
   }
 
@@ -121,13 +129,9 @@ function resolveImportSheetNames(workbook, fileMeta) {
       );
     });
     if (matched) return [matched];
-    if (templateSheets.length === 1) return templateSheets;
-    return [workbook.SheetNames[0]];
   }
 
-  if (templateSheets.length) return templateSheets;
-
-  return [workbook.SheetNames[0]];
+  return [];
 }
 
 function normalizeCellValue(value) {
@@ -303,6 +307,8 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
       ? options.versionLabel
       : resolveFormTemplateVersionLabel(sheetMeta, options.fileMeta);
 
+  const layout = buildFormTemplateLayout(matrix, trimmedMerges);
+
   return {
     reportCode,
     reportTitle,
@@ -310,11 +316,12 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     sheetName,
     fileName: options.fileName || '',
     fileNameMatched: Boolean(options.fileNameMatched),
-    module: options.module || '1104',
+    module: options.moduleCode || options.module || '1104',
     rowCount,
     colCount,
     matrix,
     merges: trimmedMerges,
+    layout,
   };
 }
 
@@ -326,6 +333,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
  */
 export function parseFormTemplateWorkbook(buffer, options = {}) {
   const fileName = options.fileName || 'upload.xls';
+  const moduleCode = normalizeFormTemplateModuleCode(options.moduleCode || options.module);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   if (!workbook.SheetNames.length) {
     throw new Error('工作簿无 Sheet');
@@ -352,7 +360,7 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
       reportCode: sheetMeta?.reportCode || fileMeta.reportCode || null,
       fileMeta,
       fileNameMatched: nameMatch.matched,
-      module: nameMatch.module,
+      module: moduleCode,
     });
 
     if (parsed.rowCount === 0 && parsed.colCount === 0) {
@@ -393,6 +401,7 @@ function mapFormTemplateRow(row) {
     reportCode: row.report_code,
     reportTitle: row.report_title || '',
     versionLabel: row.version_label,
+    moduleCode: row.module_code || '1104',
     sheetName: row.sheet_name,
     sourceFileName: row.source_file_name || '',
     fileHash: row.file_hash || '',
@@ -404,7 +413,7 @@ function mapFormTemplateRow(row) {
 
 export function listFormTemplates() {
   const rows = queryAll(
-    `SELECT id, report_code, report_title, version_label, sheet_name,
+    `SELECT id, report_code, report_title, version_label, module_code, sheet_name,
             source_file_name, file_hash, row_count, col_count, imported_at
      FROM form_templates
      ORDER BY report_code, version_label`
@@ -416,14 +425,24 @@ export function getFormTemplate(id) {
   const row = queryOne('SELECT * FROM form_templates WHERE id = ?', [Number(id)]);
   if (!row) return null;
 
+  const matrix = JSON.parse(row.matrix_json || '[]');
+  const merges = JSON.parse(row.merges_json || '[]');
+
   return {
     ...mapFormTemplateRow(row),
-    matrix: JSON.parse(row.matrix_json || '[]'),
-    merges: JSON.parse(row.merges_json || '[]'),
+    matrix,
+    merges,
+    layout: parseFormTemplateLayoutJson(row.layout_json, matrix, merges),
   };
 }
 
 /** 删除表样（级联删除 form_template_cells） */
+function removeFormTemplateRecord(templateId) {
+  const id = Number(templateId);
+  run('DELETE FROM form_template_cells WHERE template_id = ?', [id]);
+  run('DELETE FROM form_templates WHERE id = ?', [id]);
+}
+
 export function deleteFormTemplate(id) {
   const templateId = Number(id);
   if (!Number.isFinite(templateId) || templateId <= 0) {
@@ -436,8 +455,7 @@ export function deleteFormTemplate(id) {
   );
   if (!existing) throw new Error('表样不存在');
 
-  run('DELETE FROM form_template_cells WHERE template_id = ?', [templateId]);
-  run('DELETE FROM form_templates WHERE id = ?', [templateId]);
+  removeFormTemplateRecord(templateId);
   saveDb();
 
   return {
@@ -451,7 +469,9 @@ export function deleteFormTemplate(id) {
 
 function formatVersionLabel(versionLabel) {
   const v = String(versionLabel ?? '').trim();
-  return v || '（无）';
+  if (!v) return '（无）';
+  if (v === FORM_TEMPLATE_LATEST_VERSION) return 'LASTEST';
+  return v;
 }
 
 function buildImportMessage(items, skipped) {
@@ -459,7 +479,12 @@ function buildImportMessage(items, skipped) {
     return items[0].message;
   }
 
-  let msg = `共导入 ${items.length} 张表样`;
+  const created = items.filter((i) => i.importAction === 'created').length;
+  const replaced = items.filter((i) => i.importAction === 'replaced').length;
+  const parts = [];
+  if (created) parts.push(`新增 ${created} 张`);
+  if (replaced) parts.push(`覆盖 ${replaced} 张`);
+  let msg = parts.length ? parts.join('，') : `共导入 ${items.length} 张表样`;
   if (skipped.length) msg += `，跳过 ${skipped.length} 个 Sheet`;
   return msg;
 }
@@ -473,35 +498,33 @@ function findExistingFormTemplate(reportCode, versionLabel) {
   );
 }
 
-function assertImportable(parsed) {
-  const existing = findExistingFormTemplate(parsed.reportCode, parsed.versionLabel);
-  if (!existing) return;
-
-  throw new Error(
-    `表样 ${parsed.reportCode} / 版本 ${formatVersionLabel(parsed.versionLabel)} 已存在，请先删除当前版本后再导入`
-  );
-}
-
 function importParsedFormTemplate(parsed, fileHash) {
-  assertImportable(parsed);
+  const existing = findExistingFormTemplate(parsed.reportCode, parsed.versionLabel);
+  const importAction = existing ? 'replaced' : 'created';
+  if (existing) {
+    removeFormTemplateRecord(existing.id);
+  }
 
   const matrixJson = JSON.stringify(parsed.matrix);
   const mergesJson = JSON.stringify(parsed.merges);
+  const layoutJson = JSON.stringify(parsed.layout || buildFormTemplateLayout(parsed.matrix, parsed.merges));
 
   run(
     `INSERT INTO form_templates (
-       report_code, report_title, version_label, sheet_name, source_file_name, file_hash,
-       matrix_json, merges_json, row_count, col_count
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       report_code, report_title, version_label, module_code, sheet_name, source_file_name, file_hash,
+       matrix_json, merges_json, layout_json, row_count, col_count
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       parsed.reportCode,
       parsed.reportTitle,
       parsed.versionLabel,
+      parsed.module || '1104',
       parsed.sheetName,
       parsed.fileName,
       fileHash,
       matrixJson,
       mergesJson,
+      layoutJson,
       parsed.rowCount,
       parsed.colCount,
     ]
@@ -509,51 +532,52 @@ function importParsedFormTemplate(parsed, fileHash) {
   const inserted = queryOne('SELECT last_insert_rowid() AS id');
   replaceCellsForTemplate(inserted.id, parsed.matrix);
 
+  const actionLabel = importAction === 'replaced' ? '覆盖' : '新增';
+
   return {
     ok: true,
     id: Number(inserted.id),
     reportCode: parsed.reportCode,
     reportTitle: parsed.reportTitle,
     versionLabel: parsed.versionLabel,
+    moduleCode: parsed.module || '1104',
     sheetName: parsed.sheetName,
     rowCount: parsed.rowCount,
     colCount: parsed.colCount,
     mergeCount: parsed.merges.length,
     fileNameMatched: parsed.fileNameMatched,
-    message: `导入成功：${parsed.reportCode} / 版本 ${formatVersionLabel(parsed.versionLabel)}（${parsed.rowCount}×${parsed.colCount}）`,
+    importAction,
+    replacedId: existing ? Number(existing.id) : null,
+    message: `${actionLabel}：${parsed.reportCode} / 版本 ${formatVersionLabel(parsed.versionLabel)}（${parsed.rowCount}×${parsed.colCount}）`,
   };
 }
 
 /**
- * 导入表样并入库（同 report_code + version_label 不可重复；支持多 Sheet）
+ * 导入表样并入库（同 report_code + version_label 已存在则覆盖）
  */
 export function importFormTemplate(buffer, options = {}) {
-  const fileHash = hashBuffer(buffer);
-  const { sheets, skipped } = parseFormTemplateWorkbook(buffer, options);
-
-  const duplicates = sheets
-    .map((parsed) => {
-      const existing = findExistingFormTemplate(parsed.reportCode, parsed.versionLabel);
-      return existing ? parsed : null;
-    })
-    .filter(Boolean);
-
-  if (duplicates.length) {
-    const list = duplicates
-      .map((p) => `${p.reportCode} / 版本 ${formatVersionLabel(p.versionLabel)}`)
-      .join('、');
-    throw new Error(`以下表样版本已存在，请先删除后再导入：${list}`);
+  const moduleCode = normalizeFormTemplateModuleCode(options.moduleCode || options.module);
+  if (!moduleCode) {
+    throw new Error('请选择模块');
   }
+  const fileHash = hashBuffer(buffer);
+  const { sheets, skipped } = parseFormTemplateWorkbook(buffer, { ...options, moduleCode });
 
   const items = sheets.map((parsed) => importParsedFormTemplate(parsed, fileHash));
   saveDb();
 
   const message = buildImportMessage(items, skipped);
+  const createdCount = items.filter((i) => i.importAction === 'created').length;
+  const replacedCount = items.filter((i) => i.importAction === 'replaced').length;
 
   const result = {
     ok: true,
     sheetCount: sheets.length,
     imported: items.length,
+    createdCount,
+    replacedCount,
+    createdItems: items.filter((i) => i.importAction === 'created'),
+    replacedItems: items.filter((i) => i.importAction === 'replaced'),
     skipped: skipped.length,
     items,
     skippedSheets: skipped,

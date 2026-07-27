@@ -93,11 +93,13 @@ CREATE TABLE IF NOT EXISTS form_templates (
   report_code TEXT NOT NULL,
   report_title TEXT,
   version_label TEXT NOT NULL,
+  module_code TEXT NOT NULL DEFAULT '1104',
   sheet_name TEXT NOT NULL,
   source_file_name TEXT,
   file_hash TEXT,
   matrix_json TEXT NOT NULL,
   merges_json TEXT NOT NULL DEFAULT '[]',
+  layout_json TEXT NOT NULL DEFAULT '{}',
   row_count INTEGER NOT NULL DEFAULT 0,
   col_count INTEGER NOT NULL DEFAULT 0,
   imported_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -133,9 +135,39 @@ CREATE TABLE IF NOT EXISTS documents (
   module_code TEXT NOT NULL DEFAULT '1104',
   source_file_name TEXT,
   file_hash TEXT,
+  source_id INTEGER,
+  block_start INTEGER,
+  block_end INTEGER,
+  split_mode TEXT,
   imported_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (doc_code, version_label)
 );
+
+-- Word 物理文件与结构块（整文件块树）
+CREATE TABLE IF NOT EXISTS word_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_file_name TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  split_mode TEXT NOT NULL,
+  block_count INTEGER NOT NULL DEFAULT 0,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS word_blocks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL,
+  parent_id INTEGER,
+  block_kind TEXT NOT NULL,
+  level INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  meta_json TEXT,
+  FOREIGN KEY (source_id) REFERENCES word_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES word_blocks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_word_blocks_source ON word_blocks(source_id, sort_order);
 
 CREATE TABLE IF NOT EXISTS document_nodes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

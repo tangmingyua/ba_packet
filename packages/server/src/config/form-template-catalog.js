@@ -1,10 +1,8 @@
 /**
- * 1104 表样文件命名与模块注册（可扩展更多 G 表）
+ * 1104 表样文件命名规则（模块列表与子类配置主类共用 modules 表）
  */
 
-export const FORM_TEMPLATE_MODULES = [
-  { code: '1104', name: '1104', sortOrder: 0 },
-];
+import { listModules } from '../services/dataset-config.js';
 
 /** @type {{ pattern: RegExp, module: string, minHeaderRows?: number }[]} */
 export const FORM_TEMPLATE_RULES = [
@@ -38,4 +36,23 @@ export function matchFormTemplateFileName(fileName) {
     }
   }
   return { module: '1104', matched: false };
+}
+
+/** 由表号推断模块（无 module_code 时的兜底） */
+export function inferFormTemplateModule(reportCode) {
+  const code = String(reportCode || '').trim().toUpperCase();
+  if (/^NR\d/.test(code)) return 'IMAS';
+  if (/^(G|S)\d/.test(code)) return '1104';
+  return '1104';
+}
+
+/** 校验并规范化导入时选择的模块（须为子类配置中的主类） */
+export function normalizeFormTemplateModuleCode(code) {
+  const normalized = String(code ?? '').trim();
+  if (!normalized) return '';
+  const known = listModules().some((m) => m.code === normalized);
+  if (!known) {
+    throw new Error(`未知模块：${normalized}（请先在子类配置中添加主类）`);
+  }
+  return normalized;
 }
