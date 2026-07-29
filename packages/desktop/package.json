@@ -18,6 +18,8 @@
 
     "dist:win:portable": "npm run dist:win && node scripts/package-portable.js",
 
+    "dist:win:sfx": "npm run dist:win:portable && node scripts/package-sfx.js",
+
     "build:win": "scripts\\build-win.cmd",
 
     "dev:electron": "electron .",
