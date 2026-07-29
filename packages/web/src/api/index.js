@@ -40,16 +40,52 @@ export function getHealth() {
   return request('/api/health');
 }
 
-export function suggestItems(q, limit = 10, mode = 'aggregate', { categories } = {}) {
+export function suggestItems(q, limit = 10, mode = 'aggregate', { categories, moduleCode, subtypeCode } = {}) {
   const query = new URLSearchParams({ q, limit: String(limit), mode });
   if (categories?.length) query.set('categories', categories.join(','));
+  if (moduleCode) query.set('moduleCode', moduleCode);
+  if (subtypeCode) {
+    const code = Array.isArray(subtypeCode) ? subtypeCode[0] : String(subtypeCode).split(/[,，]/)[0];
+    if (code?.trim()) query.set('subtypeCode', code.trim());
+  }
   return request(`/api/suggest?${query}`);
 }
 
-export function searchRegulatory(q, mode = 'aggregate', { categories } = {}) {
+export function searchRegulatory(q, mode = 'aggregate', { categories, moduleCode, subtypeCode } = {}) {
   const query = new URLSearchParams({ q, mode });
   if (categories?.length) query.set('categories', categories.join(','));
+  if (moduleCode) query.set('moduleCode', moduleCode);
+  if (subtypeCode) {
+    const code = Array.isArray(subtypeCode) ? subtypeCode[0] : String(subtypeCode).split(/[,，]/)[0];
+    if (code) query.set('subtypeCode', code.trim());
+  }
   return request(`/api/search?${query}`);
+}
+
+export function getSearchableCategories(moduleCode) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', moduleCode);
+  const qs = query.toString();
+  return request(`/api/dataset/search-categories${qs ? `?${qs}` : ''}`);
+}
+
+export function getModuleCategoryStats(moduleCode) {
+  const query = new URLSearchParams({ moduleCode });
+  return request(`/api/dataset/module-category-stats?${query}`);
+}
+
+export function getModuleSubtypeStats(moduleCode, categories) {
+  const query = new URLSearchParams({ moduleCode });
+  if (categories?.length) query.set('categories', categories.join(','));
+  return request(`/api/dataset/module-subtype-stats?${query}`);
+}
+
+export function browseModuleCategory({ moduleCode, category, keyword, limit, offset } = {}) {
+  const query = new URLSearchParams({ moduleCode, category });
+  if (keyword) query.set('keyword', keyword);
+  if (limit != null) query.set('limit', String(limit));
+  if (offset != null) query.set('offset', String(offset));
+  return request(`/api/dataset/browse?${query}`);
 }
 
 export function getDatasetCatalog() {
@@ -170,10 +206,11 @@ export function getCodeValueSummary(moduleCode) {
   return request(`/api/dataset/code-values/summary?${query}`);
 }
 
-export async function importCodeValuesExcel(file, moduleCode) {
+export async function importCodeValuesExcel(file, moduleCode, { subtypeCode } = {}) {
   const form = new FormData();
   form.append('file', file);
   form.append('moduleCode', moduleCode);
+  if (subtypeCode) form.append('subtypeCode', subtypeCode);
   const response = await fetch(`${getApiBase()}/api/dataset/code-values/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -211,13 +248,14 @@ export async function importDatasetExcel(file, { versionIds = [], description = 
   return response.json();
 }
 
-export async function importFormTemplateExcel(file, { moduleCode } = {}) {
+export async function importFormTemplateExcel(file, { moduleCode, subtypeCode } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (!moduleCode) {
     throw new Error('请选择模块');
   }
   form.append('moduleCode', moduleCode);
+  if (subtypeCode) form.append('subtypeCode', subtypeCode);
   const response = await fetch(`${getApiBase()}/api/form-template/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -256,9 +294,11 @@ export function getFormTemplateSearchHits(id, q, { hitsLimit } = {}) {
   return request(`/api/form-templates/${id}/search-hits?${query}`);
 }
 
-export async function importFillInstructionDocument(file) {
+export async function importFillInstructionDocument(file, { moduleCode, subtypeCode } = {}) {
   const form = new FormData();
   form.append('file', file);
+  if (moduleCode) form.append('moduleCode', moduleCode);
+  if (subtypeCode) form.append('subtypeCode', subtypeCode);
   const response = await fetch(`${getApiBase()}/api/document/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -313,13 +353,14 @@ export function getDocumentSearchHitsApi(id, q, { hitsLimit } = {}) {
   return request(`/api/documents/${id}/search-hits?${query}`);
 }
 
-export async function importConversionScriptFile(file, { moduleCode } = {}) {
+export async function importConversionScriptFile(file, { moduleCode, subtypeCode } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (!moduleCode) {
     throw new Error('请选择模块');
   }
   form.append('moduleCode', moduleCode);
+  if (subtypeCode) form.append('subtypeCode', subtypeCode);
   const response = await fetch(`${getApiBase()}/api/conversion-script/import`, {
     method: 'POST',
     headers: withAuthHeaders(),

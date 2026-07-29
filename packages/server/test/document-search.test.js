@@ -37,10 +37,10 @@ describe('document-search', () => {
     await teardownTestDb(tmpDir);
   });
 
-  it('searchDocuments 空关键词返回空结果', () => {
+  it('searchDocuments 空关键词返回全部文档', () => {
     const result = searchDocuments('');
-    assert.equal(result.totalDocuments, 0);
-    assert.deepEqual(result.items, []);
+    assert.ok(result.totalDocuments >= 1);
+    assert.ok(result.items.length >= 1);
   });
 
   it('searchDocuments 按文档聚合命中', () => {

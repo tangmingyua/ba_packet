@@ -1,14 +1,14 @@
 <template>
   <div class="code-values-panel">
     <p class="hint">
-      批量导入「码值更新格式」Sheet（码值名称、码值代码、码值含义、扩展字段1–11）。同一模块导入将全量替换该模块下已有码值；扩展字段展示映射单独维护。
+      批量导入「码值」Sheet（码值名称、码值代码、码值含义；扩展字段1–11 按需填写，不必列满）。同一模块导入将全量替换该模块下已有码值；扩展字段展示映射单独维护。
     </p>
 
     <fieldset class="form-section">
       <legend>模块</legend>
       <label class="field compact">
         <span class="label">主类 / 模块</span>
-        <select v-model="moduleCode" @change="onModuleChange">
+        <select v-model="moduleCode" :disabled="lockModule" @change="onModuleChange">
           <option v-for="m in modules" :key="m.code" :value="m.code">{{ m.name }} ({{ m.code }})</option>
         </select>
       </label>
@@ -130,6 +130,13 @@ import {
 
 const props = defineProps({
   modules: { type: Array, default: () => [] },
+  /** 由资料导入所选子类传入时锁定模块 */
+  fixedModuleCode: { type: String, default: '' },
+  lockModule: { type: Boolean, default: false },
+  /** 资料导入所选子类 code */
+  subtypeCode: { type: String, default: '' },
+  /** 深链：预选码表名称 */
+  initialDictName: { type: String, default: '' },
 });
 
 const EXTEND_COUNT = 11;
@@ -219,6 +226,15 @@ async function refreshDictNames() {
   }
 }
 
+async function applyInitialDictName() {
+  const name = String(props.initialDictName || '').trim();
+  if (!name) return;
+  if (dictOptions.value.some((d) => d.dictName === name)) {
+    dictName.value = name;
+    await loadDictData();
+  }
+}
+
 async function onModuleChange() {
   dictName.value = '';
   displayRows.value = [];
@@ -227,6 +243,7 @@ async function onModuleChange() {
   previewLoaded.value = false;
   await refreshSummary();
   await refreshDictNames();
+  await applyInitialDictName();
 }
 
 function cellText(val) {
@@ -283,7 +300,9 @@ async function doImport() {
   importing.value = true;
   importMessage.value = '';
   try {
-    const result = await importCodeValuesExcel(file.value, moduleCode.value);
+    const result = await importCodeValuesExcel(file.value, moduleCode.value, {
+      subtypeCode: props.subtypeCode || undefined,
+    });
     importMessageType.value = 'success';
     importMessage.value = `导入成功：${result.imported} 条，${result.dictCount} 个码表（Sheet：${result.sheetName}）`;
     file.value = null;
@@ -327,8 +346,20 @@ async function saveDisplay() {
 }
 
 watch(
-  () => props.modules,
-  (mods) => {
+  () => props.initialDictName,
+  () => {
+    applyInitialDictName();
+  }
+);
+
+watch(
+  () => [props.modules, props.fixedModuleCode],
+  ([mods, fixed]) => {
+    if (fixed) {
+      moduleCode.value = fixed;
+      onModuleChange();
+      return;
+    }
     if (!moduleCode.value && mods.length) {
       moduleCode.value = mods[0].code;
       onModuleChange();

@@ -260,12 +260,14 @@ watch(activeMatchIndex, () => {
 .script-preview-body {
   flex: 1;
   overflow: auto;
-  min-height: 200px;
+  min-height: 0;
 }
 
 .script-lines {
   margin: 0;
   padding: 12px 0;
+  width: max-content;
+  min-width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.55;
@@ -273,7 +275,7 @@ watch(activeMatchIndex, () => {
 
 .script-line {
   display: flex;
-  white-space: pre;
+  align-items: flex-start;
 }
 
 .script-line.active-line {
@@ -288,12 +290,17 @@ watch(activeMatchIndex, () => {
   user-select: none;
   border-right: 1px solid #334155;
   margin-right: 12px;
+  position: sticky;
+  left: 0;
+  background: #0f172a;
+  z-index: 1;
 }
 
 .line-text {
-  flex: 1;
+  flex: 0 0 auto;
   padding-right: 16px;
   color: #e2e8f0;
+  white-space: pre;
 }
 
 .line-text :deep(.sql-kw) {

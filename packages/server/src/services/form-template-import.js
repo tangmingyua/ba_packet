@@ -6,6 +6,8 @@ import path from 'path';
 import XLSX from 'xlsx';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { matchFormTemplateFileName, normalizeFormTemplateModuleCode } from '../config/form-template-catalog.js';
+import { resolveSubtypeCode } from '../config/system-subtypes.js';
+import { resolveImportSubtypeCode } from './dataset-config.js';
 import { replaceCellsForTemplate } from './form-template-cells.js';
 import { buildFormTemplateLayout, parseFormTemplateLayoutJson } from './form-template-layout.js';
 
@@ -498,7 +500,7 @@ function findExistingFormTemplate(reportCode, versionLabel) {
   );
 }
 
-function importParsedFormTemplate(parsed, fileHash) {
+function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
   const existing = findExistingFormTemplate(parsed.reportCode, parsed.versionLabel);
   const importAction = existing ? 'replaced' : 'created';
   if (existing) {
@@ -508,17 +510,20 @@ function importParsedFormTemplate(parsed, fileHash) {
   const matrixJson = JSON.stringify(parsed.matrix);
   const mergesJson = JSON.stringify(parsed.merges);
   const layoutJson = JSON.stringify(parsed.layout || buildFormTemplateLayout(parsed.matrix, parsed.merges));
+  const moduleCode = parsed.module || '1104';
+  const resolvedSubtypeCode = subtypeCode || resolveSubtypeCode('form_template', moduleCode);
 
   run(
     `INSERT INTO form_templates (
-       report_code, report_title, version_label, module_code, sheet_name, source_file_name, file_hash,
+       report_code, report_title, version_label, subtype_code, module_code, sheet_name, source_file_name, file_hash,
        matrix_json, merges_json, layout_json, row_count, col_count
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       parsed.reportCode,
       parsed.reportTitle,
       parsed.versionLabel,
-      parsed.module || '1104',
+      resolvedSubtypeCode,
+      moduleCode,
       parsed.sheetName,
       parsed.fileName,
       fileHash,
@@ -560,10 +565,13 @@ export function importFormTemplate(buffer, options = {}) {
   if (!moduleCode) {
     throw new Error('请选择模块');
   }
+  const subtypeCode = options.subtypeCode
+    ? resolveImportSubtypeCode(options.subtypeCode, 'form_template', { moduleCode })
+    : resolveSubtypeCode('form_template', moduleCode);
   const fileHash = hashBuffer(buffer);
   const { sheets, skipped } = parseFormTemplateWorkbook(buffer, { ...options, moduleCode });
 
-  const items = sheets.map((parsed) => importParsedFormTemplate(parsed, fileHash));
+  const items = sheets.map((parsed) => importParsedFormTemplate(parsed, fileHash, subtypeCode));
   saveDb();
 
   const message = buildImportMessage(items, skipped);

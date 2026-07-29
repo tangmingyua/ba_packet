@@ -8,11 +8,11 @@ import {
 } from '../src/config/material-categories.js';
 
 describe('material-categories', () => {
-  it('包含七种资料标签', () => {
-    assert.equal(MATERIAL_CATEGORIES.length, 7);
+  it('包含八种资料标签', () => {
+    assert.equal(MATERIAL_CATEGORIES.length, 8);
     assert.deepEqual(
       MATERIAL_CATEGORIES.map((c) => c.label),
-      ['规范', '校验', '答疑', '逻辑', '同业经验', '变更记录', '转1104']
+      ['规范', '校验', '答疑', '逻辑', '同业经验', '变更记录', '转1104', '码值']
     );
   });
 
@@ -23,6 +23,7 @@ describe('material-categories', () => {
     assert.equal(normalizeCategory('逻辑'), 'logic');
     assert.equal(normalizeCategory('同业经验'), 'peer');
     assert.equal(normalizeCategory('变更记录'), 'changelog');
+    assert.equal(normalizeCategory('码值'), 'code_value');
     assert.equal(normalizeCategory('check'), 'check');
   });
 

@@ -92,10 +92,15 @@ function normalizeFilterText(value) {
 function matchesTemplateFilters(template, filters = {}) {
   const moduleCode = normalizeFilterText(filters.moduleCode);
   const reportQuery = normalizeFilterText(filters.reportQuery).toLowerCase();
+  const subtypeCode = normalizeFilterText(filters.subtypeCode);
 
   if (moduleCode) {
     const mod = template.module_code || inferFormTemplateModule(template.report_code);
     if (mod !== moduleCode) return false;
+  }
+
+  if (subtypeCode && String(template.subtype_code || '') !== subtypeCode) {
+    return false;
   }
 
   if (reportQuery) {
@@ -114,30 +119,57 @@ function matchesTemplateFilters(template, filters = {}) {
  */
 export function searchFormTemplates(keyword, options = {}) {
   const q = String(keyword ?? '').trim();
+  const maxTemplates = options.maxTemplates ?? DEFAULT_MAX_TEMPLATES;
+  const filters = {
+    moduleCode: options.moduleCode,
+    reportQuery: options.reportQuery,
+    subtypeCode: options.subtypeCode,
+  };
+
+  const templates = queryAll(
+    `SELECT id, report_code, report_title, version_label, module_code, sheet_name, subtype_code
+     FROM form_templates
+     ORDER BY report_code, version_label`
+  ).filter((template) => matchesTemplateFilters(template, filters));
+
   if (!q) {
+    const cellHitRows = queryAll(
+      `SELECT template_id, COUNT(*) AS hit_count
+       FROM form_template_cells
+       WHERE searchable = 1
+       GROUP BY template_id`
+    );
+    const cellHitMap = new Map(
+      cellHitRows.map((row) => [Number(row.template_id), Number(row.hit_count)])
+    );
+
+    const items = templates.slice(0, maxTemplates).map((template) => {
+      const id = Number(template.id);
+      const cellHits = cellHitMap.get(id) || 0;
+      return {
+        id,
+        reportCode: template.report_code,
+        reportTitle: template.report_title || '',
+        versionLabel: template.version_label,
+        sheetName: template.sheet_name,
+        moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
+        hitCount: cellHits || 1,
+      };
+    });
+
+    const totalHits = items.reduce((sum, item) => sum + item.hitCount, 0);
     return {
       keyword: q,
       moduleCode: normalizeFilterText(options.moduleCode) || null,
       reportQuery: normalizeFilterText(options.reportQuery) || null,
-      totalTemplates: 0,
-      totalHits: 0,
-      items: [],
+      totalTemplates: items.length,
+      totalHits,
+      items,
       searchScope: 'header_indicator_and_template_name',
     };
   }
 
-  const maxTemplates = options.maxTemplates ?? DEFAULT_MAX_TEMPLATES;
   const like = matchesKeywordSql(q);
-  const filters = {
-    moduleCode: options.moduleCode,
-    reportQuery: options.reportQuery,
-  };
-
-  const templates = queryAll(
-    `SELECT id, report_code, report_title, version_label, module_code, sheet_name
-     FROM form_templates
-     ORDER BY report_code, version_label`
-  ).filter((template) => matchesTemplateFilters(template, filters));
 
   const cellHitRows = queryAll(
     `SELECT template_id, COUNT(*) AS hit_count

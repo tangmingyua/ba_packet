@@ -101,16 +101,22 @@ function mapNodeHitRow(row, keyword) {
   };
 }
 
-function loadDocumentsWithMeta() {
-  const rows = queryAll(
-    `SELECT d.id, d.doc_code, d.doc_title,
+function loadDocumentsWithMeta({ subtypeCode } = {}) {
+  const subtype = String(subtypeCode ?? '').trim();
+  let sql = `
+    SELECT d.id, d.doc_code, d.doc_title, d.subtype_code,
             (SELECT COUNT(*) FROM document_nodes n WHERE n.document_id = d.id) AS node_count,
             (SELECT report_code FROM report_doc_mapping m
              WHERE m.document_id = d.id AND m.version_label = '' LIMIT 1) AS report_code
      FROM documents d
-     ORDER BY d.doc_code`
-  );
-  return rows;
+  `;
+  const params = [];
+  if (subtype) {
+    sql += ' WHERE d.subtype_code = ?';
+    params.push(subtype);
+  }
+  sql += ' ORDER BY d.doc_code';
+  return queryAll(sql, params);
 }
 
 /**
@@ -118,19 +124,42 @@ function loadDocumentsWithMeta() {
  */
 export function searchDocuments(keyword, options = {}) {
   const q = String(keyword ?? '').trim();
+  const maxDocuments = options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS;
+  const documents = loadDocumentsWithMeta({ subtypeCode: options.subtypeCode });
+
   if (!q) {
+    const nodeHitRows = queryAll(
+      `SELECT document_id, COUNT(*) AS hit_count
+       FROM document_nodes
+       WHERE node_kind IN (${KIND_PLACEHOLDERS})
+       GROUP BY document_id`,
+      [...SEARCHABLE_NODE_KINDS]
+    );
+    const nodeHitMap = new Map(
+      nodeHitRows.map((row) => [Number(row.document_id), Number(row.hit_count)])
+    );
+
+    const items = documents.slice(0, maxDocuments).map((row) => {
+      const id = Number(row.id);
+      const nodeHits = nodeHitMap.get(id) || Number(row.node_count || 0);
+      return {
+        ...mapDocumentRow(row),
+        hitCount: nodeHits || 1,
+      };
+    });
+
+    const totalHits = items.reduce((sum, item) => sum + item.hitCount, 0);
     return {
       keyword: q,
-      totalDocuments: 0,
-      totalHits: 0,
-      items: [],
+      totalDocuments: items.length,
+      totalHits,
+      items,
+      truncated: items.length >= maxDocuments,
       searchScope: 'document_meta_and_node_text',
     };
   }
 
-  const maxDocuments = options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS;
   const like = matchesKeywordSql(q);
-  const documents = loadDocumentsWithMeta();
 
   const nodeHitRows = queryAll(
     `SELECT document_id, COUNT(*) AS hit_count

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS subtypes (
   sort_order INTEGER NOT NULL DEFAULT 0,
   category TEXT NOT NULL DEFAULT 'norm',
   module_code TEXT NOT NULL DEFAULT 'YBT',
+  storage_kind TEXT NOT NULL DEFAULT 'excel',
   FOREIGN KEY (module_code) REFERENCES modules(code)
 );
 
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS field_mappings (
   field_type TEXT NOT NULL DEFAULT 'TEXT',
   is_required INTEGER NOT NULL DEFAULT 0,
   is_default_display INTEGER NOT NULL DEFAULT 0,
+  is_default_filter INTEGER NOT NULL DEFAULT 0,
   UNIQUE (subtype_version_id, original_column),
   UNIQUE (subtype_version_id, standard_field),
   FOREIGN KEY (subtype_version_id) REFERENCES subtype_versions(id) ON DELETE CASCADE,
@@ -93,6 +95,7 @@ CREATE TABLE IF NOT EXISTS form_templates (
   report_code TEXT NOT NULL,
   report_title TEXT,
   version_label TEXT NOT NULL,
+  subtype_code TEXT,
   module_code TEXT NOT NULL DEFAULT '1104',
   sheet_name TEXT NOT NULL,
   source_file_name TEXT,
@@ -129,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_ftc_searchable ON form_template_cells(template_id
 -- 转1104 SQL/TXT 脚本（一表通等模块）
 CREATE TABLE IF NOT EXISTS conversion_scripts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subtype_code TEXT,
   module_code TEXT NOT NULL,
   report_code TEXT NOT NULL,
   version_label TEXT NOT NULL,
@@ -148,6 +152,7 @@ CREATE TABLE IF NOT EXISTS documents (
   doc_code TEXT NOT NULL,
   doc_title TEXT,
   version_label TEXT NOT NULL DEFAULT '',
+  subtype_code TEXT,
   module_code TEXT NOT NULL DEFAULT '1104',
   source_file_name TEXT,
   file_hash TEXT,
@@ -215,9 +220,10 @@ CREATE TABLE IF NOT EXISTS report_doc_mapping (
 
 CREATE INDEX IF NOT EXISTS idx_report_doc_mapping_doc ON report_doc_mapping(document_id);
 
--- 模块码值（码值更新格式 Sheet 批量导入）
+-- 模块码值（「码值」Sheet 批量导入）
 CREATE TABLE IF NOT EXISTS module_code_values (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  subtype_code    TEXT,
   module_code     TEXT NOT NULL,
   dict_name       TEXT NOT NULL,
   code            TEXT NOT NULL,
@@ -234,7 +240,7 @@ CREATE TABLE IF NOT EXISTS module_code_values (
   extend_10       TEXT,
   extend_11       TEXT,
   source_file     TEXT,
-  source_sheet    TEXT DEFAULT '码值更新格式',
+  source_sheet    TEXT DEFAULT '码值',
   imported_at     TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (module_code, dict_name, code)
 );

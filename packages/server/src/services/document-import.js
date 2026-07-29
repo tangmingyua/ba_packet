@@ -7,6 +7,8 @@ import { defaultReportCodeForDocCode, normalizeReportCodeInput } from '../config
 import { stripRomanIndicatorPrefix } from './docx-fill-instruction-parser.js';
 import { readDocumentXmlFromDocx } from './docx-file.js';
 import { parseWordImportDocument, countTreeNodes } from './word-import-pipeline.js';
+import { resolveSubtypeCode } from '../config/system-subtypes.js';
+import { resolveImportSubtypeCode } from './dataset-config.js';
 
 const EMPTY_VERSION = '';
 
@@ -165,7 +167,7 @@ function saveWordBlocks(sourceId, blocks) {
   }
 }
 
-function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta, existingId = null) {
+function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta, existingId = null, subtypeCode = '') {
   const {
     sourceId = null,
     blockStart = null,
@@ -173,11 +175,15 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
     splitMode = null,
   } = sourceMeta || {};
 
+  const resolvedModule = moduleCode || '1104';
+  const resolvedSubtypeCode =
+    subtypeCode || resolveSubtypeCode('document', resolvedModule);
+
   if (existingId) {
     run('DELETE FROM document_nodes WHERE document_id = ?', [existingId]);
     run(
       `UPDATE documents SET
-         doc_title = ?, source_file_name = ?, file_hash = ?, module_code = ?,
+         doc_title = ?, source_file_name = ?, file_hash = ?, module_code = ?, subtype_code = ?,
          source_id = ?, block_start = ?, block_end = ?, split_mode = ?,
          imported_at = datetime('now')
        WHERE id = ?`,
@@ -185,7 +191,8 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
         parsedDoc.docTitle,
         fileName,
         fileHash,
-        moduleCode || '1104',
+        resolvedModule,
+        resolvedSubtypeCode,
         sourceId,
         blockStart,
         blockEnd,
@@ -200,14 +207,15 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
 
   run(
     `INSERT INTO documents (
-       doc_code, doc_title, version_label, module_code, source_file_name, file_hash,
+       doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash,
        source_id, block_start, block_end, split_mode
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       parsedDoc.docCode,
       parsedDoc.docTitle,
       EMPTY_VERSION,
-      moduleCode || '1104',
+      resolvedSubtypeCode,
+      resolvedModule,
       fileName,
       fileHash,
       sourceId,
@@ -264,6 +272,13 @@ export function importFillInstructionDocument(buffer, options = {}) {
     profileId: options.profileId,
   });
 
+  const moduleCode = String(
+    options.moduleCode || parsed.profile?.moduleCode || '1104'
+  ).trim();
+  const subtypeCode = options.subtypeCode
+    ? resolveImportSubtypeCode(options.subtypeCode, 'document', { moduleCode })
+    : resolveSubtypeCode('document', moduleCode);
+
   const sourceId = saveWordSource(
     fileName,
     fileHash,
@@ -285,14 +300,15 @@ export function importFillInstructionDocument(buffer, options = {}) {
       doc,
       fileHash,
       fileName,
-      parsed.profile.moduleCode || '1104',
+      moduleCode,
       {
         sourceId,
         blockStart: doc.blockStart,
         blockEnd: doc.blockEnd,
         splitMode: doc.splitMode || parsed.splitMode,
       },
-      existing?.id
+      existing?.id,
+      subtypeCode
     );
 
     if (result.overwritten) {

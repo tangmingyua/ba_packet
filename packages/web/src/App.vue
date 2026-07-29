@@ -117,7 +117,7 @@
 
       <div
         class="content"
-        :class="{ 'content-center': isHomeCenter, 'content-fill': isFillPage }"
+        :class="{ 'content-search-landing': isSearchLanding, 'content-fill': isFillPage }"
       >
         <router-view @search-state="onSearchState" />
       </div>
@@ -140,9 +140,9 @@ const pendingHomeMode = ref(null);
 provide('homeResetSignal', homeResetSignal);
 provide('pendingHomeMode', pendingHomeMode);
 
-const landingMode = ref('norm');
+const landingMode = ref('aggregate');
 
-const isHomeCenter = computed(
+const isSearchLanding = computed(
   () => route.name === 'search' && !searchLayoutActive.value
 );
 
@@ -152,9 +152,9 @@ const isFillPage = computed(() =>
 
 const pageTitle = computed(() => {
   if (route.name === 'import') return '资料导入';
-  if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '1104 表样';
+  if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '表样';
   if (route.name === 'formTemplateSearch') return '表样搜索（测试）';
-  if (route.name === 'documents' || route.name === 'documentDetail') return '1104 填报说明';
+  if (route.name === 'documents' || route.name === 'documentDetail') return '填报说明';
   if (route.name === 'documentSearch') return '填报说明搜索';
   if (route.name === 'conversionScripts' || route.name === 'conversionScriptDetail') {
     return '转1104 脚本';
@@ -170,31 +170,6 @@ const showBackHome = computed(
 );
 
 const searchNavItems = [
-  {
-    id: 'norm',
-    label: '查规范',
-    icon: defineComponent({
-      render() {
-        return h('svg', { viewBox: '0 0 24 24' }, [
-          h('path', { d: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20' }),
-          h('path', { d: 'M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z' }),
-        ]);
-      },
-    }),
-  },
-  {
-    id: 'qa',
-    label: '查答疑',
-    icon: defineComponent({
-      render() {
-        return h('svg', { viewBox: '0 0 24 24' }, [
-          h('path', {
-            d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-          }),
-        ]);
-      },
-    }),
-  },
   {
     id: 'aggregate',
     label: '聚合查询',
@@ -212,7 +187,7 @@ const searchNavItems = [
 function isNavActive(id) {
   if (route.name !== 'search') return false;
   if (searchLayoutActive.value) {
-    const mode = route.query.mode || 'norm';
+    const mode = route.query.mode || 'aggregate';
     return mode === id;
   }
   return landingMode.value === id;

@@ -1,10 +1,12 @@
 /**
- * 模块码值：批量导入（码值更新格式 Sheet）+ 扩展字段展示映射
+ * 模块码值：批量导入（「码值」Sheet）+ 扩展字段展示映射
  */
 import XLSX from 'xlsx';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
+import { resolveSubtypeCode } from '../config/system-subtypes.js';
+import { resolveImportSubtypeCode } from './dataset-config.js';
 
-const CODE_VALUE_SHEET_NAMES = ['码值更新格式', 'Sheet1'];
+const CODE_VALUE_SHEET_NAME = '码值';
 const EXTEND_FIELD_COUNT = 11;
 const EXTEND_HEADER_PREFIX = '扩展字段';
 const CORE_HEADERS = ['码值名称', '码值代码', '码值含义'];
@@ -40,7 +42,7 @@ function rowToCodeValue(row, moduleCode, sourceFile, sourceSheet) {
     code,
     meaning: cellToString(row[2]),
     sourceFile: sourceFile || null,
-    sourceSheet: sourceSheet || '码值更新格式',
+    sourceSheet: sourceSheet || CODE_VALUE_SHEET_NAME,
   };
 
   for (let i = 0; i < EXTEND_FIELD_COUNT; i += 1) {
@@ -50,36 +52,81 @@ function rowToCodeValue(row, moduleCode, sourceFile, sourceSheet) {
 }
 
 function findCodeValueSheet(workbook) {
-  for (const name of CODE_VALUE_SHEET_NAMES) {
-    if (workbook.Sheets[name]) return name;
-  }
+  if (workbook.Sheets[CODE_VALUE_SHEET_NAME]) return CODE_VALUE_SHEET_NAME;
   return null;
 }
 
+function trimTrailingEmptyHeaders(headers) {
+  let end = headers.length;
+  while (end > CORE_HEADERS.length && headers[end - 1] === '') {
+    end -= 1;
+  }
+  return headers.slice(0, end);
+}
+
 function validateHeader(headerRow) {
-  const headers = (headerRow || []).map((h) => cellToString(h));
+  const headers = trimTrailingEmptyHeaders((headerRow || []).map((h) => cellToString(h)));
   for (let i = 0; i < CORE_HEADERS.length; i += 1) {
     if (headers[i] !== CORE_HEADERS[i]) {
-      throw new Error(`表头须为：${CORE_HEADERS.join('、')}、扩展字段1 … 扩展字段11`);
+      throw new Error(`表头前 ${CORE_HEADERS.length} 列须为：${CORE_HEADERS.join('、')}`);
     }
   }
-  for (let i = 0; i < EXTEND_FIELD_COUNT; i += 1) {
+  const extendCount = headers.length - CORE_HEADERS.length;
+  if (extendCount > EXTEND_FIELD_COUNT) {
+    throw new Error(`扩展字段最多 ${EXTEND_FIELD_COUNT} 列`);
+  }
+  for (let i = 0; i < extendCount; i += 1) {
     const expected = `${EXTEND_HEADER_PREFIX}${i + 1}`;
-    if (headers[3 + i] !== expected) {
-      throw new Error(`第 ${i + 4} 列表头应为「${expected}」`);
+    if (headers[CORE_HEADERS.length + i] !== expected) {
+      throw new Error(`第 ${CORE_HEADERS.length + i + 1} 列表头应为「${expected}」`);
     }
   }
+}
+
+function findDuplicateCodeValues(records) {
+  const seen = new Map();
+  const duplicates = [];
+  for (const rec of records) {
+    const key = `${rec.dictName}\0${rec.code}`;
+    if (seen.has(key)) {
+      duplicates.push({
+        dictName: rec.dictName,
+        code: rec.code,
+        firstRow: seen.get(key),
+        rowNum: rec.rowNum,
+      });
+    } else {
+      seen.set(key, rec.rowNum);
+    }
+  }
+  return duplicates;
+}
+
+function buildDuplicateCodeValueError(duplicates) {
+  let msg =
+    '导入失败：Excel「码值」Sheet 中存在重复的码值。同一码表（码值名称）下，码值代码不能出现两次。';
+  const lines = duplicates.slice(0, 8).map(
+    (d) => `第 ${d.rowNum} 行与第 ${d.firstRow} 行重复（码值名称「${d.dictName}」、码值代码「${d.code}」）`
+  );
+  if (lines.length) msg += `\n${lines.join('\n')}`;
+  if (duplicates.length > 8) msg += `\n…等共 ${duplicates.length} 处重复`;
+  return msg;
+}
+
+function isCodeValueUniqueConstraintError(err) {
+  const msg = String(err?.message || err || '');
+  return msg.includes('UNIQUE constraint failed') && msg.includes('module_code_values');
 }
 
 /**
  * 从 Excel 批量导入码值（全量替换该模块下码值数据，不影响展示映射）
  */
-export function importModuleCodeValues(buffer, { moduleCode, fileName } = {}) {
+export function importModuleCodeValues(buffer, { moduleCode, fileName, subtypeCode } = {}) {
   const normalizedModule = normalizeModuleCode(moduleCode);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheetName = findCodeValueSheet(workbook);
   if (!sheetName) {
-    throw new Error(`未找到 Sheet「${CODE_VALUE_SHEET_NAMES.join('」或「')}」`);
+    throw new Error(`未找到 Sheet「${CODE_VALUE_SHEET_NAME}」`);
   }
 
   const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' });
@@ -92,35 +139,54 @@ export function importModuleCodeValues(buffer, { moduleCode, fileName } = {}) {
   for (let i = 1; i < matrix.length; i += 1) {
     const parsed = rowToCodeValue(matrix[i], normalizedModule, fileName, sheetName);
     if (!parsed) continue;
+    parsed.rowNum = i + 1;
     dictNames.add(parsed.dictName);
     records.push(parsed);
   }
 
   if (!records.length) throw new Error('无有效码值行（码值名称、码值代码均必填）');
 
+  const duplicates = findDuplicateCodeValues(records);
+  if (duplicates.length) {
+    throw new Error(buildDuplicateCodeValueError(duplicates));
+  }
+
   run('DELETE FROM module_code_values WHERE module_code = ?', [normalizedModule]);
 
+  const resolvedSubtypeCode = subtypeCode
+    ? resolveImportSubtypeCode(subtypeCode, 'code_value', { moduleCode: normalizedModule })
+    : resolveSubtypeCode('code_value', normalizedModule);
   const extendCols = buildExtendKeys().join(', ');
-  const placeholders = ['?', '?', '?', '?', ...Array(EXTEND_FIELD_COUNT).fill('?'), '?', '?', '?'].join(', ');
+  const placeholders = ['?', '?', '?', '?', '?', ...Array(EXTEND_FIELD_COUNT).fill('?'), '?', '?', '?'].join(', ');
 
   for (const rec of records) {
-    run(
-      `INSERT INTO module_code_values (
-        module_code, dict_name, code, meaning,
-        ${extendCols},
-        source_file, source_sheet, imported_at
-      ) VALUES (${placeholders})`,
-      [
-        rec.moduleCode,
-        rec.dictName,
-        rec.code,
-        rec.meaning,
-        ...buildExtendKeys().map((k) => rec[k]),
-        rec.sourceFile,
-        rec.sourceSheet,
-        new Date().toISOString(),
-      ]
-    );
+    try {
+      run(
+        `INSERT INTO module_code_values (
+          subtype_code, module_code, dict_name, code, meaning,
+          ${extendCols},
+          source_file, source_sheet, imported_at
+        ) VALUES (${placeholders})`,
+        [
+          resolvedSubtypeCode,
+          rec.moduleCode,
+          rec.dictName,
+          rec.code,
+          rec.meaning,
+          ...buildExtendKeys().map((k) => rec[k]),
+          rec.sourceFile,
+          rec.sourceSheet,
+          new Date().toISOString(),
+        ]
+      );
+    } catch (err) {
+      if (isCodeValueUniqueConstraintError(err)) {
+        throw new Error(
+          `导入失败：存在重复的码值（码值名称「${rec.dictName}」、码值代码「${rec.code}」）。同一码表下码值代码不能重复，请检查 Excel「码值」Sheet。`
+        );
+      }
+      throw err;
+    }
   }
 
   saveDb();

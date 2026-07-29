@@ -292,7 +292,7 @@ function openCodeValueLookup(row, col) {
       moduleCode,
       dictName: '',
       sourceText,
-      parseError: '无法从字段内容识别码表名称（需包含「详见附录A1」前缀）',
+      parseError: '无法从字段内容识别码表名称',
     };
     return;
   }

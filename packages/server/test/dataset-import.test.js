@@ -7,11 +7,13 @@ import XLSX from 'xlsx';
 import { closeDb, queryOne } from '../src/db/database.js';
 import {
   createSubtypeVersion,
+  deleteSubtype,
   deleteSubtypeVersion,
   getDatasetCatalog,
   listFieldMappings,
   saveFieldMappings,
   updateSubtype,
+  upsertSubtype,
 } from '../src/services/dataset-config.js';
 import { importDatasetExcel, validateHeaders } from '../src/services/dataset-import.js';
 import { searchDatasetRecords, suggestDatasetItems } from '../src/services/dataset-search.js';
@@ -206,12 +208,42 @@ describe('dataset import model', () => {
     assert.ok(catalog.standardFields.some((f) => f.code === 'question_desc'));
     assert.ok(catalog.standardFields.length >= 50);
     assert.ok(catalog.subtypes.some((s) => s.code === 'TO_EAST_FAQ'));
-    assert.equal(catalog.categories.length, 7);
+    assert.equal(catalog.categories.length, 8);
+    const formTpl = catalog.subtypes.find((s) => s.code === '1104_FORM_TEMPLATE');
+    assert.ok(formTpl, '应包含表样子类');
+    assert.equal(formTpl.storageKind, 'form_template');
+    assert.equal(formTpl.category, 'norm');
+    const codeVal = catalog.subtypes.find((s) => s.code === 'YBT_CODE_VALUE');
+    assert.ok(codeVal, '应包含码值子类');
+    assert.equal(codeVal.category, 'code_value');
+    assert.equal(codeVal.storageKind, 'code_value');
     const east = catalog.subtypes.find((s) => s.code === 'TO_EAST_FAQ');
     assert.equal(east.category, 'qa');
     assert.equal(east.categoryLabel, '答疑');
     assert.equal(east.moduleCode, 'YBT');
     assert.equal(east.moduleName, '一表通');
+    assert.ok(catalog.creatableStorageKinds?.some((k) => k.code === 'form_template'));
+  });
+
+  it('可创建并删除空的还原类子类', () => {
+    upsertSubtype({
+      code: 'EAST_FORM_TPL',
+      name: 'EAST 表样',
+      moduleCode: 'EAST',
+      category: 'norm',
+      storageKind: 'form_template',
+      enabled: true,
+    });
+    const created = getDatasetCatalog().subtypes.find((s) => s.code === 'EAST_FORM_TPL');
+    assert.ok(created);
+    assert.equal(created.storageKind, 'form_template');
+    deleteSubtype('EAST_FORM_TPL');
+    assert.ok(!getDatasetCatalog().subtypes.some((s) => s.code === 'EAST_FORM_TPL'));
+  });
+
+  it('种子还原类子类无资料时可删除', () => {
+    deleteSubtype('1104_FORM_TEMPLATE');
+    assert.ok(!getDatasetCatalog().subtypes.some((s) => s.code === '1104_FORM_TEMPLATE'));
   });
 
   it('搜索 mode 按规范/答疑过滤', () => {

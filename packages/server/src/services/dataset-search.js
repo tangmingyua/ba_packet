@@ -6,6 +6,7 @@ import { queryAll, queryOne } from '../db/database.js';
 import { sortByRelevance } from './relevance.js';
 import { listFieldMappings, listStandardFields } from './dataset-config.js';
 import {
+  buildBrowseWhereSql,
   buildSearchMatchParams,
   buildSearchMatchSql,
   payloadMatchesKeyword,
@@ -69,13 +70,38 @@ const RECORD_JOINS = `
   LEFT JOIN modules m ON m.code = s.module_code
 `;
 
-function queryMatchingRows({ keyword, mode, versionId, distinct = false, categories }) {
+function parseSubtypeFilter(input) {
+  if (!input) return [];
+  const list = Array.isArray(input)
+    ? input
+    : String(input)
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+  return [...new Set(list)];
+}
+
+function queryMatchingRows({ keyword, mode, versionId, distinct = false, categories, moduleCode, subtypeCode }) {
   const q = String(keyword ?? '').trim();
-  const matchSql = buildSearchMatchSql(mode);
-  const matchParams = buildSearchMatchParams(q, mode);
+  const matchSql = q ? buildSearchMatchSql(mode) : buildBrowseWhereSql();
+  const matchParams = q ? buildSearchMatchParams(q, mode) : [];
   const { clause, params: categoryParams } = categoryFilterClause(mode, categories);
 
   const params = [...matchParams, ...categoryParams];
+  const mod = String(moduleCode ?? '').trim();
+  const subtypes = parseSubtypeFilter(subtypeCode);
+  let moduleClause = '';
+  if (mod) {
+    moduleClause = ' AND s.module_code = ?';
+    params.push(mod);
+  }
+  if (subtypes.length === 1) {
+    moduleClause += ' AND s.code = ?';
+    params.push(subtypes[0]);
+  } else if (subtypes.length > 1) {
+    moduleClause += ` AND s.code IN (${subtypes.map(() => '?').join(',')})`;
+    params.push(...subtypes);
+  }
   const select = distinct
     ? `SELECT DISTINCT r.std_data_item, r.std_subtype, r.std_version,
            COALESCE(r.std_category, s.category, 'norm') AS record_category,
@@ -86,7 +112,7 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
   let sql = `
     ${select}
     ${RECORD_JOINS}
-    WHERE ${matchSql}${clause}
+    WHERE ${matchSql}${clause}${moduleClause}
   `;
 
   if (versionId) {
@@ -102,12 +128,12 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
 
   let rows = queryAll(sql, params);
 
-  if (!rows.length && !distinct) {
+  if (!rows.length && !distinct && q) {
     const fallbackParams = [...categoryParams];
     let fallbackSql = `
       SELECT ${RECORD_SELECT}
       ${RECORD_JOINS}
-      WHERE 1 = 1${clause}
+      WHERE 1 = 1${clause}${moduleClause}
     `;
     if (versionId) {
       fallbackSql += ' AND r.subtype_version_id = ?';
@@ -130,7 +156,14 @@ export function suggestDatasetItems(keyword, options = {}) {
   if (!q) return { items: [] };
   if (!tableExists('data_records')) return { items: [] };
 
-  const rows = queryMatchingRows({ keyword: q, mode, distinct: true, categories: options.categories });
+  const rows = queryMatchingRows({
+    keyword: q,
+    mode,
+    distinct: true,
+    categories: options.categories,
+    moduleCode: options.moduleCode,
+    subtypeCode: options.subtypeCode,
+  });
 
   const merged = rows.map((row) => ({
     data_item_name: row.std_data_item,
@@ -159,16 +192,13 @@ export function suggestDatasetItems(keyword, options = {}) {
 }
 
 /** 搜索：按模式字段匹配，按子类分 report，按版本分 block */
-export function searchDatasetRecords(keyword, { versionId, mode, categories } = {}) {
+export function searchDatasetRecords(keyword, { versionId, mode, categories, moduleCode, subtypeCode } = {}) {
   const q = String(keyword ?? '').trim();
-  if (!q) {
-    return { keyword: '', reports: [], error: '请输入搜索关键词' };
-  }
   if (!tableExists('data_records')) {
     return { keyword: q, reports: [] };
   }
 
-  const rows = queryMatchingRows({ keyword: q, mode, versionId, categories });
+  const rows = queryMatchingRows({ keyword: q, mode, versionId, categories, moduleCode, subtypeCode });
 
   if (!rows.length) {
     return emptySearchResult(q, mode);
@@ -236,7 +266,7 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories } = 
     };
   });
 
-  const { fieldMappingsByVersion, fieldMappingOrdersByVersion, fieldMappingDefaultDisplayByVersion } =
+  const { fieldMappingsByVersion, fieldMappingOrdersByVersion, fieldMappingDefaultDisplayByVersion, fieldMappingDefaultFilterByVersion } =
     buildFieldMappingsByVersion(versionIds);
   return {
     keyword: q,
@@ -246,6 +276,7 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories } = 
     fieldMappingsByVersion,
     fieldMappingOrdersByVersion,
     fieldMappingDefaultDisplayByVersion,
+    fieldMappingDefaultFilterByVersion,
   };
 }
 
@@ -258,6 +289,7 @@ function emptySearchResult(keyword, mode) {
     fieldMappingsByVersion: {},
     fieldMappingOrdersByVersion: {},
     fieldMappingDefaultDisplayByVersion: {},
+    fieldMappingDefaultFilterByVersion: {},
   };
 }
 
@@ -265,6 +297,7 @@ function buildFieldMappingsByVersion(versionIds) {
   const fieldMappingsByVersion = {};
   const fieldMappingOrdersByVersion = {};
   const fieldMappingDefaultDisplayByVersion = {};
+  const fieldMappingDefaultFilterByVersion = {};
   for (const vid of versionIds) {
     const mappings = listFieldMappings(vid);
     if (!mappings.length) continue;
@@ -276,8 +309,16 @@ function buildFieldMappingsByVersion(versionIds) {
     fieldMappingDefaultDisplayByVersion[key] = mappings
       .filter((m) => m.defaultDisplay)
       .map((m) => m.originalColumn);
+    fieldMappingDefaultFilterByVersion[key] = mappings
+      .filter((m) => m.defaultFilter)
+      .map((m) => m.originalColumn);
   }
-  return { fieldMappingsByVersion, fieldMappingOrdersByVersion, fieldMappingDefaultDisplayByVersion };
+  return {
+    fieldMappingsByVersion,
+    fieldMappingOrdersByVersion,
+    fieldMappingDefaultDisplayByVersion,
+    fieldMappingDefaultFilterByVersion,
+  };
 }
 
 function buildFieldLabels(fieldMappingsByVersion) {

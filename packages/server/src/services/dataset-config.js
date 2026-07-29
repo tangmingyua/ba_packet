@@ -8,6 +8,7 @@ import {
   normalizeCategory,
   listMaterialCategories,
 } from '../config/material-categories.js';
+import { getStorageKindLabel, listStorageKinds, listCreatableStorageKinds } from '../config/system-subtypes.js';
 import { STANDARD_FIELD_SEEDS } from '../db/seed-standard-fields.js';
 
 function parseJsonArray(value, fallback = []) {
@@ -44,6 +45,7 @@ function rowToMapping(row) {
     fieldType: row.field_type || 'TEXT',
     isRequired: Boolean(row.is_required),
     defaultDisplay: Boolean(row.is_default_display),
+    defaultFilter: Boolean(row.is_default_filter),
   };
 }
 
@@ -75,6 +77,7 @@ function rowToModule(row) {
 
 function rowToSubtype(row) {
   const category = normalizeCategory(row.category, inferCategoryFromCode(row.code));
+  const storageKind = row.storage_kind || 'excel';
   return {
     code: row.code,
     name: row.name,
@@ -84,6 +87,8 @@ function rowToSubtype(row) {
     categoryLabel: getCategoryLabel(category),
     moduleCode: row.module_code || inferModuleFromCode(row.code),
     moduleName: row.module_name || row.module_code || inferModuleFromCode(row.code),
+    storageKind,
+    storageKindLabel: getStorageKindLabel(storageKind),
   };
 }
 
@@ -137,6 +142,49 @@ export function deleteModule(code) {
   run('DELETE FROM modules WHERE code = ?', [normalizedCode]);
   saveDb();
   return { code: normalizedCode };
+}
+
+function normalizeStorageKind(kind) {
+  const code = String(kind || 'excel').trim();
+  if (!listStorageKinds().some((k) => k.code === code)) {
+    throw new Error(`无效的解析方式：${code}`);
+  }
+  return code;
+}
+
+export function resolveImportSubtypeCode(subtypeCode, expectedStorageKind, { moduleCode } = {}) {
+  const code = String(subtypeCode || '').trim();
+  if (!code) {
+    throw new Error('请选择资料子类');
+  }
+  const subtype = getSubtype(code);
+  if (!subtype) throw new Error('子类不存在');
+  if (expectedStorageKind && subtype.storageKind !== expectedStorageKind) {
+    throw new Error(
+      `子类「${subtype.name}」的解析方式为「${getStorageKindLabel(subtype.storageKind)}」，与当前导入不匹配`
+    );
+  }
+  if (moduleCode && subtype.moduleCode !== moduleCode) {
+    throw new Error('子类所属模块与导入模块不一致');
+  }
+  if (!subtype.enabled) {
+    throw new Error(`子类「${subtype.name}」未启用，请先在子类配置中启用`);
+  }
+  return code;
+}
+
+function countRestorationRecords(subtypeCode, storageKind) {
+  const tableByKind = {
+    form_template: 'form_templates',
+    document: 'documents',
+    script: 'conversion_scripts',
+    code_value: 'module_code_values',
+  };
+  const table = tableByKind[storageKind];
+  if (!table) return 0;
+  return Number(
+    queryOne(`SELECT COUNT(*) AS c FROM ${table} WHERE subtype_code = ?`, [subtypeCode])?.c || 0
+  );
 }
 
 function resolveModuleCode(moduleCode, subtypeCode) {
@@ -247,11 +295,13 @@ export function upsertSubtype({
   sortOrder = 0,
   category,
   moduleCode,
+  storageKind = 'excel',
 }) {
   if (!code || !name) throw new Error('子类 code 与 name 必填');
   const normalizedCategory = normalizeCategory(category, inferCategoryFromCode(code));
   const normalizedModule = resolveModuleCode(moduleCode, code);
   const existing = getSubtype(code);
+  const kind = normalizeStorageKind(storageKind);
   if (existing) {
     run(
       `UPDATE subtypes SET name = ?, enabled = ?, sort_order = ?, category = ?, module_code = ? WHERE code = ?`,
@@ -259,8 +309,8 @@ export function upsertSubtype({
     );
   } else {
     run(
-      `INSERT INTO subtypes (code, name, enabled, sort_order, category, module_code) VALUES (?, ?, ?, ?, ?, ?)`,
-      [code, name, enabled ? 1 : 0, sortOrder, normalizedCategory, normalizedModule]
+      `INSERT INTO subtypes (code, name, enabled, sort_order, category, module_code, storage_kind) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [code, name, enabled ? 1 : 0, sortOrder, normalizedCategory, normalizedModule, kind]
     );
   }
   saveDb();
@@ -307,10 +357,19 @@ export function deleteSubtype(code) {
   if (!normalizedCode) throw new Error('请指定要删除的子类');
   const existing = getSubtype(normalizedCode);
   if (!existing) throw new Error('子类不存在');
-  const versions = listSubtypeVersions(normalizedCode);
-  for (const v of versions) {
-    deleteSubtypeVersion(v.id);
+
+  if (existing.storageKind === 'excel') {
+    const versions = listSubtypeVersions(normalizedCode);
+    for (const v of versions) {
+      deleteSubtypeVersion(v.id);
+    }
+  } else {
+    const linked = countRestorationRecords(normalizedCode, existing.storageKind);
+    if (linked > 0) {
+      throw new Error(`该子类下仍有 ${linked} 条资料，请先删除后再移除子类`);
+    }
   }
+
   run('DELETE FROM subtypes WHERE code = ?', [normalizedCode]);
   saveDb();
   return { code: normalizedCode };
@@ -344,6 +403,9 @@ export function findVersionBySheetName(sheetName) {
 export function createSubtypeVersion(subtypeCode, body) {
   const subtype = getSubtype(subtypeCode);
   if (!subtype) throw new Error('子类不存在');
+  if (subtype.storageKind !== 'excel') {
+    throw new Error('仅配置类子类需要版本与字段映射');
+  }
   const versionLabel = String(body.versionLabel || '').trim();
   const sheetName = String(body.sheetName || '').trim();
   if (!versionLabel) throw new Error('请填写版本号');
@@ -393,6 +455,7 @@ export function createSubtypeVersion(subtypeCode, body) {
           fieldType: m.fieldType,
           isRequired: m.isRequired,
           defaultDisplay: m.defaultDisplay,
+          defaultFilter: m.defaultFilter,
         }))
       );
     }
@@ -504,8 +567,8 @@ export function saveFieldMappings(versionId, mappings) {
   for (const m of mappings) {
     run(
       `INSERT INTO field_mappings (
-        subtype_version_id, original_column, standard_field, field_type, is_required, is_default_display
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
+        subtype_version_id, original_column, standard_field, field_type, is_required, is_default_display, is_default_filter
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         versionId,
         m.originalColumn,
@@ -513,6 +576,7 @@ export function saveFieldMappings(versionId, mappings) {
         m.fieldType || 'TEXT',
         m.isRequired ? 1 : 0,
         m.defaultDisplay ? 1 : 0,
+        m.defaultFilter ? 1 : 0,
       ]
     );
   }
@@ -546,8 +610,59 @@ export function getDatasetCatalog() {
     modules: listModules(),
     standardFields: listStandardFields(),
     categories: listMaterialCategories(),
+    searchableCategories: listSearchableCategories(),
+    storageKinds: listStorageKinds(),
+    creatableStorageKinds: listCreatableStorageKinds(),
     subtypes,
   };
+}
+
+/**
+ * 聚合检索可选标签：仅返回库中已有对应资料的类型
+ */
+export function listSearchableCategories({ moduleCode } = {}) {
+  const codes = new Set();
+  const mod = String(moduleCode ?? '').trim();
+
+  let excelSql = `
+    SELECT DISTINCT COALESCE(NULLIF(TRIM(r.std_category), ''), s.category) AS category
+    FROM data_records r
+    JOIN subtype_versions sv ON sv.id = r.subtype_version_id
+    JOIN subtypes s ON s.code = sv.subtype_code
+    WHERE COALESCE(NULLIF(TRIM(r.std_category), ''), s.category) IS NOT NULL
+      AND TRIM(COALESCE(NULLIF(TRIM(r.std_category), ''), s.category)) != ''
+  `;
+  const excelParams = [];
+  if (mod) {
+    excelSql += ' AND s.module_code = ?';
+    excelParams.push(mod);
+  }
+  for (const row of queryAll(excelSql, excelParams)) {
+    codes.add(String(row.category).trim());
+  }
+
+  function tableHasRows(table, moduleColumn = 'module_code') {
+    let sql = `SELECT 1 AS ok FROM ${table} WHERE 1=1`;
+    const params = [];
+    if (mod) {
+      sql += ` AND ${moduleColumn} = ?`;
+      params.push(mod);
+    }
+    sql += ' LIMIT 1';
+    return Boolean(queryOne(sql, params));
+  }
+
+  if (tableHasRows('form_templates') || tableHasRows('documents')) {
+    codes.add('norm');
+  }
+  if (tableHasRows('conversion_scripts')) {
+    codes.add('to1104');
+  }
+  if (tableHasRows('module_code_values')) {
+    codes.add('code_value');
+  }
+
+  return listMaterialCategories().filter((c) => codes.has(c.code));
 }
 
 export function listDatasets(limit = 50) {

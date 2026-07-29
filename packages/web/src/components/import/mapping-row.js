@@ -8,6 +8,7 @@ export function createMappingRow(data = {}) {
     standardField: '',
     isRequired: false,
     defaultDisplay: false,
+    defaultFilter: false,
     ...data,
   };
 }

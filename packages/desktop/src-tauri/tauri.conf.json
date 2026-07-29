@@ -29,7 +29,7 @@
       "../bundle/resources/server.exe": "server.exe",
       "../bundle/resources/sql-wasm.wasm": "sql-wasm.wasm",
       "../bundle/resources/dataset-schema.sql": "dataset-schema.sql",
-      "../bundle/resources/seed/catalog.db.enc": "seed/catalog.db.enc"
+      "../bundle/resources/seed/catalog.db": "seed/catalog.db"
     },
     "windows": {
       "webviewInstallMode": {

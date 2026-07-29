@@ -17,6 +17,7 @@ import {
   getDatasetCatalog,
   getVersionDetail,
   listDatasets,
+  listSearchableCategories,
   listStandardFields,
   listSubtypes,
   listSubtypeVersions,
@@ -29,6 +30,7 @@ import {
   upsertSubtype,
 } from './services/dataset-config.js';
 import { importDatasetExcel } from './services/dataset-import.js';
+import { browseModuleCategory, getModuleCategoryStats, getModuleSubtypeStats } from './services/module-browse.js';
 import {
   getModuleCodeValueSummary,
   importModuleCodeValues,
@@ -62,9 +64,8 @@ import {
 import { searchDocuments, getDocumentSearchHits } from './services/document-search.js';
 import {
   getDatasetStats,
-  searchDatasetRecords,
-  suggestDatasetItems,
 } from './services/dataset-search.js';
+import { unifiedSearch, unifiedSuggest } from './services/unified-search.js';
 import {
   ensureApiToken,
   getCorsOptions,
@@ -95,11 +96,13 @@ app.get('/api/health', async () => ({ ok: true, ...getDatasetStats() }));
 
 app.get('/api/suggest', async (request, reply) => {
   try {
-    const { q, limit, mode, categories } = request.query;
-    return suggestDatasetItems(q, {
+    const { q, limit, mode, categories, moduleCode, subtypeCode } = request.query;
+    return unifiedSuggest(q, {
       limit: limit ? Number(limit) : 10,
       mode,
       categories,
+      moduleCode,
+      subtypeCode,
     });
   } catch (error) {
     console.error('[api/suggest]', error);
@@ -109,11 +112,13 @@ app.get('/api/suggest', async (request, reply) => {
 
 app.get('/api/search', async (request, reply) => {
   try {
-    const { q, versionId, mode, categories } = request.query;
-    return searchDatasetRecords(q, {
+    const { q, versionId, mode, categories, moduleCode, subtypeCode } = request.query;
+    return unifiedSearch(q, {
       versionId: versionId ? Number(versionId) : undefined,
       mode,
       categories,
+      moduleCode,
+      subtypeCode,
     });
   } catch (error) {
     console.error('[api/search]', error);
@@ -123,6 +128,44 @@ app.get('/api/search', async (request, reply) => {
 
 /** 新模型目录 */
 app.get('/api/dataset/catalog', async () => getDatasetCatalog());
+
+app.get('/api/dataset/search-categories', async (request) => {
+  const { moduleCode } = request.query || {};
+  return { items: listSearchableCategories({ moduleCode }) };
+});
+
+app.get('/api/dataset/module-category-stats', async (request, reply) => {
+  try {
+    const { moduleCode } = request.query || {};
+    return { items: getModuleCategoryStats(moduleCode) };
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '统计失败' });
+  }
+});
+
+app.get('/api/dataset/module-subtype-stats', async (request, reply) => {
+  try {
+    const { moduleCode, categories } = request.query || {};
+    return { items: getModuleSubtypeStats(moduleCode, categories) };
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '统计失败' });
+  }
+});
+
+app.get('/api/dataset/browse', async (request, reply) => {
+  try {
+    const { moduleCode, category, keyword, limit, offset } = request.query || {};
+    return browseModuleCategory({
+      moduleCode,
+      category,
+      keyword,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '浏览失败' });
+  }
+});
 
 app.get('/api/dataset/modules', async () => ({ items: listModules() }));
 
@@ -185,6 +228,7 @@ app.post('/api/dataset/code-values/import', async (request, reply) => {
     return importModuleCodeValues(buffer, {
       moduleCode: fields.moduleCode,
       fileName: fields.fileName || fields.uploadFileName,
+      subtypeCode: fields.subtypeCode || undefined,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
@@ -363,6 +407,7 @@ app.post('/api/form-template/import', async (request, reply) => {
   let buffer = null;
   let fileName = '';
   let moduleCode = '';
+  let subtypeCode = '';
 
   try {
     for await (const part of request.parts()) {
@@ -373,6 +418,8 @@ app.post('/api/form-template/import', async (request, reply) => {
         fileName = part.value || fileName;
       } else if (part.fieldname === 'moduleCode') {
         moduleCode = part.value || moduleCode;
+      } else if (part.fieldname === 'subtypeCode') {
+        subtypeCode = part.value || subtypeCode;
       }
     }
   } catch (error) {
@@ -388,7 +435,11 @@ app.post('/api/form-template/import', async (request, reply) => {
   }
 
   try {
-    return importFormTemplate(buffer, { fileName, moduleCode });
+    return importFormTemplate(buffer, {
+      fileName,
+      moduleCode,
+      subtypeCode: subtypeCode || undefined,
+    });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
   }
@@ -451,6 +502,8 @@ app.post('/api/document/import', async (request, reply) => {
   let buffer = null;
   let fileName = '';
   let profileId = '';
+  let moduleCode = '';
+  let subtypeCode = '';
 
   try {
     for await (const part of request.parts()) {
@@ -461,6 +514,10 @@ app.post('/api/document/import', async (request, reply) => {
         fileName = part.value || fileName;
       } else if (part.fieldname === 'profileId') {
         profileId = part.value || profileId;
+      } else if (part.fieldname === 'moduleCode') {
+        moduleCode = part.value || moduleCode;
+      } else if (part.fieldname === 'subtypeCode') {
+        subtypeCode = part.value || subtypeCode;
       }
     }
   } catch (error) {
@@ -472,7 +529,12 @@ app.post('/api/document/import', async (request, reply) => {
   }
 
   try {
-    return importFillInstructionDocument(buffer, { fileName, profileId: profileId || undefined });
+    return importFillInstructionDocument(buffer, {
+      fileName,
+      profileId: profileId || undefined,
+      moduleCode: moduleCode || undefined,
+      subtypeCode: subtypeCode || undefined,
+    });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
   }
@@ -556,6 +618,7 @@ app.post('/api/conversion-script/import', async (request, reply) => {
   let buffer = null;
   let fileName = '';
   let moduleCode = '';
+  let subtypeCode = '';
 
   try {
     for await (const part of request.parts()) {
@@ -566,6 +629,8 @@ app.post('/api/conversion-script/import', async (request, reply) => {
         fileName = part.value || fileName;
       } else if (part.fieldname === 'moduleCode') {
         moduleCode = part.value || moduleCode;
+      } else if (part.fieldname === 'subtypeCode') {
+        subtypeCode = part.value || subtypeCode;
       }
     }
   } catch (error) {
@@ -581,7 +646,7 @@ app.post('/api/conversion-script/import', async (request, reply) => {
   }
 
   try {
-    return importConversionScript(buffer, { fileName, moduleCode });
+    return importConversionScript(buffer, { fileName, moduleCode, subtypeCode: subtypeCode || undefined });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
   }

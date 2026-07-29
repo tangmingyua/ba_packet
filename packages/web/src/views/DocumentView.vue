@@ -8,13 +8,13 @@
           <h3>填报说明</h3>
           <div class="list-header-links">
             <router-link to="/document-search" class="btn-link">搜索</router-link>
-            <router-link to="/import?tab=fillInstruction" class="btn-link">去导入</router-link>
+            <router-link to="/import?tab=import&subtype=1104_FILL_INSTRUCTION" class="btn-link">去导入</router-link>
           </div>
         </div>
         <p v-if="loadingList" class="muted">加载中…</p>
         <p v-else-if="!items.length" class="muted empty-hint">
           暂无填报说明。
-          <router-link to="/import?tab=fillInstruction">前往导入</router-link>
+          <router-link to="/import?tab=import&subtype=1104_FILL_INSTRUCTION">前往导入</router-link>
         </p>
         <ul v-else class="document-items">
           <li v-for="item in items" :key="item.id">

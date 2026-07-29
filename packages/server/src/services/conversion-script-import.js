@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import path from 'path';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { listModules } from './dataset-config.js';
+import { resolveSubtypeCode } from '../config/system-subtypes.js';
+import { resolveImportSubtypeCode } from './dataset-config.js';
 
 /** 文件名无 _版本 时的默认版本（与表样一致） */
 export const CONVERSION_SCRIPT_LATEST_VERSION = 'LASTEST';
@@ -131,11 +133,15 @@ export function importConversionScript(buffer, options = {}) {
     run('DELETE FROM conversion_scripts WHERE id = ?', [existing.id]);
   }
 
+  const subtypeCode = options.subtypeCode
+    ? resolveImportSubtypeCode(options.subtypeCode, 'script', { moduleCode })
+    : resolveSubtypeCode('script', moduleCode);
+
   run(
     `INSERT INTO conversion_scripts (
-       module_code, report_code, version_label, source_file_name, file_hash, script_text
-     ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [moduleCode, meta.reportCode, meta.versionLabel, meta.sourceFileName, fileHash, scriptText]
+       subtype_code, module_code, report_code, version_label, source_file_name, file_hash, script_text
+     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [subtypeCode, moduleCode, meta.reportCode, meta.versionLabel, meta.sourceFileName, fileHash, scriptText]
   );
 
   const inserted = queryOne('SELECT last_insert_rowid() AS id');

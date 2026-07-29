@@ -5,13 +5,13 @@
     <div class="form-template-layout">
       <aside class="form-template-list">
         <div class="list-header">
-          <h3>1104 表样</h3>
-          <router-link to="/import?tab=formTemplate" class="btn-link">去导入</router-link>
+          <h3>表样</h3>
+          <router-link to="/import?tab=import&subtype=1104_FORM_TEMPLATE" class="btn-link">去导入</router-link>
         </div>
         <p v-if="loadingList" class="muted">加载中…</p>
         <p v-else-if="!items.length" class="muted empty-hint">
           暂无表样。
-          <router-link to="/import?tab=formTemplate">前往导入</router-link>
+          <router-link to="/import?tab=import&subtype=1104_FORM_TEMPLATE">前往导入</router-link>
         </p>
         <ul v-else class="template-items">
           <li v-for="item in items" :key="item.id">

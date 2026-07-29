@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MATERIAL_MODULES, MATERIAL_SUBTYPES } from '../config/import-catalog-static.js';
+import { SEED_SUBTYPES } from '../config/system-subtypes.js';
 import { STANDARD_FIELD_SEEDS } from './seed-standard-fields.js';
 import { backfillFormTemplateCells } from '../services/form-template-cells.js';
 import { backfillFormTemplateLayouts } from '../services/form-template-layout.js';
@@ -259,6 +260,13 @@ function ensureFieldMappingDefaultDisplayColumn() {
   }
 }
 
+/** field_mappings：是否作为查询页默认筛选列（空值不生效，仅预填筛选 UI） */
+function ensureFieldMappingDefaultFilterColumn() {
+  const cols = queryAll('PRAGMA table_info(field_mappings)');
+  if (cols.some((c) => c.name === 'is_default_filter')) return;
+  run(`ALTER TABLE field_mappings ADD COLUMN is_default_filter INTEGER NOT NULL DEFAULT 0`);
+}
+
 /** 主类（modules）+ 子类归属 module_code */
 function ensureModuleSchema() {
   for (const m of MATERIAL_MODULES) {
@@ -351,6 +359,93 @@ function ensureWordImportSchema() {
   }
 }
 
+/** subtypes：存储形态 storage_kind（excel / form_template / document / script / code_value） */
+function ensureStorageKindColumn() {
+  const subtypeCols = queryAll('PRAGMA table_info(subtypes)');
+  if (!subtypeCols.some((c) => c.name === 'storage_kind')) {
+    run(`ALTER TABLE subtypes ADD COLUMN storage_kind TEXT NOT NULL DEFAULT 'excel'`);
+  }
+  run(`UPDATE subtypes SET storage_kind = 'excel' WHERE storage_kind IS NULL OR storage_kind = ''`);
+}
+
+/** 种子子类（示例子类，首次安装写入） */
+function ensureSeedSubtypes() {
+  for (const st of SEED_SUBTYPES) {
+    run(
+      `INSERT OR IGNORE INTO subtypes (code, name, enabled, sort_order, category, module_code, storage_kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        st.code,
+        st.name,
+        st.importEnabled ? 1 : 0,
+        st.sortOrder,
+        st.category,
+        st.moduleCode,
+        st.storageKind,
+      ]
+    );
+  }
+}
+
+/** 业务子类标签/名称修正（存量库迁移） */
+function backfillSubtypeCategories() {
+  run(`UPDATE subtypes SET category = 'norm' WHERE code = 'suspicious_trn' AND category = 'qa'`);
+  run(`UPDATE subtypes SET name = '个人征信表头定义' WHERE code = 'header_definition' AND name = '表头定义'`);
+  run(`UPDATE subtypes SET name = '表样' WHERE code = '1104_FORM_TEMPLATE' AND name IN ('1104 表样', '1104表样')`);
+  run(`UPDATE subtypes SET name = '填报说明' WHERE code = '1104_FILL_INSTRUCTION' AND name IN ('1104 填报说明', '1104填报说明')`);
+  run(`
+    UPDATE data_records
+    SET std_category = 'norm'
+    WHERE std_category = 'qa'
+      AND subtype_version_id IN (
+        SELECT id FROM subtype_versions WHERE subtype_code = 'suspicious_trn'
+      )
+  `);
+}
+
+/** 业务表挂接 subtype_code 并回填历史数据 */
+function ensureSubtypeCodeColumns() {
+  const tables = [
+    { table: 'form_templates', suffix: '_FORM_TEMPLATE' },
+    { table: 'documents', suffix: '_FILL_INSTRUCTION' },
+  ];
+
+  for (const { table, suffix } of tables) {
+    const cols = queryAll(`PRAGMA table_info(${table})`);
+    if (!cols.length) continue;
+    if (!cols.some((c) => c.name === 'subtype_code')) {
+      run(`ALTER TABLE ${table} ADD COLUMN subtype_code TEXT`);
+    }
+    run(
+      `UPDATE ${table} SET subtype_code = module_code || ?
+       WHERE subtype_code IS NULL OR subtype_code = ''`,
+      [suffix]
+    );
+  }
+
+  const scriptCols = queryAll('PRAGMA table_info(conversion_scripts)');
+  if (scriptCols.length) {
+    if (!scriptCols.some((c) => c.name === 'subtype_code')) {
+      run(`ALTER TABLE conversion_scripts ADD COLUMN subtype_code TEXT`);
+    }
+    run(
+      `UPDATE conversion_scripts SET subtype_code = 'CONVERSION_SCRIPT'
+       WHERE subtype_code IS NULL OR subtype_code = ''`
+    );
+  }
+
+  const mcvCols = queryAll('PRAGMA table_info(module_code_values)');
+  if (mcvCols.length) {
+    if (!mcvCols.some((c) => c.name === 'subtype_code')) {
+      run(`ALTER TABLE module_code_values ADD COLUMN subtype_code TEXT`);
+    }
+    run(
+      `UPDATE module_code_values SET subtype_code = module_code || '_CODE_VALUE'
+       WHERE subtype_code IS NULL OR subtype_code = ''`
+    );
+  }
+}
+
 /** 新模型：子类版本 / 映射 / datasets / data_records */
 function ensureDatasetModelSchema() {
   const schemaPath = resolveSchemaPath();
@@ -363,8 +458,10 @@ function ensureDatasetModelSchema() {
   db.run(schema);
 
   ensureModuleSchema();
+  ensureStorageKindColumn();
   ensureCategoryColumns();
   ensureFieldMappingDefaultDisplayColumn();
+  ensureFieldMappingDefaultFilterColumn();
   ensureDocumentNodeIndicatorKeyColumn();
   ensureFormTemplateLayoutColumn();
   ensureFormTemplateModuleColumn();
@@ -385,11 +482,14 @@ function ensureDatasetModelSchema() {
       const category = st.categoryCode === 'FAQ' ? 'qa' : 'norm';
       const moduleCode = st.moduleCode || 'YBT';
       run(
-        `INSERT INTO subtypes (code, name, enabled, sort_order, category, module_code) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO subtypes (code, name, enabled, sort_order, category, module_code, storage_kind) VALUES (?, ?, ?, ?, ?, ?, 'excel')`,
         [st.code, st.name, st.importEnabled ? 1 : 0, index, category, moduleCode]
       );
     });
   }
+  ensureSeedSubtypes();
+  backfillSubtypeCategories();
+  ensureSubtypeCodeColumns();
   saveDb();
 }
 

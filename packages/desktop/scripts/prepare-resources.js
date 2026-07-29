@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 import { execSync } from 'child_process';
 
-import { encryptInstallSeed, isPlainSqliteFile, isEncryptedDbFile, decryptInstallSeed, decryptDbBuffer } from '../../server/src/db/db-crypto.js';
+import { isPlainSqliteFile, isEncryptedDbFile, decryptInstallSeed, decryptDbBuffer } from '../../server/src/db/db-crypto.js';
 import { ensureDbKeyHex } from '../../server/src/db/db-key.js';
 
 
@@ -82,43 +82,22 @@ async function resolveSeedPlainBuffer() {
 }
 
 async function copySeed() {
-
   const seedDir = path.join(BUNDLE, 'seed');
-
   fs.mkdirSync(seedDir, { recursive: true });
 
-
-
-  if (!fs.existsSync(SEED_DB)) {
-
-    throw new Error(`未找到预置数据库: ${SEED_DB}`);
-
-  }
-
-
-
+  const plainPath = path.join(seedDir, 'catalog.db');
   const encPath = path.join(seedDir, 'catalog.db.enc');
-
   const plainBuffer = await resolveSeedPlainBuffer();
 
-
-
   if (!isPlainSqliteFile(plainBuffer)) {
-
     throw new Error('预置数据库解密后不是有效的 SQLite 文件');
-
   }
 
+  fs.writeFileSync(plainPath, plainBuffer);
+  if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
 
-
-  fs.writeFileSync(encPath, encryptInstallSeed(plainBuffer));
-
-
-
-  const sizeKb = (fs.statSync(encPath).size / 1024).toFixed(1);
-
-  console.log(`已生成加密预置库: seed/catalog.db.enc (${sizeKb} KB)`);
-
+  const sizeKb = (fs.statSync(plainPath).size / 1024).toFixed(1);
+  console.log(`已生成明文预置库: seed/catalog.db (${sizeKb} KB)`);
 }
 
 

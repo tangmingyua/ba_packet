@@ -246,10 +246,18 @@ textarea {
   min-width: 0;
 }
 
-.content-center {
+.content-search-landing {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  padding: 20px 36px 28px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.content-search-landing > * {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 
 .content-fill {

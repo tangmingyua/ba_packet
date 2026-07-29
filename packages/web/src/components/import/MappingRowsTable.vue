@@ -6,13 +6,14 @@
         <th>Excel 列名</th>
         <th>标准字段</th>
         <th class="center" title="勾选后搜索结果默认展示该列">默认展示</th>
+        <th class="center" title="勾选后查询该子类时预填筛选列（包含、空值，不实际过滤）">默认筛选</th>
         <th>必填</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       <tr v-if="!rows.length">
-        <td colspan="6" class="empty-cell">暂无映射，请点击下方「添加映射」</td>
+        <td colspan="7" class="empty-cell">暂无映射，请点击下方「添加映射」</td>
       </tr>
       <tr
         v-for="(row, index) in rows"
@@ -47,6 +48,13 @@
         </td>
         <td class="center">
           <input v-model="row.defaultDisplay" type="checkbox" title="勾选后搜索结果默认展示该列" />
+        </td>
+        <td class="center">
+          <input
+            v-model="row.defaultFilter"
+            type="checkbox"
+            title="勾选后查询该子类时预填筛选列（包含、空值，不实际过滤）"
+          />
         </td>
         <td class="center">
           <input v-model="row.isRequired" type="checkbox" />

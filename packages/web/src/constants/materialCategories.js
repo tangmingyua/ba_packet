@@ -7,6 +7,7 @@ export const MATERIAL_CATEGORIES = [
   { code: 'peer', label: '同业经验' },
   { code: 'changelog', label: '变更记录' },
   { code: 'to1104', label: '转1104' },
+  { code: 'code_value', label: '码值' },
 ];
 
 export function getCategoryLabel(code) {
@@ -23,4 +24,16 @@ export function parseCategoryFilter(input) {
         .filter(Boolean);
   const codes = new Set(MATERIAL_CATEGORIES.map((c) => c.code));
   return [...new Set(list.filter((c) => codes.has(c)))];
+}
+
+/** 解析 ?subtypeCode=A,B 或数组 */
+export function parseSubtypeFilter(input) {
+  if (!input) return [];
+  const list = Array.isArray(input)
+    ? input
+    : String(input)
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+  return [...new Set(list)];
 }

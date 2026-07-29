@@ -93,17 +93,11 @@ fn random_hex(byte_len: usize) -> Result<String, String> {
 
 
 fn resolve_seed_path(resource_dir: &Path) -> PathBuf {
-
-    let enc = resource_dir.join("seed").join("catalog.db.enc");
-
-    if enc.exists() {
-
-        return enc;
-
+    let plain = resource_dir.join("seed").join("catalog.db");
+    if plain.exists() {
+        return plain;
     }
-
-    resource_dir.join("seed").join("catalog.db")
-
+    resource_dir.join("seed").join("catalog.db.enc")
 }
 
 
@@ -447,27 +441,22 @@ fn spawn_server(
 
 
     command
-
         .env("BA_DB_PATH", db_path)
-
-        .env("BA_DB_KEY", db_key)
-
         .env("BA_SEED_PATH", seed_path)
-
         .env("BA_API_TOKEN", api_token)
-
         .env("BA_PORT", PORT.to_string())
-
         .env("BA_HOST", "127.0.0.1")
-
         .env("BA_RUNTIME_SESSION_PATH", session_path);
 
-
+    if !db_key.is_empty() {
+        command.env("BA_DB_KEY", db_key);
+    }
 
     if !paths.use_dev_node {
-
-        command.env("BA_RESOURCES_PATH", &paths.resources_dir);
-
+        command
+            .env("BA_RESOURCES_PATH", &paths.resources_dir)
+            .env("BA_DB_PLAIN", "1")
+            .env("BA_API_AUTH", "0");
     }
 
 
@@ -572,7 +561,11 @@ pub fn start_server(app: &AppHandle) -> Result<ServerProcess, String> {
 
     let db_path = ensure_user_database(&app_data_dir)?;
 
-    let db_key = ensure_db_key(&app_data_dir)?;
+    let db_key = if cfg!(debug_assertions) {
+        ensure_db_key(&app_data_dir)?
+    } else {
+        String::new()
+    };
 
     let session_path = app_data_dir.join("runtime").join("session.json");
 

@@ -15,7 +15,7 @@ const RESOURCE_FILES = [
   { src: 'server.exe', dest: 'server.exe' },
   { src: 'sql-wasm.wasm', dest: 'sql-wasm.wasm' },
   { src: 'dataset-schema.sql', dest: 'dataset-schema.sql' },
-  { src: 'seed/catalog.db.enc', dest: 'seed/catalog.db.enc' },
+  { src: 'seed/catalog.db', dest: 'seed/catalog.db' },
 ];
 
 function findMainExe() {
@@ -83,7 +83,7 @@ const readme = `监管资料库搜索 - 免安装版
 
 1. 解压整个文件夹到任意位置（不要只复制 exe，需保留同目录下所有文件）
 2. 双击「${PRODUCT}.exe」运行
-3. 用户数据保存在本目录 app-data/（portable.flag 启用便携模式）
+3. 用户数据保存在本目录 app-data/（portable.flag 启用便携模式，catalog.db 为明文 SQLite）
 4. 需要目标机器已安装 Microsoft Edge WebView2 运行时
 
 目录内必须包含：
@@ -91,7 +91,7 @@ const readme = `监管资料库搜索 - 免安装版
   - server.exe
   - sql-wasm.wasm
   - dataset-schema.sql
-  - seed/catalog.db.enc
+  - seed/catalog.db
 `;
 fs.writeFileSync(path.join(OUT_DIR, '使用说明.txt'), readme, 'utf-8');
 

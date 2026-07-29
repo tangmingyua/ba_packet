@@ -3,7 +3,7 @@
     <header class="cs-page-head">
       <div class="list-header">
         <h3>转1104 脚本</h3>
-        <router-link to="/import?tab=conversionScript" class="btn-link">去导入</router-link>
+        <router-link to="/import?tab=import&subtype=CONVERSION_SCRIPT" class="btn-link">去导入</router-link>
       </div>
 
       <div class="filter-bar">
@@ -38,7 +38,7 @@
       <p v-if="loading" class="muted state-hint">加载中…</p>
       <p v-else-if="searched && !items.length" class="muted state-hint">
         无匹配脚本，
-        <router-link to="/import?tab=conversionScript">前往导入</router-link>
+        <router-link to="/import?tab=import&subtype=CONVERSION_SCRIPT">前往导入</router-link>
       </p>
       <p v-else-if="!searched" class="muted state-hint">
         点击「查询」列出脚本；留空表号则显示全部
@@ -396,7 +396,7 @@ watch(
 }
 
 .cs-drawer {
-  width: min(760px, 94vw);
+  width: min(960px, 96vw);
   height: 100%;
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -446,12 +446,36 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: 12px 16px;
+  overflow: hidden;
 }
 
 .drawer-body :deep(.script-preview) {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+.drawer-body :deep(.script-preview-toolbar) {
+  flex-shrink: 0;
+}
+
+.drawer-body :deep(.toolbar-search) {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-body :deep(.search-input) {
+  max-width: none;
+  flex: 1;
+}
+
+.drawer-body :deep(.script-preview-body) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .cs-drawer-enter-active,

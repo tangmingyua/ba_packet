@@ -18,6 +18,11 @@ function resolveMode(mode) {
   return 'aggregate';
 }
 
+/** 空关键词浏览：不限定字段匹配 */
+export function buildBrowseWhereSql() {
+  return '1 = 1';
+}
+
 /** 构建 SQL 匹配条件（payload JSON + std_data_item） */
 export function buildSearchMatchSql(mode) {
   const fields = getSearchFieldCodes(mode);

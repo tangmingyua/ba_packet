@@ -36,7 +36,7 @@ export const WORD_IMPORT_PROFILES = [
   },
   {
     id: '1104-merged',
-    label: '1104 合并填报说明',
+    label: '合并填报说明',
     moduleCode: '1104',
     priority: 20,
     contentHints: [

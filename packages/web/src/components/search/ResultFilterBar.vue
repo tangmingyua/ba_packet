@@ -1,7 +1,7 @@
 <template>
-  <div class="filter-bar-wrap">
+  <div class="filter-bar-wrap" :class="{ compact: compact }">
     <div :class="['unified-filter-bar', variant === 'qa' ? 'qa-filter-bar' : 'filter-bar']">
-      <div class="filter-group filter-group-keyword">
+      <div v-if="!hideKeyword" class="filter-group filter-group-keyword">
         <label>{{ keywordLabel }}</label>
         <input
           :value="keyword"
@@ -122,15 +122,16 @@
 
       <div class="filter-actions">
         <button type="button" class="btn btn-primary" :disabled="loading" @click="emit('search')">
-          查询
+          筛选
         </button>
         <button type="button" class="btn" @click="emit('reset')">重置</button>
       </div>
     </div>
 
     <CategoryTagFilter
-      v-if="mode === 'aggregate'"
+      v-if="mode === 'aggregate' && categoryOptions.length"
       :model-value="categoryFilter"
+      :options="categoryOptions"
       variant="full"
       class="filter-category-row"
       @update:model-value="emit('update:categoryFilter', $event)"
@@ -162,7 +163,10 @@ const props = defineProps({
   showSuggest: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   mode: { type: String, default: 'norm' },
+  hideKeyword: { type: Boolean, default: false },
+  compact: { type: Boolean, default: false },
   categoryFilter: { type: Array, default: () => [] },
+  categoryOptions: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -288,6 +292,15 @@ function highlightName(name) {
 <style scoped>
 .filter-bar-wrap {
   margin-bottom: 12px;
+}
+
+.filter-bar-wrap.compact {
+  margin-bottom: 6px;
+}
+
+.filter-bar-wrap.compact .filter-category-row {
+  margin-top: 6px;
+  padding-top: 6px;
 }
 
 .filter-category-row {

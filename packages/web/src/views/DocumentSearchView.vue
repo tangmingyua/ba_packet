@@ -1,7 +1,7 @@
 <template>
   <section class="doc-search-page">
     <p class="hint">
-      搜索 1104 填报说明中的<strong>文档代号/标题</strong>与<strong>部分、指标、正文</strong>等节点正文；英文不区分大小写；至少 1 个字即可。
+      搜索填报说明中的<strong>文档代号/标题</strong>与<strong>部分、指标、正文</strong>等节点正文；英文不区分大小写；至少 1 个字即可。
     </p>
 
     <form class="search-bar" @submit.prevent="runSearch">

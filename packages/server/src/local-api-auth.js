@@ -11,6 +11,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let apiToken = '';
 
+/** 桌面便携版等场景：BA_API_AUTH=0 时不校验 Bearer 令牌 */
+export function isApiAuthDisabled() {
+  return process.env.BA_API_AUTH === '0';
+}
+
 export function ensureApiToken() {
   if (process.env.BA_API_TOKEN) {
     apiToken = process.env.BA_API_TOKEN;
@@ -76,6 +81,7 @@ function isAllowedOrigin(origin) {
 
 export function registerLocalApiAuth(app) {
   ensureApiToken();
+  if (isApiAuthDisabled()) return;
 
   app.addHook('onRequest', async (request, reply) => {
     const pathname = request.url.split('?')[0];

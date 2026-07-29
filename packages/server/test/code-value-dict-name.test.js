@@ -20,8 +20,13 @@ describe('extractDictNameFromCellText', () => {
     );
   });
 
-  it('returns null when prefix missing or result empty', () => {
-    assert.equal(extractDictNameFromCellText('操作类型'), null);
+  it('uses full cell text when appendix prefix is missing', () => {
+    assert.equal(extractDictNameFromCellText('操作类型'), '操作类型');
+    assert.equal(extractDictNameFromCellText('10.4 特殊经济区类型'), '10.4 特殊经济区类型');
+    assert.equal(extractDictNameFromCellText('10.4 特殊经济区类型；'), '10.4 特殊经济区类型');
+  });
+
+  it('returns null when cell text empty or only appendix prefix', () => {
     assert.equal(extractDictNameFromCellText('详见附录A1'), null);
     assert.equal(extractDictNameFromCellText(''), null);
     assert.equal(extractDictNameFromCellText(null), null);

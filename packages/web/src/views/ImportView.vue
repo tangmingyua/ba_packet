@@ -1,7 +1,7 @@
 <template>
   <section class="import-page">
     <p class="hint page-intro">
-        先配置子类与标准字段，再为子类创建版本并保存字段映射，最后上传 Excel 导入。
+        选择资料子类后上传对应文件。配置类须先在「子类配置」中完成版本与字段映射；表样 Excel / Word / SQL / 码值等还原类子类选定解析方式后可直接导入。
       </p>
 
     <nav class="qa-module-tabs" role="tablist">
@@ -39,46 +39,6 @@
         type="button"
         role="tab"
         class="qa-module-tab"
-        :class="{ active: activeTab === 'codeValues' }"
-        :aria-selected="activeTab === 'codeValues'"
-        @click="setTab('codeValues')"
-      >
-        码值维护
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="qa-module-tab"
-        :class="{ active: activeTab === 'formTemplate' }"
-        :aria-selected="activeTab === 'formTemplate'"
-        @click="setTab('formTemplate')"
-      >
-        表样导入
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="qa-module-tab"
-        :class="{ active: activeTab === 'fillInstruction' }"
-        :aria-selected="activeTab === 'fillInstruction'"
-        @click="setTab('fillInstruction')"
-      >
-        填报说明
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="qa-module-tab"
-        :class="{ active: activeTab === 'conversionScript' }"
-        :aria-selected="activeTab === 'conversionScript'"
-        @click="setTab('conversionScript')"
-      >
-        转1104 脚本
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="qa-module-tab"
         :class="{ active: activeTab === 'data' }"
         :aria-selected="activeTab === 'data'"
         @click="setTab('data')"
@@ -89,6 +49,37 @@
 
     <!-- 标签：资料导入 -->
     <div v-show="activeTab === 'import'" class="tab-panel">
+      <fieldset class="form-section import-subtype-picker">
+        <legend>选择资料子类</legend>
+        <div class="form-grid">
+          <label class="field span-2">
+            <span class="label">目标子类</span>
+            <select v-model="importSubtypeCode">
+              <optgroup v-for="group in importSubtypeGroups" :key="group.code" :label="group.name">
+                <option v-for="st in group.subtypes" :key="st.code" :value="st.code">
+                  {{ st.name }} · {{ st.storageKindLabel || st.storageKind }} ·
+                  {{ st.categoryLabel || getCategoryLabel(st.category) }}
+                  {{ st.enabled ? '' : '（未启用）' }}
+                </option>
+              </optgroup>
+            </select>
+          </label>
+        </div>
+        <p v-if="selectedImportSubtype" class="muted import-subtype-hint">
+          主类 {{ selectedImportSubtype.moduleName || selectedImportSubtype.moduleCode }} ·
+          标签 {{ selectedImportSubtype.categoryLabel || getCategoryLabel(selectedImportSubtype.category) }} ·
+          形态 {{ selectedImportSubtype.storageKindLabel || selectedImportSubtype.storageKind }}
+          <template v-if="importStorageKind === 'excel'">
+            · 须在子类配置中启用并完成字段映射
+          </template>
+        </p>
+        <p v-if="selectedImportSubtype && !selectedImportSubtype.enabled" class="feedback error">
+          该子类未启用。
+          <button type="button" class="btn-link" @click="setTab('subtypes')">去子类配置启用</button>
+        </p>
+      </fieldset>
+
+      <template v-if="importStorageKind === 'excel'">
       <fieldset class="form-section">
         <legend>上传 Excel</legend>
         <div class="form-grid">
@@ -237,10 +228,9 @@
           </tbody>
         </table>
       </div>
-    </div>
+      </template>
 
-    <!-- 标签：表样导入 -->
-    <div v-show="activeTab === 'formTemplate'" class="tab-panel">
+      <div v-else-if="importStorageKind === 'form_template'" class="import-kind-panel">
       <p class="hint">
         上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。仅导入 Sheet 名以字母开头且可解析表号的
         Sheet（如 G0100_231、S2400_201、NR0100_231）；Sheet 名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
@@ -250,7 +240,7 @@
         <div class="form-grid">
           <label class="field">
             <span class="label">模块 <span class="required">*</span></span>
-            <select v-model="formTemplateModuleCode">
+            <select v-model="formTemplateModuleCode" :disabled="Boolean(selectedImportSubtype?.moduleCode)">
               <option v-for="mod in formTemplateModules" :key="mod.code" :value="mod.code">
                 {{ mod.name }}
               </option>
@@ -338,10 +328,9 @@
         </table>
         <p v-else class="empty-cell">暂无表样，请上传表样 Excel</p>
       </fieldset>
-    </div>
+      </div>
 
-    <!-- 标签：转1104 脚本 -->
-    <div v-show="activeTab === 'conversionScript'" class="tab-panel">
+      <div v-else-if="importStorageKind === 'script'" class="import-kind-panel">
       <p class="hint">
         上传转 1104 SQL/TXT 脚本。须选择模块（与子类配置主类一致）。文件名格式为「表号_版本.sql/.txt」或「表号.sql/.txt」（无版本时记为
         LASTEST）。同模块+表号+版本再次导入将覆盖。删除请在本页已导入列表中操作。
@@ -442,12 +431,11 @@
         </table>
         <p v-else class="empty-cell">暂无脚本，请上传 .sql 或 .txt 文件</p>
       </fieldset>
-    </div>
+      </div>
 
-    <!-- 标签：1104 填报说明 Word -->
-    <div v-show="activeTab === 'fillInstruction'" class="tab-panel">
+      <div v-else-if="importStorageKind === 'document'" class="import-kind-panel">
       <p class="hint">
-        上传填报说明 Word（.docx）。系统自动识别 1104 合并说明或 IMAS 采集规范，按表号拆分为多条记录；
+        上传填报说明 Word（.docx）。系统自动识别合并填报说明或 IMAS 采集规范等格式，按表号拆分为多条记录；
         无法识别切分锚点时将整本导入为 1 条。Word 内表格不解析，显示「表样见 xx Excel 导入」。同 doc_code
         再次导入将覆盖。
       </p>
@@ -546,6 +534,17 @@
         </table>
         <p v-else class="empty-cell">暂无填报说明，请上传合并 Word</p>
       </fieldset>
+      </div>
+
+      <div v-else-if="importStorageKind === 'code_value'" class="import-kind-panel">
+        <CodeValuesPanel
+          :modules="catalog.modules"
+          :fixed-module-code="selectedImportSubtype?.moduleCode || ''"
+          :lock-module="Boolean(selectedImportSubtype?.moduleCode)"
+          :subtype-code="selectedImportSubtype?.code || ''"
+          :initial-dict-name="String(route.query.dictName || '')"
+        />
+      </div>
     </div>
 
     <!-- 标签：子类配置 -->
@@ -581,7 +580,7 @@
           <span class="card-step">步骤 1</span>
           <div>
             <h3>主类与子类</h3>
-            <p>先有主类（如一表通、EAST），再在主类下添加子类资料类型。</p>
+            <p>先有主类（如一表通、EAST），再在主类下添加子类，并选择解析方式（配置类 / 表样 Excel / Word / SQL / 码值）。</p>
           </div>
         </header>
 
@@ -589,6 +588,15 @@
           <p v-if="step1Message" class="feedback step-feedback" :class="step1MessageType">
             {{ step1Message }}
           </p>
+          <div class="setup-block tags-reference">
+            <h4>资料类型标签（系统维护，新增需改代码）</h4>
+            <ul class="tag-chip-list">
+              <li v-for="cat in categoryOptions" :key="cat.code" class="tag-chip">
+                {{ cat.label }}
+                <code class="code-tag">{{ cat.code }}</code>
+              </li>
+            </ul>
+          </div>
           <div class="setup-grid">
             <div class="setup-block">
               <h4>添加主类</h4>
@@ -626,6 +634,14 @@
                   </select>
                 </label>
                 <label class="field">
+                  <span class="label">解析方式</span>
+                  <select v-model="newSubtype.storageKind">
+                    <option v-for="kind in parseKindOptions" :key="kind.code" :value="kind.code">
+                      {{ kind.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
                   <span class="label">类型标签</span>
                   <select v-model="newSubtype.category">
                     <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
@@ -634,10 +650,11 @@
                   </select>
                 </label>
               </div>
+              <p v-if="newSubtypeParseHint" class="muted">{{ newSubtypeParseHint }}</p>
               <button type="button" class="btn btn-primary" :disabled="saving" @click="addSubtype">
                 添加子类
               </button>
-              <p class="muted">code 创建后不可改；类型标签用于检索过滤，与主类无关。</p>
+              <p class="muted">code 创建后不可改；解析方式创建后不可改。配置类须配置版本与字段映射，还原类可直接导入。</p>
             </div>
           </div>
 
@@ -653,6 +670,7 @@
                   <th>名称</th>
                   <th>主类</th>
                   <th>类型</th>
+                  <th>形态</th>
                   <th>启用</th>
                   <th>版本数</th>
                   <th></th>
@@ -660,7 +678,7 @@
               </thead>
               <tbody>
                 <tr v-if="!catalog.subtypes.length">
-                  <td colspan="7" class="empty-cell">暂无子类，请先在上方添加</td>
+                  <td colspan="8" class="empty-cell">暂无子类，请先在上方添加</td>
                 </tr>
                 <tr
                   v-for="st in catalog.subtypes"
@@ -672,10 +690,15 @@
                   <td>{{ st.name }}</td>
                   <td>{{ st.moduleName || st.moduleCode }}</td>
                   <td>{{ st.categoryLabel || getCategoryLabel(st.category) }}</td>
+                  <td>{{ st.storageKindLabel || st.storageKind || 'excel' }}</td>
                   <td>{{ st.enabled ? '是' : '否' }}</td>
                   <td>{{ st.versions?.length || 0 }}</td>
                   <td>
-                    <button type="button" class="btn-link danger" @click.stop="removeSubtype(st)">
+                    <button
+                      type="button"
+                      class="btn-link danger"
+                      @click.stop="removeSubtype(st)"
+                    >
                       删除
                     </button>
                   </td>
@@ -686,13 +709,66 @@
         </div>
       </section>
 
+      <section
+        v-if="activeSubtype && !isExcelStorageKind(activeSubtype.storageKind)"
+        class="config-card"
+      >
+        <header class="config-card-head">
+          <span class="card-step">还原类</span>
+          <div>
+            <h3>{{ activeSubtype.name }} · {{ activeSubtype.storageKindLabel }}</h3>
+            <p>还原类无需版本与字段映射。保存启用后，在「资料导入」选择该子类上传文件。</p>
+          </div>
+        </header>
+        <div class="config-card-body work-context">
+          <label class="field">
+            <span class="label">子类名称</span>
+            <input v-model="subtypeNameEdit" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">所属主类</span>
+            <select v-model="subtypeModuleEdit">
+              <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
+                {{ m.name }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">类型标签</span>
+            <select v-model="subtypeCategoryEdit">
+              <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
+                {{ cat.label }}
+              </option>
+            </select>
+          </label>
+          <label class="field readonly-field">
+            <span class="label">解析方式</span>
+            <input :value="activeSubtype.storageKindLabel" type="text" readonly />
+          </label>
+          <label class="check-item enable-check">
+            <input
+              type="checkbox"
+              :checked="activeSubtype.enabled"
+              @change="toggleSubtypeEnabled($event.target.checked)"
+            />
+            启用该子类
+          </label>
+          <button type="button" class="btn" :disabled="saving" @click="saveSubtypeInfo">
+            保存子类信息
+          </button>
+          <button type="button" class="btn btn-primary" @click="setTab('import', { subtype: activeSubtype.code })">
+            去资料导入
+          </button>
+        </div>
+      </section>
+
       <!-- 步骤 2 -->
       <section class="config-card">
         <header class="config-card-head">
           <span class="card-step">步骤 2</span>
           <div>
             <h3>版本总览</h3>
-            <p>查看各子类版本状态；点击「配置 / 去新建」进入步骤 3。</p>
+            <p>查看各<strong>配置类</strong>子类版本状态；点击「配置 / 去新建」进入步骤 3。</p>
           </div>
         </header>
 
@@ -705,7 +781,7 @@
               <span class="label">筛选子类</span>
               <select v-model="filterSubtypeCode">
                 <option value="">全部子类</option>
-                <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
+                <option v-for="st in excelSubtypes" :key="st.code" :value="st.code">
                   {{ st.name }}
                 </option>
               </select>
@@ -729,7 +805,7 @@
             <button type="button" class="btn" @click="resetFilters">重置</button>
           </div>
           <p class="overview-summary">
-            共 {{ catalog.subtypes.length }} 个子类 · {{ totalVersionCount }} 个版本 ·
+            共 {{ excelSubtypes.length }} 个 Excel 子类 · {{ totalVersionCount }} 个版本 ·
             显示 <strong>{{ filteredOverviewRows.length }}</strong> 条
           </p>
           <table class="simple-table overview-table">
@@ -788,7 +864,7 @@
           <span class="card-step">步骤 3</span>
           <div>
             <h3>版本设置与字段映射</h3>
-            <p>选定子类与版本后，配置 Excel 列到标准字段的映射（映射保存在当前所选版本下）。</p>
+            <p>选定<strong>配置类</strong>子类与版本后，配置 Excel 列到标准字段的映射。</p>
           </div>
         </header>
 
@@ -799,13 +875,19 @@
           <p v-if="!catalog.subtypes.length" class="empty-panel">
             请先完成步骤 1，添加至少一个子类。
           </p>
+          <p
+            v-else-if="activeSubtype && !isExcelStorageKind(activeSubtype.storageKind)"
+            class="empty-panel"
+          >
+            当前选中的是还原类子类「{{ activeSubtype.name }}」，请使用上方还原类配置区；步骤 3 仅用于配置类。
+          </p>
 
           <template v-else>
             <div class="work-context">
               <label class="field">
                 <span class="label">当前子类</span>
                 <select v-model="activeSubtypeCode" @change="onSubtypeChange">
-                  <option v-for="st in catalog.subtypes" :key="st.code" :value="st.code">
+                  <option v-for="st in excelSubtypes" :key="st.code" :value="st.code">
                     {{ st.name }}{{ st.enabled ? '' : '（未启用）' }}
                   </option>
                 </select>
@@ -952,6 +1034,7 @@
                   <template v-if="versionDetail">
                     <p class="muted">
                       标准字段共 {{ catalog.standardFields.length }} 个。
+                      「默认筛选」会在查询该子类时预填筛选列（条件为包含、值为空，不实际过滤）。
                       <button type="button" class="btn-link" @click="setTab('fields')">
                         管理标准字段
                       </button>
@@ -1011,11 +1094,6 @@
       <StandardFieldsPanel @changed="refreshCatalog" />
     </div>
 
-    <!-- 标签：码值维护 -->
-    <div v-show="activeTab === 'codeValues'" class="tab-panel">
-      <CodeValuesPanel :modules="catalog.modules" />
-    </div>
-
     <!-- 标签：数据查看 -->
     <div v-show="activeTab === 'data'" class="tab-panel">
       <VersionDataPanel :catalog="catalog" :active="activeTab === 'data'" />
@@ -1032,6 +1110,15 @@ import VersionDataPanel from '../components/import/VersionDataPanel.vue';
 import MappingRowsTable from '../components/import/MappingRowsTable.vue';
 import { createMappingRow, toMappingPayload } from '../components/import/mapping-row.js';
 import { MATERIAL_CATEGORIES, getCategoryLabel } from '../constants/materialCategories.js';
+import {
+  SUBTYPE_PARSE_KINDS,
+  getParseKindHint,
+} from '../constants/subtypeParseKinds.js';
+import {
+  IMPORT_TABS,
+  resolveImportTabFromRoute,
+  isExcelStorageKind,
+} from '../constants/importRouting.js';
 import {
   clearVersionRecords,
   createSubtype,
@@ -1056,21 +1143,19 @@ import {
   upsertModule,
 } from '../api';
 
-const VALID_TABS = [
-  'import',
-  'formTemplate',
-  'fillInstruction',
-  'conversionScript',
-  'subtypes',
-  'fields',
-  'codeValues',
-  'data',
-];
+const VALID_TABS = IMPORT_TABS;
 
 const route = useRoute();
 const router = useRouter();
 
-const catalog = ref({ modules: [], standardFields: [], subtypes: [], categories: MATERIAL_CATEGORIES });
+const catalog = ref({
+  modules: [],
+  standardFields: [],
+  subtypes: [],
+  categories: MATERIAL_CATEGORIES,
+  storageKinds: [],
+});
+const importSubtypeCode = ref('');
 const categoryOptions = computed(() =>
   catalog.value.categories?.length ? catalog.value.categories : MATERIAL_CATEGORIES
 );
@@ -1143,15 +1228,28 @@ const conversionScriptMessage = ref('');
 const conversionScriptMessageType = ref('');
 const conversionScripts = ref([]);
 
-const activeTab = ref(
-  VALID_TABS.includes(route.query.tab) ? route.query.tab : 'import'
-);
+const activeTab = ref(resolveImportTabFromRoute(route.query).tab);
 
 const subtypeModuleEdit = ref('YBT');
 
 const newModule = reactive({ code: '', name: '' });
 
-const newSubtype = reactive({ code: '', name: '', category: 'qa', moduleCode: 'YBT' });
+const newSubtype = reactive({
+  code: '',
+  name: '',
+  category: 'qa',
+  moduleCode: 'YBT',
+  storageKind: 'excel',
+});
+
+const parseKindOptions = computed(() => {
+  if (catalog.value.creatableStorageKinds?.length) {
+    return catalog.value.creatableStorageKinds;
+  }
+  return SUBTYPE_PARSE_KINDS.map(({ code, label }) => ({ code, label }));
+});
+
+const newSubtypeParseHint = computed(() => getParseKindHint(newSubtype.storageKind));
 
 const newVersion = reactive({
   versionLabel: '',
@@ -1173,6 +1271,36 @@ const filterVersionText = ref('');
 const filterEnabledOnly = ref(false);
 const filterReadyOnly = ref(false);
 
+const excelSubtypes = computed(() =>
+  catalog.value.subtypes.filter((st) => isExcelStorageKind(st.storageKind))
+);
+
+const importableSubtypes = computed(() => catalog.value.subtypes);
+
+const importSubtypeGroups = computed(() => {
+  const byModule = new Map();
+  for (const st of importableSubtypes.value) {
+    const code = st.moduleCode || 'YBT';
+    if (!byModule.has(code)) {
+      byModule.set(code, {
+        code,
+        name: st.moduleName || code,
+        subtypes: [],
+      });
+    }
+    byModule.get(code).subtypes.push(st);
+  }
+  return [...byModule.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+});
+
+const selectedImportSubtype = computed(() =>
+  catalog.value.subtypes.find((s) => s.code === importSubtypeCode.value)
+);
+
+const importStorageKind = computed(
+  () => selectedImportSubtype.value?.storageKind || 'excel'
+);
+
 const activeSubtype = computed(() =>
   catalog.value.subtypes.find((s) => s.code === activeSubtypeCode.value)
 );
@@ -1191,7 +1319,7 @@ const hasReadyVersion = computed(() =>
 
 const allOverviewRows = computed(() => {
   const rows = [];
-  for (const st of catalog.value.subtypes) {
+  for (const st of excelSubtypes.value) {
     const versions = st.versions || [];
     if (!versions.length) {
       rows.push({
@@ -1267,7 +1395,7 @@ const filteredOverviewRows = computed(() => {
 const importModuleFilter = ref('');
 
 const versionOptions = computed(() =>
-  catalog.value.subtypes
+  excelSubtypes.value
     .filter((s) => s.enabled)
     .flatMap((s) =>
       (s.versions || [])
@@ -1373,7 +1501,7 @@ function clearFilteredVersions() {
 }
 
 const enabledButNotReady = computed(() =>
-  catalog.value.subtypes
+  excelSubtypes.value
     .filter((s) => s.enabled)
     .filter((s) => {
       const versions = s.versions || [];
@@ -1383,18 +1511,58 @@ const enabledButNotReady = computed(() =>
     .map((s) => s.name)
 );
 
-function setTab(tab) {
+function setTab(tab, { subtype } = {}) {
   if (!VALID_TABS.includes(tab)) return;
   activeTab.value = tab;
-  router.replace({ path: '/import', query: { tab } });
+  const query = { tab };
+  if (tab === 'import' && subtype) query.subtype = subtype;
+  router.replace({ path: '/import', query });
+}
+
+function applyRouteImportQuery() {
+  const resolved = resolveImportTabFromRoute(route.query);
+  activeTab.value = resolved.tab;
+  if (resolved.subtype) {
+    importSubtypeCode.value = resolved.subtype;
+  }
 }
 
 watch(
-  () => route.query.tab,
-  (tab) => {
-    if (tab && VALID_TABS.includes(tab)) activeTab.value = tab;
+  () => route.query,
+  () => {
+    applyRouteImportQuery();
   }
 );
+
+watch(
+  () => catalog.value.subtypes,
+  (list) => {
+    if (!list.length) return;
+    if (
+      importSubtypeCode.value &&
+      list.some((s) => s.code === importSubtypeCode.value)
+    ) {
+      return;
+    }
+    const preferred =
+      list.find((s) => s.code === route.query.subtype) ||
+      list.find((s) => s.storageKind === 'excel' && s.enabled) ||
+      list.find((s) => s.enabled) ||
+      list[0];
+    if (preferred) importSubtypeCode.value = preferred.code;
+  },
+  { immediate: true }
+);
+
+watch(selectedImportSubtype, (st) => {
+  if (!st?.moduleCode) return;
+  if (st.storageKind === 'form_template') {
+    formTemplateModuleCode.value = st.moduleCode;
+  }
+  if (st.storageKind === 'script') {
+    conversionScriptModuleCode.value = st.moduleCode;
+  }
+});
 
 watch(activeSubtype, (st) => {
   subtypeNameEdit.value = st?.name || '';
@@ -1425,7 +1593,8 @@ async function refreshCatalog() {
     }
   }
   if (!activeSubtypeCode.value && catalog.value.subtypes.length) {
-    activeSubtypeCode.value = catalog.value.subtypes[0].code;
+    const firstExcel = excelSubtypes.value[0];
+    activeSubtypeCode.value = firstExcel?.code || catalog.value.subtypes[0].code;
   }
 
   const st = catalog.value.subtypes.find((s) => s.code === activeSubtypeCode.value);
@@ -1496,6 +1665,7 @@ async function selectVersion(id) {
       standardField: m.standardField,
       isRequired: m.isRequired,
       defaultDisplay: m.defaultDisplay,
+      defaultFilter: m.defaultFilter,
     })
   );
 }
@@ -1531,6 +1701,7 @@ async function addSubtype() {
   }
   saving.value = true;
   clearStepMessage(1);
+  const storageKind = newSubtype.storageKind;
   try {
     await createSubtype(code, {
       name,
@@ -1538,14 +1709,19 @@ async function addSubtype() {
       sortOrder: catalog.value.subtypes.length,
       category: newSubtype.category,
       moduleCode: newSubtype.moduleCode,
+      storageKind,
     });
     newSubtype.code = '';
     newSubtype.name = '';
     newSubtype.category = 'qa';
     newSubtype.moduleCode = catalog.value.modules[0]?.code || 'YBT';
+    newSubtype.storageKind = 'excel';
     await refreshCatalog();
     activeSubtypeCode.value = code;
-    setStepMessage(1, 'success', `子类「${name}」已添加，请继续新建版本并保存映射`);
+    const successMsg = isExcelStorageKind(storageKind)
+      ? `子类「${name}」已添加，请继续新建版本并保存映射`
+      : `子类「${name}」已添加，启用后即可在「资料导入」上传文件`;
+    setStepMessage(1, 'success', successMsg);
   } catch (e) {
     setStepMessage(1, 'error', e.message || '添加失败');
   } finally {
@@ -1555,10 +1731,13 @@ async function addSubtype() {
 
 async function removeSubtype(st) {
   const versionCount = st.versions?.length || 0;
-  const warn =
-    versionCount > 0
-      ? `子类「${st.name}」含 ${versionCount} 个版本及关联数据，删除后不可恢复，确认？`
-      : `确认删除子类「${st.name}」？`;
+  const isExcel = isExcelStorageKind(st.storageKind);
+  let warn = `确认删除子类「${st.name}」？`;
+  if (isExcel && versionCount > 0) {
+    warn = `子类「${st.name}」含 ${versionCount} 个版本及关联数据，删除后不可恢复，确认？`;
+  } else if (!isExcel) {
+    warn = `确认删除还原类子类「${st.name}」？若仍有资料需先在资料导入中删除。`;
+  }
   if (!confirm(warn)) return;
   saving.value = true;
   clearStepMessage(1);
@@ -1802,6 +1981,7 @@ async function doFormTemplateImport() {
   try {
     const result = await importFormTemplateExcel(formTemplateFile.value, {
       moduleCode: formTemplateModuleCode.value,
+      subtypeCode: selectedImportSubtype.value?.code,
     });
     formTemplateMessageType.value = 'success';
     formTemplateMessage.value = result.message || '导入成功';
@@ -1859,7 +2039,10 @@ async function doFillInstructionImport() {
   fillInstructionMessage.value = '';
   fillInstructionImportItems.value = [];
   try {
-    const result = await importFillInstructionDocument(fillInstructionFile.value);
+    const result = await importFillInstructionDocument(fillInstructionFile.value, {
+      moduleCode: selectedImportSubtype.value?.moduleCode,
+      subtypeCode: selectedImportSubtype.value?.code,
+    });
     fillInstructionMessageType.value = 'success';
     fillInstructionMessage.value = result.message || '导入成功';
     fillInstructionImportItems.value = Array.isArray(result.items) ? result.items : [];
@@ -1918,6 +2101,7 @@ async function doConversionScriptImport() {
   try {
     const result = await importConversionScriptFile(conversionScriptFile.value, {
       moduleCode: conversionScriptModuleCode.value,
+      subtypeCode: selectedImportSubtype.value?.code,
     });
     conversionScriptMessageType.value = 'success';
     conversionScriptMessage.value = result.message || '导入成功';
@@ -1946,6 +2130,7 @@ async function removeConversionScript(item) {
 }
 
 onMounted(async () => {
+  applyRouteImportQuery();
   await refreshCatalog();
   await refreshDatasets();
   await refreshFormTemplates();
@@ -1961,6 +2146,42 @@ onMounted(async () => {
 }
 
 .page-intro {
+  margin-bottom: 16px;
+}
+
+.import-subtype-picker {
+  margin-bottom: 16px;
+}
+
+.import-subtype-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.import-kind-panel {
+  margin-top: 4px;
+}
+
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-subtle, #f1f5f9);
+  font-size: 13px;
+}
+
+.tags-reference {
   margin-bottom: 16px;
 }
 

@@ -88,7 +88,9 @@ describe('API 集成', () => {
   it('GET /api/search 空关键词', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/search?q=', headers: authHeaders() });
     assert.equal(res.statusCode, 200);
-    assert.equal(res.json().error, '请输入搜索关键词');
+    const body = res.json();
+    assert.equal(body.keyword, '');
+    assert.ok(Array.isArray(body.reports));
   });
 
   it('GET /api/search 无令牌返回 401', async () => {
@@ -121,8 +123,8 @@ describe('API 集成', () => {
       },
       payload: JSON.stringify({
         mappings: [
-          { originalColumn: '数据项名称', standardField: 'data_item', isRequired: false, defaultDisplay: true },
-          { originalColumn: '表名', standardField: 'table_name', isRequired: false, defaultDisplay: false },
+          { originalColumn: '数据项名称', standardField: 'data_item', isRequired: false, defaultDisplay: true, defaultFilter: true },
+          { originalColumn: '表名', standardField: 'table_name', isRequired: false, defaultDisplay: false, defaultFilter: false },
         ],
       }),
     });
@@ -130,7 +132,9 @@ describe('API 集成', () => {
     const saved = res.json().mappings;
     assert.equal(saved.length, 2);
     assert.equal(saved[0].defaultDisplay, true);
+    assert.equal(saved[0].defaultFilter, true);
     assert.equal(saved[1].defaultDisplay, false);
+    assert.equal(saved[1].defaultFilter, false);
   });
 
   it('GET /api/dataset/catalog', async () => {

@@ -13,13 +13,25 @@ import {
 } from '../src/services/code-value.js';
 import { setupTestDb } from './helpers/fixture.js';
 
-function buildCodeValueHeader() {
-  return ['码值名称', '码值代码', '码值含义', ...Array.from({ length: 11 }, (_, i) => `扩展字段${i + 1}`)];
+const CORE_HEADERS_FOR_TEST = ['码值名称', '码值代码', '码值含义'];
+
+function buildCodeValueHeader(extendCount = 11) {
+  return [
+    ...CORE_HEADERS_FOR_TEST,
+    ...Array.from({ length: extendCount }, (_, i) => `扩展字段${i + 1}`),
+  ];
 }
 
-function buildCodeValueExcel(rows, sheetName = '码值更新格式') {
+function buildCodeValueExcel(rows, sheetName = '码值', { extendCount = 11 } = {}) {
   const wb = XLSX.utils.book_new();
-  const matrix = [buildCodeValueHeader(), ...rows];
+  const matrix = [buildCodeValueHeader(extendCount), ...rows];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), sheetName);
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+function buildCodeValueExcelWithHeader(header, rows, sheetName = '码值') {
+  const wb = XLSX.utils.book_new();
+  const matrix = [header, ...rows];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), sheetName);
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
@@ -34,7 +46,7 @@ describe('module code values', () => {
     closeDb();
   });
 
-  it('imports 码值更新格式 sheet and lists by module + dict_name', () => {
+  it('imports 码值 sheet and lists by module + dict_name', () => {
     const buffer = buildCodeValueExcel([
       ['操作类型', 1, '新增'],
       ['操作类型', 2, '变更'],
@@ -98,10 +110,56 @@ describe('module code values', () => {
     assert.equal(Number(row.c), 5);
   });
 
-  it('falls back to Sheet1 when 码值更新格式 is missing', () => {
+  it('errors when 码值 sheet is missing', () => {
     const buffer = buildCodeValueExcel([['测试表', 'A', '甲']], 'Sheet1');
+    assert.throws(
+      () => importModuleCodeValues(buffer, { moduleCode: 'RCPMIS' }),
+      /未找到 Sheet「码值」/
+    );
+  });
+
+  it('imports with only core columns (no extend headers)', () => {
+    const buffer = buildCodeValueExcel([['操作类型', 1, '新增']], '码值', { extendCount: 0 });
     const result = importModuleCodeValues(buffer, { moduleCode: 'RCPMIS' });
-    assert.equal(result.sheetName, 'Sheet1');
-    assert.ok(result.dictNames.includes('测试表'));
+    assert.equal(result.imported, 1);
+    const listed = listModuleCodeValues('RCPMIS', '操作类型');
+    assert.equal(listed.items[0].extend_1, '');
+  });
+
+  it('imports with partial extend headers (trailing empty columns ignored)', () => {
+    const header = ['码值名称', '码值代码', '码值含义', '扩展字段1', '扩展字段2'];
+    const buffer = buildCodeValueExcelWithHeader(header, [
+      ['操作类型', 1, '新增'],
+      ['币种', 'CNY', '人民币', '156', 'CNY'],
+    ]);
+    const result = importModuleCodeValues(buffer, { moduleCode: 'RCPMIS' });
+    assert.equal(result.imported, 2);
+    const currency = listModuleCodeValues('RCPMIS', '币种');
+    assert.equal(currency.items[0].extend_1, '156');
+    assert.equal(currency.items[0].extend_2, 'CNY');
+    assert.equal(currency.items[0].extend_3, '');
+  });
+
+  it('reports duplicate dict_name + code in Chinese before import', () => {
+    const buffer = buildCodeValueExcel(
+      [
+        ['操作类型', 1, '新增'],
+        ['操作类型', 1, '重复'],
+        ['操作类型', 2, '变更'],
+      ],
+      '码值',
+      { extendCount: 0 }
+    );
+    assert.throws(
+      () => importModuleCodeValues(buffer, { moduleCode: 'RCPMIS' }),
+      (err) => {
+        assert.match(err.message, /重复的码值/);
+        assert.match(err.message, /第 3 行与第 2 行重复/);
+        assert.match(err.message, /操作类型/);
+        return true;
+      }
+    );
+    const listed = listModuleCodeValues('RCPMIS', '操作类型');
+    assert.equal(listed.total, 1);
   });
 });

@@ -2,6 +2,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers/fixture.js';
+import { queryOne } from '../src/db/database.js';
 import { buildApp, getApiToken } from '../src/index.js';
 import {
   CONVERSION_SCRIPT_LATEST_VERSION,
@@ -55,6 +56,9 @@ describe('conversion-script-import', () => {
     assert.equal(first.importAction, 'created');
     assert.equal(first.reportCode, 'G0100');
     assert.equal(first.versionLabel, '231');
+
+    const row = queryOne('SELECT subtype_code FROM conversion_scripts WHERE id = ?', [first.id]);
+    assert.equal(row?.subtype_code, 'CONVERSION_SCRIPT');
 
     const list = listConversionScripts({ moduleCode: 'YBT', reportCode: 'G0100' });
     assert.equal(list.length, 1);
