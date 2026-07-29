@@ -162,4 +162,64 @@ describe('module code values', () => {
     const listed = listModuleCodeValues('RCPMIS', '操作类型');
     assert.equal(listed.total, 1);
   });
+
+  it('imports with reuse only and full module replace', () => {
+    run(`INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES ('IMAS', 'IMAS', 3, 1)`);
+    const seed = buildCodeValueExcel([
+      ['操作类型', 1, '新增'],
+      ['币种', 'CNY', '人民币'],
+    ]);
+    importModuleCodeValues(seed, { moduleCode: 'RCPMIS' });
+
+    const result = importModuleCodeValues(null, {
+      moduleCode: 'IMAS',
+      reuse: [{ sourceModule: 'RCPMIS', dictName: '币种' }],
+    });
+    assert.equal(result.fromReuse, 1);
+    assert.equal(result.fromFile, 0);
+    assert.equal(result.imported, 1);
+    assert.equal(result.dictCount, 1);
+
+    const imasCurrency = listModuleCodeValues('IMAS', '币种');
+    assert.equal(imasCurrency.items[0].code, 'CNY');
+    const imasDicts = listModuleCodeValueDictNames('IMAS');
+    assert.equal(imasDicts.length, 1);
+    assert.equal(imasDicts[0].dictName, '币种');
+  });
+
+  it('merges Excel with reuse and prefers Excel on same dict+code', () => {
+    run(`INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES ('IMAS', 'IMAS', 3, 1)`);
+    const seed = buildCodeValueExcel([['币种', 'CNY', '人民币']]);
+    importModuleCodeValues(seed, { moduleCode: 'RCPMIS' });
+
+    const buffer = buildCodeValueExcel([['币种', 'CNY', '文件优先']]);
+    const result = importModuleCodeValues(buffer, {
+      moduleCode: 'IMAS',
+      reuse: [{ sourceModule: 'RCPMIS', dictName: '币种' }],
+    });
+    assert.equal(result.fromFile, 1);
+    assert.equal(result.fromReuse, 1);
+    assert.equal(result.imported, 1);
+
+    const listed = listModuleCodeValues('IMAS', '币种');
+    assert.equal(listed.items[0].meaning, '文件优先');
+  });
+
+  it('rejects reuse of same dict name from different modules', () => {
+    run(`INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES ('YBT', 'YBT', 0, 1)`);
+    importModuleCodeValues(buildCodeValueExcel([['币种', 'CNY', '人民币']]), { moduleCode: 'RCPMIS' });
+    importModuleCodeValues(buildCodeValueExcel([['币种', 'USD', '美元']]), { moduleCode: 'YBT' });
+
+    assert.throws(
+      () =>
+        importModuleCodeValues(null, {
+          moduleCode: 'IMAS',
+          reuse: [
+            { sourceModule: 'RCPMIS', dictName: '币种' },
+            { sourceModule: 'YBT', dictName: '币种' },
+          ],
+        }),
+      /不能同时复用不同模块的同名码表/
+    );
+  });
 });

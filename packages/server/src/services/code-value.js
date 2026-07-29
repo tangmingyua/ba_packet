@@ -118,10 +118,36 @@ function isCodeValueUniqueConstraintError(err) {
   return msg.includes('UNIQUE constraint failed') && msg.includes('module_code_values');
 }
 
-/**
- * 从 Excel 批量导入码值（全量替换该模块下码值数据，不影响展示映射）
- */
-export function importModuleCodeValues(buffer, { moduleCode, fileName, subtypeCode } = {}) {
+function parseReuseItems(input) {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [];
+  const seen = new Set();
+  const normalized = [];
+  const dictNameToSource = new Map();
+
+  for (const raw of list) {
+    const sourceModule = cellToString(raw?.sourceModule || raw?.moduleCode);
+    const dictName = cellToString(raw?.dictName);
+    if (!sourceModule || !dictName) {
+      throw new Error('复用项须包含 sourceModule 与 dictName');
+    }
+    const dedupeKey = `${sourceModule}\0${dictName}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const prevSource = dictNameToSource.get(dictName);
+    if (prevSource && prevSource !== sourceModule) {
+      throw new Error(
+        `不能同时复用不同模块的同名码表「${dictName}」（${prevSource} 与 ${sourceModule}）`
+      );
+    }
+    dictNameToSource.set(dictName, sourceModule);
+    normalized.push({ sourceModule, dictName });
+  }
+  return normalized;
+}
+
+function parseExcelCodeValueRecords(buffer, { moduleCode, fileName } = {}) {
   const normalizedModule = normalizeModuleCode(moduleCode);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheetName = findCodeValueSheet(workbook);
@@ -135,24 +161,97 @@ export function importModuleCodeValues(buffer, { moduleCode, fileName, subtypeCo
   validateHeader(matrix[0]);
 
   const records = [];
-  const dictNames = new Set();
   for (let i = 1; i < matrix.length; i += 1) {
     const parsed = rowToCodeValue(matrix[i], normalizedModule, fileName, sheetName);
     if (!parsed) continue;
     parsed.rowNum = i + 1;
-    dictNames.add(parsed.dictName);
     records.push(parsed);
   }
 
-  if (!records.length) throw new Error('无有效码值行（码值名称、码值代码均必填）');
+  return { records, sheetName };
+}
 
-  const duplicates = findDuplicateCodeValues(records);
-  if (duplicates.length) {
-    throw new Error(buildDuplicateCodeValueError(duplicates));
+function loadReuseCodeValueRecords(reuseItems, targetModuleCode) {
+  const normalizedModule = normalizeModuleCode(targetModuleCode);
+  const records = [];
+  const reusedFrom = [];
+
+  for (const item of reuseItems) {
+    const sourceModule = normalizeModuleCode(item.sourceModule);
+    const dictName = cellToString(item.dictName);
+    const rows = queryAll(
+      `
+      SELECT dict_name, code, meaning,
+        extend_1, extend_2, extend_3, extend_4, extend_5, extend_6,
+        extend_7, extend_8, extend_9, extend_10, extend_11
+      FROM module_code_values
+      WHERE module_code = ? AND dict_name = ?
+      ORDER BY code
+      `,
+      [sourceModule, dictName]
+    );
+
+    if (!rows.length) {
+      throw new Error(`源模块「${sourceModule}」中不存在码表「${dictName}」或暂无数据`);
+    }
+
+    for (const row of rows) {
+      const rec = {
+        moduleCode: normalizedModule,
+        dictName: row.dict_name || dictName,
+        code: cellToString(row.code),
+        meaning: cellToString(row.meaning),
+        sourceFile: `reuse:${sourceModule}/${dictName}`,
+        sourceSheet: CODE_VALUE_SHEET_NAME,
+      };
+      for (let i = 0; i < EXTEND_FIELD_COUNT; i += 1) {
+        rec[`extend_${i + 1}`] = cellToString(row[`extend_${i + 1}`]);
+      }
+      records.push(rec);
+    }
+
+    reusedFrom.push({ sourceModule, dictName, count: rows.length });
   }
 
-  run('DELETE FROM module_code_values WHERE module_code = ?', [normalizedModule]);
+  return { records, reusedFrom };
+}
 
+function mergeImportCodeValueRecords(fileRecords, reuseRecords) {
+  const byKey = new Map();
+  for (const rec of reuseRecords) {
+    byKey.set(`${rec.dictName}\0${rec.code}`, rec);
+  }
+  for (const rec of fileRecords) {
+    byKey.set(`${rec.dictName}\0${rec.code}`, rec);
+  }
+  return [...byKey.values()];
+}
+
+function copyReuseDisplayMappingsIfMissing(targetModuleCode, reuseItems) {
+  const mod = normalizeModuleCode(targetModuleCode);
+  for (const item of reuseItems) {
+    const dictName = cellToString(item.dictName);
+    const existing = listCodeValueDisplay(mod, dictName);
+    if (existing.length) continue;
+
+    const sourceDisplay = listCodeValueDisplay(item.sourceModule, dictName);
+    if (!sourceDisplay.length) continue;
+
+    saveCodeValueDisplay(
+      mod,
+      dictName,
+      sourceDisplay.map((field) => ({
+        fieldKey: field.fieldKey,
+        displayLabel: field.displayLabel,
+        sortOrder: field.sortOrder,
+        visible: field.visible,
+      }))
+    );
+  }
+}
+
+function insertCodeValueRecords(records, { moduleCode, subtypeCode } = {}) {
+  const normalizedModule = normalizeModuleCode(moduleCode);
   const resolvedSubtypeCode = subtypeCode
     ? resolveImportSubtypeCode(subtypeCode, 'code_value', { moduleCode: normalizedModule })
     : resolveSubtypeCode('code_value', normalizedModule);
@@ -182,21 +281,74 @@ export function importModuleCodeValues(buffer, { moduleCode, fileName, subtypeCo
     } catch (err) {
       if (isCodeValueUniqueConstraintError(err)) {
         throw new Error(
-          `导入失败：存在重复的码值（码值名称「${rec.dictName}」、码值代码「${rec.code}」）。同一码表下码值代码不能重复，请检查 Excel「码值」Sheet。`
+          `导入失败：存在重复的码值（码值名称「${rec.dictName}」、码值代码「${rec.code}」）。同一码表下码值代码不能重复，请检查 Excel「码值」Sheet 或复用配置。`
         );
       }
       throw err;
     }
   }
+}
+
+/**
+ * 从 Excel 批量导入码值，可选合并其他模块码表复制；全量替换目标模块下码值（不影响展示映射）
+ */
+export function importModuleCodeValues(buffer, { moduleCode, fileName, subtypeCode, reuse } = {}) {
+  const normalizedModule = normalizeModuleCode(moduleCode);
+  const reuseItems = parseReuseItems(reuse);
+
+  if (!buffer && !reuseItems.length) {
+    throw new Error('请上传 Excel 或选择要复用的码表');
+  }
+
+  let fileRecords = [];
+  let sheetName = null;
+  if (buffer) {
+    const parsed = parseExcelCodeValueRecords(buffer, {
+      moduleCode: normalizedModule,
+      fileName,
+    });
+    fileRecords = parsed.records;
+    sheetName = parsed.sheetName;
+  }
+
+  const { records: reuseRecords, reusedFrom } = reuseItems.length
+    ? loadReuseCodeValueRecords(reuseItems, normalizedModule)
+    : { records: [], reusedFrom: [] };
+
+  if (fileRecords.length) {
+    const fileDuplicates = findDuplicateCodeValues(fileRecords);
+    if (fileDuplicates.length) {
+      throw new Error(buildDuplicateCodeValueError(fileDuplicates));
+    }
+  }
+
+  const records = mergeImportCodeValueRecords(fileRecords, reuseRecords);
+  if (!records.length) {
+    throw new Error('无有效码值行（Excel 与复用合计为空）');
+  }
+
+  run('DELETE FROM module_code_values WHERE module_code = ?', [normalizedModule]);
+  insertCodeValueRecords(records, { moduleCode: normalizedModule, subtypeCode });
+
+  if (reuseItems.length) {
+    copyReuseDisplayMappingsIfMissing(normalizedModule, reuseItems);
+  }
 
   saveDb();
 
+  const dictNames = new Set(records.map((r) => r.dictName));
+  const fromFile = fileRecords.length;
+  const fromReuse = reuseRecords.length;
+
   return {
     moduleCode: normalizedModule,
-    sheetName,
+    sheetName: sheetName || (fromFile ? CODE_VALUE_SHEET_NAME : null),
     imported: records.length,
+    fromFile,
+    fromReuse,
     dictCount: dictNames.size,
     dictNames: [...dictNames].sort((a, b) => a.localeCompare(b, 'zh')),
+    reusedFrom,
     fileName: fileName || null,
   };
 }

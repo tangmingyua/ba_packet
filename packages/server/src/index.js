@@ -221,14 +221,27 @@ app.post('/api/dataset/code-values/import', async (request, reply) => {
   } catch (error) {
     return reply.code(400).send({ message: error.message || '解析上传内容失败' });
   }
-  if (!buffer) {
-    return reply.code(400).send({ message: '请上传 Excel 文件' });
+  if (!buffer && !fields.reuse) {
+    return reply.code(400).send({ message: '请上传 Excel 文件或选择要复用的码表' });
+  }
+  let reuse = [];
+  if (fields.reuse) {
+    try {
+      const parsed = JSON.parse(fields.reuse);
+      reuse = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return reply.code(400).send({ message: 'reuse 参数须为 JSON 数组' });
+    }
+  }
+  if (!buffer && !reuse.length) {
+    return reply.code(400).send({ message: '请上传 Excel 文件或选择要复用的码表' });
   }
   try {
     return importModuleCodeValues(buffer, {
       moduleCode: fields.moduleCode,
       fileName: fields.fileName || fields.uploadFileName,
       subtypeCode: fields.subtypeCode || undefined,
+      reuse,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });

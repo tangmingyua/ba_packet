@@ -23,6 +23,46 @@
     </fieldset>
 
     <fieldset class="form-section">
+      <legend>从其他模块复用码表</legend>
+      <p class="hint block-hint">
+        勾选后将在本次导入时复制到当前模块（与源模块无关联）。可与 Excel 一并导入；同一码值代码冲突时以 Excel 为准。导入仍全量替换当前模块下全部码值。
+      </p>
+      <div class="reuse-toolbar">
+        <label class="field compact">
+          <span class="label">源模块</span>
+          <select v-model="reuseSourceModule" :disabled="!reuseModuleOptions.length" @change="onReuseSourceChange">
+            <option value="">请选择</option>
+            <option v-for="m in reuseModuleOptions" :key="m.code" :value="m.code">
+              {{ m.name }} ({{ m.code }})
+            </option>
+          </select>
+        </label>
+      </div>
+      <div v-if="reuseSourceModule && reuseSourceDictOptions.length" class="reuse-dict-list">
+        <label
+          v-for="d in reuseSourceDictOptions"
+          :key="d.dictName"
+          class="reuse-dict-item"
+        >
+          <input
+            type="checkbox"
+            :checked="isReuseDictSelected(d.dictName)"
+            @change="toggleReuseDict(d, $event.target.checked)"
+          />
+          <span>{{ d.dictName }}（{{ d.count }}）</span>
+        </label>
+      </div>
+      <p v-else-if="reuseSourceModule && !reuseSourceLoading" class="empty-hint">该模块暂无码表</p>
+      <p v-if="reuseSourceLoading" class="empty-hint">加载码表列表…</p>
+      <ul v-if="reuseSelected.length" class="reuse-selected-list">
+        <li v-for="(item, idx) in reuseSelected" :key="`${item.sourceModule}-${item.dictName}`">
+          <span>{{ item.sourceModule }} / {{ item.dictName }}（{{ item.count }} 条）</span>
+          <button type="button" class="btn-link" @click="removeReuseItem(idx)">移除</button>
+        </li>
+      </ul>
+    </fieldset>
+
+    <fieldset class="form-section">
       <legend>批量导入码值</legend>
       <div class="dropzone" :class="{ active: dragging }" @dragover.prevent="dragging = true" @dragleave="dragging = false" @drop.prevent="onDrop">
         <p v-if="!file">
@@ -30,6 +70,7 @@
           <label class="file-link"
             >选择文件<input type="file" accept=".xlsx,.xls" hidden @change="onFile"
           /></label>
+          <span class="muted">（可选，仅复用码表时可不上传）</span>
         </p>
         <p v-else>
           {{ file.name }}
@@ -37,7 +78,7 @@
         </p>
       </div>
       <div class="inline-actions">
-        <button type="button" class="btn btn-primary" :disabled="!file || importing" @click="doImport">
+        <button type="button" class="btn btn-primary" :disabled="!canImport || importing" @click="doImport">
           {{ importing ? '导入中...' : '导入码值' }}
         </button>
       </div>
@@ -119,7 +160,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import {
   getCodeValueSummary,
   importCodeValuesExcel,
@@ -169,6 +210,19 @@ const displayMessageType = ref('');
 const previewItems = ref([]);
 const previewTotal = ref(0);
 const previewLoaded = ref(false);
+
+const reuseSourceModule = ref('');
+const reuseSourceDictOptions = ref([]);
+const reuseSourceLoading = ref(false);
+const reuseSelected = ref([]);
+
+const reuseModuleOptions = computed(() =>
+  props.modules.filter((m) => m.code && m.code !== moduleCode.value)
+);
+
+const canImport = computed(
+  () => Boolean(moduleCode.value && (file.value || reuseSelected.value.length))
+);
 
 const CORE_DISPLAY_FIELDS = [
   { fieldKey: 'dict_name', placeholder: '码值名称', defaultOrder: 1 },
@@ -295,17 +349,71 @@ function onDrop(e) {
   if (f) file.value = f;
 }
 
+function isReuseDictSelected(dictName) {
+  return reuseSelected.value.some((item) => item.dictName === dictName);
+}
+
+async function onReuseSourceChange() {
+  reuseSourceDictOptions.value = [];
+  if (!reuseSourceModule.value) return;
+  reuseSourceLoading.value = true;
+  try {
+    const res = await listCodeValueDictNames(reuseSourceModule.value);
+    reuseSourceDictOptions.value = res.items || [];
+  } catch {
+    reuseSourceDictOptions.value = [];
+  } finally {
+    reuseSourceLoading.value = false;
+  }
+}
+
+function toggleReuseDict(dictRow, checked) {
+  const dictName = dictRow.dictName;
+  const sourceModule = reuseSourceModule.value;
+  if (!sourceModule || !dictName) return;
+
+  if (checked) {
+    if (reuseSelected.value.some((item) => item.dictName === dictName)) return;
+    reuseSelected.value = [
+      ...reuseSelected.value,
+      { sourceModule, dictName, count: dictRow.count || 0 },
+    ];
+    return;
+  }
+  reuseSelected.value = reuseSelected.value.filter((item) => item.dictName !== dictName);
+}
+
+function removeReuseItem(index) {
+  reuseSelected.value = reuseSelected.value.filter((_, i) => i !== index);
+}
+
+function buildImportSuccessMessage(result) {
+  const parts = [`导入成功：共 ${result.imported} 条，${result.dictCount} 个码表`];
+  if (result.fromFile) parts.push(`Excel ${result.fromFile} 条`);
+  if (result.fromReuse) parts.push(`复用 ${result.fromReuse} 条`);
+  if (result.sheetName) parts.push(`Sheet：${result.sheetName}`);
+  return parts.join(' · ');
+}
+
 async function doImport() {
-  if (!file.value || !moduleCode.value) return;
+  if (!canImport.value || !moduleCode.value) return;
   importing.value = true;
   importMessage.value = '';
   try {
-    const result = await importCodeValuesExcel(file.value, moduleCode.value, {
+    const reuse = reuseSelected.value.map((item) => ({
+      sourceModule: item.sourceModule,
+      dictName: item.dictName,
+    }));
+    const result = await importCodeValuesExcel(file.value || null, moduleCode.value, {
       subtypeCode: props.subtypeCode || undefined,
+      reuse,
     });
     importMessageType.value = 'success';
-    importMessage.value = `导入成功：${result.imported} 条，${result.dictCount} 个码表（Sheet：${result.sheetName}）`;
+    importMessage.value = buildImportSuccessMessage(result);
     file.value = null;
+    reuseSelected.value = [];
+    reuseSourceModule.value = '';
+    reuseSourceDictOptions.value = [];
     await refreshSummary();
     await refreshDictNames();
     if (result.dictNames?.length === 1) {
@@ -431,5 +539,42 @@ onMounted(async () => {
   color: var(--text-muted);
   font-size: 13px;
   margin: 8px 0;
+}
+
+.reuse-toolbar {
+  margin-bottom: 10px;
+}
+
+.reuse-dict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+}
+
+.reuse-dict-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.reuse-selected-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.reuse-selected-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
 }
 </style>

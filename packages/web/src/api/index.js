@@ -206,11 +206,12 @@ export function getCodeValueSummary(moduleCode) {
   return request(`/api/dataset/code-values/summary?${query}`);
 }
 
-export async function importCodeValuesExcel(file, moduleCode, { subtypeCode } = {}) {
+export async function importCodeValuesExcel(file, moduleCode, { subtypeCode, reuse } = {}) {
   const form = new FormData();
-  form.append('file', file);
+  if (file) form.append('file', file);
   form.append('moduleCode', moduleCode);
   if (subtypeCode) form.append('subtypeCode', subtypeCode);
+  if (reuse?.length) form.append('reuse', JSON.stringify(reuse));
   const response = await fetch(`${getApiBase()}/api/dataset/code-values/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
