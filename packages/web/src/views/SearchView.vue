@@ -3,20 +3,33 @@
     class="search-page"
     :class="{
       'search-page-landing': !searched,
-      'search-page-compact': searched && isAggregateMode,
+      'search-page-compact': searched,
     }"
   >
     <!-- 新头部：模块 Tab + 标签卡片 + 子类 + 查询/筛选 -->
     <header class="search-page-header">
-      <ModuleTabs
-        v-if="modules.length > 1"
-        v-model="moduleCode"
-        :options="modules"
-        @change="onModuleChange"
+      <div
+        v-if="searched"
+        class="module-tabs-row"
+        :class="{ 'module-tabs-row--solo': modules.length <= 1 }"
+      >
+        <ModuleTabs
+          v-if="modules.length > 1"
+          v-model="moduleCode"
+          :options="modules"
+          @change="onModuleChange"
+        />
+        <button type="button" class="btn back-home-btn" @click="onGoHome">← 返回首页</button>
+      </div>
+
+      <SearchLandingModeCards
+        v-if="!searched"
+        v-model="landingQueryMode"
+        @change="onLandingModeChange"
       />
 
       <ModuleCategoryCards
-        v-if="categoryStats.length"
+        v-if="searched && isAggregateMode && categoryStats.length"
         v-model="selectedCategories"
         :options="categoryStats"
         @change="onCategoriesChange"
@@ -67,12 +80,12 @@
         </form>
 
         <ResultFilterBar
-          v-if="showHeaderFilterBar"
+          v-if="searched && showHeaderFilterBar"
           class="header-filter-bar"
-          :variant="isQaLayout ? 'qa' : 'norm'"
+          :variant="filterBarVariant"
           :mode="searchMode"
-          :hide-keyword="isAggregateMode"
-          :compact="isAggregateMode"
+          :hide-keyword="searched"
+          :compact="searched"
           v-model:keyword="keyword"
           v-model:table-filter="tableFilter"
           v-model:custom-filters="customFilters"
@@ -197,6 +210,7 @@ import FormTemplateResultPanel from '../components/search/FormTemplateResultPane
 import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
+import SearchLandingModeCards from '../components/search/SearchLandingModeCards.vue';
 import ModuleTabs from '../components/search/ModuleTabs.vue';
 import SubtypeTabs from '../components/search/SubtypeTabs.vue';
 import { parseCategoryFilter } from '../constants/materialCategories.js';
@@ -222,8 +236,10 @@ const route = useRoute();
 const router = useRouter();
 const homeResetSignal = inject('homeResetSignal', ref(0));
 const pendingHomeMode = inject('pendingHomeMode', ref(null));
+const goHome = inject('goHome', () => {});
 
 const homeMode = ref('aggregate');
+const landingQueryMode = ref('aggregate');
 const modules = ref([]);
 const moduleCode = ref('');
 const categoryStats = ref([]);
@@ -280,14 +296,22 @@ const searchMode = computed(() => {
 
 const isQaLayout = computed(() => searchMode.value === 'qa' || searchMode.value === 'aggregate');
 
-const searchPlaceholder = computed(
-  () => modeConfig[searchMode.value]?.placeholder || modeConfig.aggregate.placeholder
-);
+const searchPlaceholder = computed(() => {
+  const mode = searched.value ? searchMode.value : landingQueryMode.value;
+  return modeConfig[mode]?.placeholder || modeConfig.aggregate.placeholder;
+});
 
-const isAggregateMode = computed(() => effectiveSearchMode() === 'aggregate');
+function apiSearchMode() {
+  const mode = searchMode.value;
+  return VALID_SEARCH_MODES.includes(mode) ? mode : 'aggregate';
+}
+
+const isAggregateMode = computed(() => apiSearchMode() === 'aggregate');
+
+const filterBarVariant = computed(() => (apiSearchMode() === 'qa' ? 'qa' : 'norm'));
 
 const showSubtypeTabs = computed(
-  () => isAggregateMode.value && subtypeStats.value.length > 0
+  () => searched.value && subtypeStats.value.length > 0
 );
 
 const moduleLabel = computed(
@@ -306,7 +330,8 @@ const selectedSubtypeLabel = computed(() => {
 const selectedStorageKind = computed(() => selectedSubtypeMeta.value?.storageKind || '');
 
 const useSubtypeScopedRender = computed(
-  () => isAggregateMode.value && Boolean(selectedSubtypeCode.value && selectedStorageKind.value)
+  () =>
+    searched.value && Boolean(selectedSubtypeCode.value && selectedStorageKind.value)
 );
 
 const MATERIAL_STORAGE_KINDS = new Set(['script']);
@@ -336,7 +361,7 @@ const showResultFilterBar = computed(() => {
   return true;
 });
 
-const showHeaderFilterBar = computed(() => showResultFilterBar.value);
+const showHeaderFilterBar = computed(() => searched.value && showResultFilterBar.value);
 
 const ALL_SUBTYPE = '__all__';
 
@@ -546,31 +571,30 @@ const emptyText = computed(() => {
   return '未找到匹配结果';
 });
 
-function effectiveSearchMode() {
-  const sel = selectedCategories.value;
-  const mode = searchMode.value;
-  if (mode === 'aggregate') return 'aggregate';
-  if (!sel.length) return mode;
-  const preset = MODE_TO_CATEGORIES[mode] || [];
-  const matchesPreset =
-    sel.length === preset.length && sel.every((c) => preset.includes(c));
-  return matchesPreset ? mode : 'aggregate';
+function syncModeFromCategorySelection() {
+  /* 详情页查询方式由 URL mode 固定，不因标签多选自动切 aggregate */
 }
 
-function syncModeFromCategorySelection() {
-  if (effectiveSearchMode() === 'aggregate' && homeMode.value !== 'aggregate') {
-    homeMode.value = 'aggregate';
+function categoriesForSubtypeStats() {
+  const mode = apiSearchMode();
+  if (mode === 'aggregate') {
+    return selectedCategories.value.length ? [...selectedCategories.value] : [];
   }
+  if (mode === 'norm' || mode === 'qa') {
+    return [...(MODE_TO_CATEGORIES[mode] || [])];
+  }
+  return selectedCategories.value.length ? [...selectedCategories.value] : [];
 }
 
 function searchApiOptions() {
-  const mode = effectiveSearchMode();
+  const mode = apiSearchMode();
   const opts = {
     moduleCode: moduleCode.value || undefined,
   };
-  if (mode === 'aggregate' && selectedSubtypeCode.value) {
+  if (selectedSubtypeCode.value) {
     opts.subtypeCode = selectedSubtypeCode.value;
-  } else if (selectedCategories.value.length) {
+  }
+  if (mode === 'aggregate' && selectedCategories.value.length) {
     opts.categories = selectedCategories.value;
   }
   return opts;
@@ -580,8 +604,8 @@ function applySidebarMode(mode) {
   if (!VALID_SEARCH_MODES.includes(mode)) return;
   homeMode.value = mode;
   selectedCategories.value = [...(MODE_TO_CATEGORIES[mode] || [])];
-  if (mode !== 'aggregate') {
-    selectedSubtypeCode.value = '';
+  if (!searched.value) {
+    landingQueryMode.value = mode;
   }
 }
 
@@ -622,6 +646,7 @@ function resetAll() {
   error.value = '';
   searched.value = false;
   homeMode.value = 'aggregate';
+  landingQueryMode.value = 'aggregate';
   resetLocalFilters();
   filterShowSuggest.value = false;
   showSuggest.value = false;
@@ -632,19 +657,79 @@ function resetAll() {
 }
 
 function buildSearchQuery() {
-  const mode = effectiveSearchMode();
+  const mode = apiSearchMode();
   const query = {
     mode,
     moduleCode: moduleCode.value || undefined,
   };
-  if (mode === 'aggregate' && selectedCategories.value.length) {
+  if (selectedCategories.value.length) {
     query.categories = selectedCategories.value.join(',');
   }
-  if (mode === 'aggregate' && selectedSubtypeCode.value) {
+  if (selectedSubtypeCode.value) {
     query.subtypeCode = selectedSubtypeCode.value;
   }
   if (lastKeyword.value) query.q = lastKeyword.value;
   return query;
+}
+
+function resolveYbtModuleCode() {
+  return (
+    modules.value.find((m) => m.code === 'YBT')?.code ||
+    modules.value[0]?.code ||
+    moduleCode.value ||
+    ''
+  );
+}
+
+function previewSearchMode() {
+  if (searched.value) return apiSearchMode();
+  const mode = landingQueryMode.value;
+  return VALID_SEARCH_MODES.includes(mode) ? mode : 'aggregate';
+}
+
+function previewSearchApiOptions() {
+  const mode = previewSearchMode();
+  const opts = {
+    moduleCode: resolveYbtModuleCode() || undefined,
+  };
+  if (mode !== 'aggregate') {
+    const cats = MODE_TO_CATEGORIES[mode] || [];
+    if (cats.length) opts.categories = cats;
+  }
+  return opts;
+}
+
+async function applyLandingDefaultsBeforeSearch() {
+  if (searched.value) return;
+
+  const ybt = resolveYbtModuleCode();
+  if (ybt) moduleCode.value = ybt;
+
+  const mode = VALID_SEARCH_MODES.includes(landingQueryMode.value)
+    ? landingQueryMode.value
+    : 'aggregate';
+  homeMode.value = mode;
+  landingQueryMode.value = mode;
+
+  if (mode === 'aggregate') {
+    await refreshCategoryStats();
+    selectAllModuleCategories();
+    await refreshSubtypeStats();
+    ensureSubtypeSelection();
+    return;
+  }
+
+  selectedCategories.value = [...(MODE_TO_CATEGORIES[mode] || [])];
+  await refreshCategoryStats();
+  await refreshSubtypeStats();
+  ensureSubtypeSelection();
+}
+
+function onLandingModeChange() {
+  if (searched.value) return;
+  if (keyword.value.trim()) {
+    onInput();
+  }
 }
 
 function suggestTitleHtml(item) {
@@ -685,15 +770,21 @@ function onSubtypeChange() {
 }
 
 async function refreshSubtypeStats() {
-  if (!moduleCode.value || effectiveSearchMode() !== 'aggregate') {
+  if (!moduleCode.value) {
     subtypeStats.value = [];
     selectedSubtypeCode.value = '';
     return;
   }
   try {
+    const cats = categoriesForSubtypeStats();
+    if (apiSearchMode() === 'aggregate' && !cats.length) {
+      subtypeStats.value = [];
+      selectedSubtypeCode.value = '';
+      return;
+    }
     const { items } = await getModuleSubtypeStats(
       moduleCode.value,
-      selectedCategories.value.length ? selectedCategories.value : undefined
+      cats.length ? cats : undefined
     );
     subtypeStats.value = items || [];
     ensureSubtypeSelection();
@@ -728,14 +819,27 @@ async function refreshCategoryStats() {
   }
 }
 
+function selectAllModuleCategories() {
+  selectedCategories.value = categoryStats.value.map((c) => c.code);
+}
+
 function onModuleChange() {
   refreshCategoryStats()
-    .then(() => refreshSubtypeStats())
+    .then(() => {
+      if (searched.value && apiSearchMode() === 'aggregate') {
+        selectAllModuleCategories();
+      }
+      return refreshSubtypeStats();
+    })
     .then(() => {
       if (searched.value) {
         doSearch();
       }
     });
+}
+
+function onGoHome() {
+  goHome();
 }
 
 function onFilterSearch() {
@@ -766,7 +870,9 @@ async function loadSuggest() {
     return;
   }
   try {
-    const { items } = await suggestItems(q, 10, effectiveSearchMode(), searchApiOptions());
+    const mode = previewSearchMode();
+    const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
+    const { items } = await suggestItems(q, 10, mode, opts);
     suggestions.value = items;
     suggestIndex.value = items.length ? 0 : -1;
     showSuggest.value = true;
@@ -784,7 +890,9 @@ async function loadFilterSuggest() {
     return;
   }
   try {
-    const { items } = await suggestItems(q, 10, effectiveSearchMode(), searchApiOptions());
+    const mode = previewSearchMode();
+    const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
+    const { items } = await suggestItems(q, 10, mode, opts);
     filterSuggestions.value = items;
     filterSuggestIndex.value = items.length ? 0 : -1;
     filterShowSuggest.value = true;
@@ -839,7 +947,11 @@ function pickDefaultTabs() {
 }
 
 async function doSearch() {
-  if (effectiveSearchMode() === 'aggregate' && subtypeStats.value.length) {
+  if (!searched.value) {
+    await applyLandingDefaultsBeforeSearch();
+  }
+
+  if (subtypeStats.value.length) {
     ensureSubtypeSelection();
     if (!selectedSubtypeCode.value) {
       error.value = '请选择子类';
@@ -856,7 +968,7 @@ async function doSearch() {
 
   const start = performance.now();
   try {
-    const result = await searchRegulatory(q, effectiveSearchMode(), searchApiOptions());
+    const result = await searchRegulatory(q, apiSearchMode(), searchApiOptions());
     elapsedMs.value = Math.round(performance.now() - start);
     if (result.error) {
       error.value = result.error;
@@ -872,8 +984,8 @@ async function doSearch() {
     pickDefaultTabs();
     appliedTableFilter.value = tableFilter.value;
     appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
-    await router.replace({ path: '/', query: buildSearchQuery() });
     searched.value = true;
+    await router.replace({ path: '/', query: buildSearchQuery() });
   } catch (e) {
     searched.value = false;
     error.value = e.message || '搜索失败';
@@ -952,6 +1064,11 @@ onUnmounted(() => {
   border-bottom: none;
 }
 
+.search-page-landing :deep(.landing-mode-cards) {
+  width: 100%;
+  max-width: 560px;
+}
+
 .search-page-landing .module-title {
   font-size: clamp(28px, 3.2vw, 38px);
 }
@@ -1016,6 +1133,61 @@ onUnmounted(() => {
 
 .search-page-header :deep(.module-tabs) {
   margin: 0 -12px;
+}
+
+.module-tabs-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin: 0 -12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.module-tabs-row--solo {
+  justify-content: flex-end;
+}
+
+.module-tabs-row :deep(.module-tabs) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border-bottom: none;
+}
+
+.back-home-btn {
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0 8px 0 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.search-page-compact .module-tabs-row {
+  margin: 0 -12px;
+}
+
+.search-page-compact .module-tabs-row :deep(.module-tabs) {
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  min-height: 24px;
+}
+
+.search-page-compact .back-home-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  margin-right: 4px;
+}
+
+.search-page-compact .header-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  gap: 6px;
 }
 
 .header-search {
@@ -1093,7 +1265,7 @@ onUnmounted(() => {
   max-width: 100%;
 }
 
-/* 聚合查询结果页：头部 30% + 表格区 70% */
+/* 聚合查询结果页：头部自适应高度，结果区占满剩余空间 */
 .search-page-compact {
   flex: 1;
   min-height: 0;
@@ -1105,15 +1277,19 @@ onUnmounted(() => {
 }
 
 .search-page-compact .search-page-header {
-  flex: 0 0 30%;
-  max-height: 30vh;
+  flex: 0 1 auto;
+  max-height: 42vh;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   gap: 3px;
-  padding: 0 0 4px;
+  padding: 0 0 6px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 2;
+  background: var(--bg);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -1132,13 +1308,14 @@ onUnmounted(() => {
 }
 
 .search-page-compact .search-results {
-  flex: 0 0 70%;
+  flex: 1 1 0;
   min-height: 0;
-  max-height: 70vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .search-page-compact .search-results > .message {
@@ -1164,17 +1341,16 @@ onUnmounted(() => {
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 2px;
-}
-
-.search-page-compact .header-search {
-  flex: 1 1 220px;
-  min-width: 160px;
-  gap: 6px;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
 }
 
 .search-page-compact .header-filter-bar {
   flex: 2 1 320px;
   min-width: 180px;
+  position: relative;
+  z-index: 3;
 }
 
 .search-page-compact .header-search-input {
@@ -1204,7 +1380,15 @@ onUnmounted(() => {
 }
 
 .search-page-compact :deep(.category-card.selected) {
-  transform: none;
+  transform: translateY(-2px) scale(1.04);
+  box-shadow:
+    0 0 0 2px rgba(15, 23, 42, 0.5),
+    0 0 0 4px rgba(255, 255, 255, 0.9),
+    0 4px 12px rgba(15, 23, 42, 0.2);
+}
+
+.search-page-compact :deep(.category-card:not(.selected)) {
+  opacity: 0.78;
 }
 
 .search-page-compact :deep(.category-card:hover) {
@@ -1226,7 +1410,7 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
-.search-page-compact :deep(.cards-clear) {
+.search-page-compact :deep(.cards-actions) {
   font-size: 10px;
 }
 
@@ -1241,6 +1425,11 @@ onUnmounted(() => {
   border-right: 1px solid var(--border);
   margin: 0 -12px;
   min-height: 24px;
+}
+
+.search-page-compact .module-tabs-row :deep(.module-tabs) {
+  margin: 0;
+  border-right: none;
 }
 
 .search-page-compact :deep(.module-tabs-scroll) {

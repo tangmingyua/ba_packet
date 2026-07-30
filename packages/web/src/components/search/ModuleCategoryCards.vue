@@ -11,12 +11,20 @@
         :aria-pressed="isSelected(cat.code)"
         @click="toggle(cat.code)"
       >
+        <span v-if="isSelected(cat.code)" class="card-check" aria-hidden="true">✓</span>
         <span class="card-icon">{{ theme(cat.code).icon }}</span>
         <span class="card-label">{{ cat.label }}</span>
         <span class="card-count">{{ cat.count ?? 0 }}</span>
       </button>
     </div>
-    <button v-if="hasSelection" type="button" class="cards-clear" @click="clearAll">全部标签</button>
+    <div v-if="options.length" class="cards-actions">
+      <button v-if="!allSelected" type="button" class="cards-action" @click="selectAll">
+        全选
+      </button>
+      <button v-if="hasSelection" type="button" class="cards-action muted" @click="clearAll">
+        清空
+      </button>
+    </div>
   </div>
 </template>
 
@@ -33,30 +41,26 @@ const emit = defineEmits(['update:modelValue', 'change']);
 
 const hasSelection = computed(() => props.modelValue.length > 0);
 
-function theme(code) {
-  return getCategoryCardTheme(code);
-}
+const allSelected = computed(() => {
+  if (!props.options.length) return false;
+  const selected = new Set(props.modelValue);
+  return props.options.every((o) => selected.has(o.code));
+});
 
-function cardStyle(code) {
-  const t = theme(code);
-  return { '--card-bg': t.bg, '--card-text': t.text || '#fff' };
-}
-
-/** 未选任何标签时视为「全部」选中 */
 function isSelected(code) {
-  if (!props.modelValue.length) return true;
   return props.modelValue.includes(code);
 }
 
 function toggle(code) {
-  let next;
-  if (!props.modelValue.length) {
-    next = [code];
-  } else if (props.modelValue.includes(code)) {
-    next = props.modelValue.filter((c) => c !== code);
-  } else {
-    next = [...props.modelValue, code];
-  }
+  const next = props.modelValue.includes(code)
+    ? props.modelValue.filter((c) => c !== code)
+    : [...props.modelValue, code];
+  emit('update:modelValue', next);
+  emit('change', next);
+}
+
+function selectAll() {
+  const next = props.options.map((o) => o.code);
   emit('update:modelValue', next);
   emit('change', next);
 }
@@ -64,6 +68,15 @@ function toggle(code) {
 function clearAll() {
   emit('update:modelValue', []);
   emit('change', []);
+}
+
+function theme(code) {
+  return getCategoryCardTheme(code);
+}
+
+function cardStyle(code) {
+  const t = theme(code);
+  return { '--card-bg': t.bg, '--card-text': t.text || '#fff' };
 }
 </script>
 
@@ -83,6 +96,7 @@ function clearAll() {
 }
 
 .category-card {
+  position: relative;
   border: 2px solid transparent;
   border-radius: 10px;
   padding: 6px 5px 5px;
@@ -96,20 +110,53 @@ function clearAll() {
   gap: 3px;
   min-height: 60px;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    filter 0.15s ease;
+}
+
+.category-card:not(.selected) {
+  filter: saturate(0.72) brightness(0.94);
+  opacity: 0.82;
 }
 
 .category-card:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  filter: none;
+  opacity: 1;
 }
 
 .category-card.selected {
-  border-color: rgba(255, 255, 255, 0.85);
+  border-color: #fff;
   box-shadow:
-    0 0 0 2px rgba(17, 24, 39, 0.25),
-    0 4px 12px rgba(15, 23, 42, 0.15);
-  transform: translateY(-1px);
+    0 0 0 3px rgba(15, 23, 42, 0.55),
+    0 0 0 5px rgba(255, 255, 255, 0.95),
+    0 6px 16px rgba(15, 23, 42, 0.22);
+  transform: translateY(-2px) scale(1.03);
+  filter: none;
+  opacity: 1;
+  z-index: 1;
+}
+
+.card-check {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .card-icon {
@@ -138,8 +185,14 @@ function clearAll() {
   line-height: 1;
 }
 
-.cards-clear {
-  align-self: flex-end;
+.cards-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.cards-action {
   border: none;
   background: none;
   color: var(--accent-blue);
@@ -148,7 +201,11 @@ function clearAll() {
   padding: 2px 4px;
 }
 
-.cards-clear:hover {
+.cards-action.muted {
+  color: var(--text-muted);
+}
+
+.cards-action:hover {
   text-decoration: underline;
 }
 </style>

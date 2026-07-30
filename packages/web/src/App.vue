@@ -1,7 +1,7 @@
 <template>
   <div class="app">
-    <aside class="sidebar">
-      <button type="button" class="logo" @click="goHome">
+    <aside class="sidebar sidebar-minimal">
+      <button type="button" class="logo logo-compact" title="返回查询首页" @click="goHome">
         <div class="logo-mark">
           <svg viewBox="0 0 24 24">
             <path d="M12 2L2 7l10 5 10-5-10-5z" />
@@ -9,78 +9,30 @@
             <path d="M2 12l10 5 10-5" />
           </svg>
         </div>
-        <div class="logo-text-wrap">
-          <div class="logo-title">Pocket BA</div>
-          <div class="logo-subtitle">口袋 BA</div>
-        </div>
       </button>
 
-      <nav class="sidebar-nav">
-        <button
-          v-for="item in searchNavItems"
-          :key="item.id"
-          type="button"
-          class="nav-item"
-          :class="{ active: isNavActive(item.id) }"
-          @click="goSearch(item.id)"
-        >
-          <span class="nav-icon">
-            <component :is="item.icon" />
-          </span>
-          {{ item.label }}
-        </button>
+      <div class="sidebar-spacer" />
 
-        <router-link to="/import" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </span>
-          资料导入
-        </router-link>
-
-        <router-link to="/form-templates" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="3" y1="9" x2="21" y2="9" />
-              <line x1="9" y1="21" x2="9" y2="9" />
-            </svg>
-          </span>
-          查看表样
-        </router-link>
-
-        <router-link to="/conversion-scripts" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </svg>
-          </span>
-          转1104 脚本
-        </router-link>
-      </nav>
-
-      <div class="sidebar-footer">
-        <template v-if="stats">
-          资料 {{ stats.records ?? 0 }} 条<br />
-          数据集 {{ stats.datasets ?? 0 }} 个
-        </template>
-        <template v-else>
-          监管报送资料库<br />
-          离线检索工具
-        </template>
-      </div>
+      <router-link
+        to="/import"
+        class="sidebar-import-btn"
+        active-class="active"
+        title="资料导入"
+      >
+        <span class="sidebar-import-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        </span>
+        <span class="sidebar-import-label">资料导入</span>
+      </router-link>
     </aside>
 
     <main class="main">
-      <header v-if="pageTitle" class="topbar">
+      <header v-if="showTopbar" class="topbar">
         <div class="topbar-title">{{ pageTitle }}</div>
-        <div v-if="showBackHome" class="topbar-actions">
-          <button type="button" class="btn" @click="goHome">← 返回首页</button>
-        </div>
       </header>
 
       <div
@@ -91,26 +43,25 @@
           'content-fill': isFillPage,
         }"
       >
-        <router-view :key="route.fullPath" @search-state="onSearchState" />
+        <router-view @search-state="onSearchState" />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, provide, ref, watch } from 'vue';
+import { computed, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getHealth } from './api';
 
 const route = useRoute();
 const router = useRouter();
-const stats = ref(null);
 const searchLayoutActive = ref(false);
 const searchPageTitle = ref('');
 const homeResetSignal = ref(0);
 const pendingHomeMode = ref(null);
 provide('homeResetSignal', homeResetSignal);
 provide('pendingHomeMode', pendingHomeMode);
+provide('goHome', goHome);
 
 const landingMode = ref('aggregate');
 
@@ -132,45 +83,12 @@ const pageTitle = computed(() => {
   if (route.name === 'conversionScripts' || route.name === 'conversionScriptDetail') {
     return '转1104 脚本';
   }
-  if (route.name === 'search' && searchLayoutActive.value) {
-    return searchPageTitle.value || '查询结果';
-  }
   return '';
 });
 
-const showBackHome = computed(
-  () => route.name === 'search' && searchLayoutActive.value
+const showTopbar = computed(
+  () => Boolean(pageTitle.value) && route.name !== 'search'
 );
-
-const searchNavItems = [
-  {
-    id: 'aggregate',
-    label: '聚合查询',
-    icon: defineComponent({
-      render() {
-        return h('svg', { viewBox: '0 0 24 24' }, [
-          h('circle', { cx: '11', cy: '11', r: '8' }),
-          h('path', { d: 'M21 21l-4.35-4.35' }),
-        ]);
-      },
-    }),
-  },
-];
-
-function isNavActive(id) {
-  if (route.name !== 'search') return false;
-  if (searchLayoutActive.value) {
-    const mode = route.query.mode || 'aggregate';
-    return mode === id;
-  }
-  return landingMode.value === id;
-}
-
-function goSearch(mode) {
-  pendingHomeMode.value = mode;
-  router.push({ path: '/', query: {} });
-  homeResetSignal.value += 1;
-}
 
 function goHome() {
   pendingHomeMode.value = null;
@@ -197,12 +115,4 @@ watch(
     }
   }
 );
-
-onMounted(async () => {
-  try {
-    stats.value = await getHealth();
-  } catch {
-    stats.value = null;
-  }
-});
 </script>

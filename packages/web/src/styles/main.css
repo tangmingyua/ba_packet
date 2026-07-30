@@ -206,6 +206,80 @@ textarea {
   line-height: 1.6;
 }
 
+.sidebar-minimal {
+  width: 72px;
+  padding: 16px 10px 14px;
+  align-items: center;
+}
+
+.sidebar-minimal .logo-compact {
+  justify-content: center;
+  padding: 6px;
+  width: auto;
+}
+
+.sidebar-spacer {
+  flex: 1;
+  min-height: 12px;
+}
+
+.sidebar-import-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--sidebar-text);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sidebar-import-btn:hover {
+  background: var(--bg-hover);
+  color: var(--sidebar-text-active);
+  border-color: var(--border-strong, var(--border));
+}
+
+.sidebar-import-btn.active {
+  background: var(--sidebar-active-bg);
+  color: var(--sidebar-text-active);
+  border-color: var(--border);
+}
+
+.sidebar-import-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-import-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-import-label {
+  display: block;
+  max-width: 100%;
+  word-break: keep-all;
+}
+
 /* ========== Main ========== */
 .main {
   flex: 1;
@@ -263,7 +337,7 @@ textarea {
 .content-search-results {
   display: flex;
   flex-direction: column;
-  padding: 6px 12px 8px;
+  padding: 4px 12px 6px;
   overflow: hidden;
   min-height: 0;
 }
