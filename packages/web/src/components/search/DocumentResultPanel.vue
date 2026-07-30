@@ -262,25 +262,26 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .result-summary {
   font-size: 12px;
   color: var(--text-secondary);
   flex: 0 0 auto;
+  margin: 0;
 }
 
 .document-layout {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex: 1 1 0;
   min-height: 0;
   align-items: stretch;
 }
 
 .document-list {
-  width: 240px;
+  width: 220px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -294,12 +295,12 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .list-header h3 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
 }
@@ -313,7 +314,7 @@ watch(
   list-style: none;
   overflow: auto;
   flex: 1;
-  padding: 8px;
+  padding: 6px;
   margin: 0;
 }
 
@@ -322,7 +323,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   text-align: left;
   color: inherit;
@@ -343,7 +344,7 @@ watch(
 
 .document-item .code {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .document-item .report {
@@ -364,22 +365,22 @@ watch(
 
 .hit-rows {
   list-style: none;
-  padding: 0 4px 8px 8px;
+  padding: 0 4px 6px 6px;
   margin: 0;
 }
 
 .hit-row {
   width: 100%;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: flex-start;
   text-align: left;
-  padding: 6px 8px;
+  padding: 4px 6px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .hit-row:hover {
@@ -390,8 +391,8 @@ watch(
   flex-shrink: 0;
   color: var(--accent-blue);
   font-family: ui-monospace, monospace;
-  font-size: 11px;
-  min-width: 36px;
+  font-size: 10px;
+  min-width: 32px;
 }
 
 .hit-row .snippet {
@@ -404,12 +405,12 @@ watch(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-height: 0;
 }
 
 .preview-header h2 {
-  font-size: 16px;
+  font-size: 15px;
   margin: 0 0 4px;
 }
 
@@ -428,12 +429,12 @@ watch(
 
 .muted {
   color: var(--text-muted);
-  font-size: 13px;
-  padding: 12px;
+  font-size: 12px;
+  padding: 10px;
 }
 
 .empty-hint {
-  padding: 24px;
+  padding: 20px;
 }
 
 .feedback.error {

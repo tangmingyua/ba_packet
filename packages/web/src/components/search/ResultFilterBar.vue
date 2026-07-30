@@ -124,19 +124,9 @@
         <button type="button" class="btn btn-primary" :disabled="loading" @click="emit('search')">
           筛选
         </button>
-        <button type="button" class="btn" @click="emit('reset')">重置</button>
+        <button type="button" class="btn btn-icon" title="重置筛选" @click="emit('reset')">↺</button>
       </div>
     </div>
-
-    <CategoryTagFilter
-      v-if="mode === 'aggregate' && categoryOptions.length"
-      :model-value="categoryFilter"
-      :options="categoryOptions"
-      variant="full"
-      class="filter-category-row"
-      @update:model-value="emit('update:categoryFilter', $event)"
-      @change="emit('category-change', $event)"
-    />
   </div>
 </template>
 
@@ -149,7 +139,6 @@ import {
   filterColumnSuggestions,
   highlightKeyword,
 } from '../../composables/useDynamicTable.js';
-import CategoryTagFilter from './CategoryTagFilter.vue';
 
 const props = defineProps({
   variant: { type: String, default: 'norm' },
@@ -179,8 +168,6 @@ const emit = defineEmits([
   'suggest-nav',
   'suggest-show',
   'suggest-hide',
-  'update:categoryFilter',
-  'category-change',
 ]);
 
 const operators = FILTER_OPERATORS;
@@ -295,19 +282,7 @@ function highlightName(name) {
 }
 
 .filter-bar-wrap.compact {
-  margin-bottom: 6px;
-}
-
-.filter-bar-wrap.compact .filter-category-row {
-  margin-top: 6px;
-  padding-top: 6px;
-}
-
-.filter-category-row {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-subtle);
-  width: 100%;
+  margin-bottom: 0;
 }
 
 .unified-filter-bar {
@@ -315,28 +290,28 @@ function highlightName(name) {
 }
 
 .filter-group-keyword {
-  flex: 0 1 168px;
-  min-width: 140px;
-  max-width: 180px;
+  flex: 0 1 128px;
+  min-width: 108px;
+  max-width: 144px;
 }
 
 .filter-group-table {
-  flex: 0 1 120px;
-  min-width: 100px;
-  max-width: 140px;
+  flex: 0 1 96px;
+  min-width: 80px;
+  max-width: 120px;
 }
 
 .filter-group-table select {
   min-width: 0;
   width: 100%;
-  padding: 5px 8px !important;
+  padding: 4px 6px !important;
   font-size: 12px !important;
 }
 
 .filter-input-compact {
   min-width: 0 !important;
   width: 100%;
-  padding: 5px 8px !important;
+  padding: 4px 5px !important;
   font-size: 12px !important;
 }
 
@@ -344,18 +319,18 @@ function highlightName(name) {
   display: flex;
   flex: 1 1 auto;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  min-width: 200px;
+  min-width: 140px;
 }
 
 .custom-filters-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  padding-bottom: 8px;
+  padding-bottom: 6px;
   flex-shrink: 0;
 }
 
@@ -367,38 +342,46 @@ function highlightName(name) {
 }
 
 .custom-filter-index {
-  width: 14px;
+  width: 12px;
   text-align: center;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  padding-bottom: 8px;
+  padding-bottom: 6px;
   flex-shrink: 0;
 }
 
 .filter-group-col-sm {
   position: relative;
-  flex: 0 1 120px;
-  min-width: 96px;
-  max-width: 140px;
+  flex: 0 1 96px;
+  min-width: 76px;
+  max-width: 116px;
+}
+
+.filter-group-col-sm input {
+  padding: 4px 5px !important;
 }
 
 .filter-group-op {
-  flex: 0 1 88px;
-  min-width: 72px;
-  max-width: 96px;
+  flex: 0 1 72px;
+  min-width: 58px;
+  max-width: 80px;
 }
 
 .filter-group-op select {
   min-width: 0;
   width: 100%;
-  padding: 5px 6px !important;
+  padding: 4px 5px !important;
   font-size: 12px !important;
 }
 
 .filter-group-val {
-  flex: 0 1 100px;
-  min-width: 80px;
-  max-width: 120px;
+  flex: 0 1 84px;
+  min-width: 66px;
+  max-width: 100px;
+}
+
+.filter-group-val input {
+  padding: 4px 5px !important;
 }
 
 .col-suggest {
@@ -421,7 +404,7 @@ function highlightName(name) {
 }
 
 .col-suggest-item {
-  padding: 8px 12px;
+  padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
   color: var(--text);
@@ -433,7 +416,7 @@ function highlightName(name) {
 }
 
 .col-suggest-empty {
-  padding: 8px 12px;
+  padding: 6px 10px;
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -445,6 +428,15 @@ function highlightName(name) {
   color: var(--text-secondary);
   margin-bottom: 1px;
   flex-shrink: 0;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-actions .btn-icon {
+  padding: 4px 7px;
+  font-size: 14px;
 }
 
 .btn-icon:hover {
@@ -453,13 +445,16 @@ function highlightName(name) {
 }
 
 .btn-add-filter {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--accent-blue);
   border-style: dashed;
-  padding: 5px 10px;
+  padding: 4px 8px;
   margin-bottom: 1px;
   white-space: nowrap;
   flex-shrink: 0;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .q-suggest-item.active {
@@ -480,17 +475,34 @@ function highlightName(name) {
 
 @media (max-width: 960px) {
   .filter-group-keyword {
-    flex: 1 1 140px;
+    flex: 1 1 120px;
     max-width: none;
   }
 
   .custom-filters-inline {
-    flex-basis: 100%;
+    flex-basis: auto;
   }
 
   .filter-actions {
     margin-left: 0;
-    flex-basis: 100%;
+    flex-basis: auto;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .filter-group-keyword,
+  .filter-group-table,
+  .filter-group-col-sm,
+  .filter-group-op,
+  .filter-group-val {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .filter-actions {
+    flex-basis: auto;
     justify-content: flex-end;
   }
 }

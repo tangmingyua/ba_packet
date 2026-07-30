@@ -6,19 +6,14 @@
       'search-page-compact': searched && isAggregateMode,
     }"
   >
-    <!-- 新头部：模块 + 标签卡片 + 搜索 -->
+    <!-- 新头部：模块 Tab + 标签卡片 + 子类 + 查询/筛选 -->
     <header class="search-page-header">
-      <div class="header-top">
-        <div class="header-title-block">
-          <h1 class="module-title">{{ moduleLabel }}</h1>
-        </div>
-        <label v-if="modules.length > 1" class="module-picker field compact">
-          <span class="label">主类</span>
-          <select v-model="moduleCode" @change="onModuleChange">
-            <option v-for="m in modules" :key="m.code" :value="m.code">{{ m.name }}</option>
-          </select>
-        </label>
-      </div>
+      <ModuleTabs
+        v-if="modules.length > 1"
+        v-model="moduleCode"
+        :options="modules"
+        @change="onModuleChange"
+      />
 
       <ModuleCategoryCards
         v-if="categoryStats.length"
@@ -34,70 +29,73 @@
         @change="onSubtypeChange"
       />
 
-      <form class="header-search" @submit.prevent="doSearch">
-        <input
-          v-model="keyword"
-          type="search"
-          class="header-search-input"
-          :placeholder="searchPlaceholder"
-          autocomplete="off"
-          @input="onInput"
-          @keydown.down.prevent="moveSuggest(1)"
-          @keydown.up.prevent="moveSuggest(-1)"
-          @keydown.enter.prevent="onEnter"
-          @focus="onInput"
-        />
-        <button type="submit" class="btn btn-primary" :disabled="loading">
-          {{ loading ? '查询中…' : '查询' }}
-        </button>
-        <div v-if="showSuggest && suggestions.length" class="header-suggestions show">
-          <div
-            v-for="(item, index) in suggestions"
-            :key="`${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
-            class="suggestion-item"
-            :class="{ active: index === suggestIndex }"
-            @mousedown.prevent="pickSuggest(item)"
-          >
-            <div class="suggestion-title" v-html="suggestTitleHtml(item)" />
-            <div class="suggestion-meta">
-              表名：{{ item.tableName }} · {{ item.reportName }}
-              <span v-if="item.categoryLabel" class="category-tag">{{ item.categoryLabel }}</span>
+      <div class="header-search-row">
+        <form class="header-search" @submit.prevent="doSearch">
+          <input
+            v-model="keyword"
+            type="search"
+            class="header-search-input"
+            :placeholder="searchPlaceholder"
+            autocomplete="off"
+            @input="onInput"
+            @keydown.down.prevent="moveSuggest(1)"
+            @keydown.up.prevent="moveSuggest(-1)"
+            @keydown.enter.prevent="onEnter"
+            @focus="onInput"
+          />
+          <button type="submit" class="btn btn-primary" :disabled="loading">
+            {{ loading ? '查询中…' : '查询' }}
+          </button>
+          <div v-if="showSuggest && suggestions.length" class="header-suggestions show">
+            <div
+              v-for="(item, index) in suggestions"
+              :key="`${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
+              class="suggestion-item"
+              :class="{ active: index === suggestIndex }"
+              @mousedown.prevent="pickSuggest(item)"
+            >
+              <div class="suggestion-title" v-html="suggestTitleHtml(item)" />
+              <div class="suggestion-meta">
+                表名：{{ item.tableName }} · {{ item.reportName }}
+                <span v-if="item.categoryLabel" class="category-tag">{{ item.categoryLabel }}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div v-else-if="showSuggest && keyword.trim()" class="header-suggestions show">
-          <div class="suggestion-empty">无匹配数据项</div>
-        </div>
-      </form>
+          <div v-else-if="showSuggest && keyword.trim()" class="header-suggestions show">
+            <div class="suggestion-empty">无匹配数据项</div>
+          </div>
+        </form>
+
+        <ResultFilterBar
+          v-if="showHeaderFilterBar"
+          class="header-filter-bar"
+          :variant="isQaLayout ? 'qa' : 'norm'"
+          :mode="searchMode"
+          :hide-keyword="isAggregateMode"
+          :compact="isAggregateMode"
+          v-model:keyword="keyword"
+          v-model:table-filter="tableFilter"
+          v-model:custom-filters="customFilters"
+          v-model:category-filter="selectedCategories"
+          :category-options="[]"
+          :table-options="tableOptions"
+          :column-options="columnOptions"
+          :suggestions="filterSuggestions"
+          :suggest-index="filterSuggestIndex"
+          :show-suggest="filterShowSuggest"
+          :loading="loading"
+          @search="onFilterSearch"
+          @reset="resetFilters"
+          @suggest-pick="pickFilterSuggest"
+          @suggest-nav="moveFilterSuggest"
+          @suggest-show="onFilterSuggestInput"
+          @suggest-hide="filterShowSuggest = false"
+        />
+      </div>
     </header>
 
     <!-- 结果区 -->
     <section v-if="searched" class="search-results">
-      <ResultFilterBar
-        v-if="showResultFilterBar"
-        :variant="isQaLayout ? 'qa' : 'norm'"
-        :mode="searchMode"
-        :hide-keyword="isAggregateMode"
-        :compact="isAggregateMode"
-        v-model:keyword="keyword"
-        v-model:table-filter="tableFilter"
-        v-model:custom-filters="customFilters"
-        v-model:category-filter="selectedCategories"
-        :category-options="[]"
-        :table-options="tableOptions"
-        :column-options="columnOptions"
-        :suggestions="filterSuggestions"
-        :suggest-index="filterSuggestIndex"
-        :show-suggest="filterShowSuggest"
-        :loading="loading"
-        @search="onFilterSearch"
-        @reset="resetFilters"
-        @suggest-pick="pickFilterSuggest"
-        @suggest-nav="moveFilterSuggest"
-        @suggest-show="onFilterSuggestInput"
-        @suggest-hide="filterShowSuggest = false"
-      />
-
       <p v-if="error" class="message error">{{ error }}</p>
 
       <!-- 聚合查询：按所选子类 storageKind 切换渲染 -->
@@ -199,6 +197,7 @@ import FormTemplateResultPanel from '../components/search/FormTemplateResultPane
 import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
+import ModuleTabs from '../components/search/ModuleTabs.vue';
 import SubtypeTabs from '../components/search/SubtypeTabs.vue';
 import { parseCategoryFilter } from '../constants/materialCategories.js';
 import {
@@ -336,6 +335,8 @@ const showResultFilterBar = computed(() => {
   }
   return true;
 });
+
+const showHeaderFilterBar = computed(() => showResultFilterBar.value);
 
 const ALL_SUBTYPE = '__all__';
 
@@ -1008,55 +1009,39 @@ onUnmounted(() => {
 .search-page-header {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 4px 0 8px;
+  gap: 4px;
+  padding: 0 0 6px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.header-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.header-title-block {
-  min-width: 0;
-}
-
-.module-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.header-sub {
-  margin: 4px 0 0;
-  font-size: 13px;
-}
-
-.module-picker {
-  min-width: 160px;
+.search-page-header :deep(.module-tabs) {
+  margin: 0 -12px;
 }
 
 .header-search {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .header-search-input {
-  flex: 1 1 240px;
-  min-width: 200px;
-  padding: 10px 14px;
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
   font-size: 14px;
+}
+
+.search-page-header :deep(.module-category-cards) {
+  margin-top: 2px;
+}
+
+.search-page-header :deep(.subtype-tabs-wrap) {
+  margin-top: 2px;
 }
 
 .header-suggestions {
@@ -1108,26 +1093,7 @@ onUnmounted(() => {
   max-width: 100%;
 }
 
-.result-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 8px 0 12px;
-}
-
-.category-tag {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  background: var(--sidebar-active-bg, #e5e7eb);
-  color: var(--text-secondary, #6b7280);
-}
-
-/* 聚合查询结果页：头部 30vh + 表格区 70vh */
+/* 聚合查询结果页：头部 30% + 表格区 70% */
 .search-page-compact {
   flex: 1;
   min-height: 0;
@@ -1139,31 +1105,45 @@ onUnmounted(() => {
 }
 
 .search-page-compact .search-page-header {
-  flex: 0 0 auto;
+  flex: 0 0 30%;
   max-height: 30vh;
   overflow-y: auto;
   overflow-x: hidden;
-  gap: 6px;
-  padding: 0 0 6px;
+  gap: 3px;
+  padding: 0 0 4px;
   border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.search-page-compact .search-page-header::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search-page-compact .search-page-header::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.search-page-compact .search-page-header :deep(.module-category-cards) {
+  margin-top: 0;
 }
 
 .search-page-compact .search-results {
-  flex: 1 1 0;
+  flex: 0 0 70%;
   min-height: 0;
   max-height: 70vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
 }
 
 .search-page-compact .search-results > .message {
   flex: 0 0 auto;
-}
-
-.search-page-compact .search-results > .filter-bar-wrap {
-  flex: 0 0 auto;
+  margin: 0;
 }
 
 .search-page-compact .search-results > .table-wrap,
@@ -1178,17 +1158,23 @@ onUnmounted(() => {
   margin-bottom: 0;
 }
 
-.search-page-compact .header-top {
-  gap: 8px;
-  align-items: center;
-}
-
-.search-page-compact .module-title {
-  font-size: 16px;
+.search-page-compact .header-search-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
 }
 
 .search-page-compact .header-search {
-  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 160px;
+  gap: 6px;
+}
+
+.search-page-compact .header-filter-bar {
+  flex: 2 1 320px;
+  min-width: 180px;
 }
 
 .search-page-compact .header-search-input {
@@ -1207,12 +1193,12 @@ onUnmounted(() => {
 
 .search-page-compact :deep(.cards-row) {
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .search-page-compact :deep(.category-card) {
-  min-height: 52px;
-  padding: 6px 4px 4px;
+  min-height: 42px;
+  padding: 4px 3px 3px;
   border-radius: 8px;
   gap: 2px;
 }
@@ -1226,10 +1212,10 @@ onUnmounted(() => {
 }
 
 .search-page-compact :deep(.card-icon) {
-  width: 22px;
-  height: 22px;
-  font-size: 11px;
-  border-radius: 5px;
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+  border-radius: 4px;
 }
 
 .search-page-compact :deep(.card-label) {
@@ -1237,14 +1223,32 @@ onUnmounted(() => {
 }
 
 .search-page-compact :deep(.card-count) {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .search-page-compact :deep(.cards-clear) {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .search-page-compact :deep(.subtype-tabs-wrap) {
   margin: 0;
+}
+
+.search-page-compact :deep(.module-tabs) {
+  border-radius: 0;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  margin: 0 -12px;
+  min-height: 24px;
+}
+
+.search-page-compact :deep(.module-tabs-scroll) {
+  width: 18px;
+}
+
+.search-page-compact :deep(.module-tab) {
+  padding: 3px 8px 4px;
+  font-size: 11px;
 }
 </style>

@@ -72,20 +72,20 @@ function clearAll() {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 4px;
 }
 
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px;
   align-items: stretch;
 }
 
 .category-card {
   border: 2px solid transparent;
-  border-radius: 12px;
-  padding: 14px 10px 12px;
+  border-radius: 10px;
+  padding: 6px 5px 5px;
   background: var(--card-bg);
   color: var(--card-text);
   cursor: pointer;
@@ -93,47 +93,47 @@ function clearAll() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 108px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  gap: 3px;
+  min-height: 60px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .category-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 
 .category-card.selected {
   border-color: rgba(255, 255, 255, 0.85);
   box-shadow:
     0 0 0 2px rgba(17, 24, 39, 0.25),
-    0 6px 16px rgba(15, 23, 42, 0.18);
-  transform: translateY(-2px);
+    0 4px 12px rgba(15, 23, 42, 0.15);
+  transform: translateY(-1px);
 }
 
 .card-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
 }
 
 .card-label {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
 }
 
 .card-count {
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1;
 }
@@ -143,7 +143,7 @@ function clearAll() {
   border: none;
   background: none;
   color: var(--accent-blue);
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
   padding: 2px 4px;
 }

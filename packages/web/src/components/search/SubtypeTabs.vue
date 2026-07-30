@@ -32,6 +32,10 @@ function select(code) {
 </script>
 
 <style scoped>
+.subtype-tabs-wrap {
+  padding: 2px 0;
+}
+
 .subtype-tabs {
   margin-bottom: 0;
 }
