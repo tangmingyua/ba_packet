@@ -260,6 +260,21 @@ textarea {
   width: 100%;
 }
 
+.content-search-results {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 24px 16px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.content-search-results > * {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .content-fill {
   padding: 0;
   overflow: hidden;
@@ -668,18 +683,19 @@ textarea {
   overflow-x: auto;
 }
 
-/* 查询结果：页面整体可滚动，仅表格区域内部滚动 */
+/* 查询结果：表格区域内部滚动，一次性显示全部行 */
 .result-table-wrap {
-  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  margin-bottom: 0;
 }
 
 .result-table-scroll {
-  /* 至少容纳 10 条结果 + 表头（684px） */
+  flex: 0 0 auto;
   min-height: var(--result-table-min-h);
-  max-height: max(
-    var(--result-table-min-h),
-    calc(100vh - var(--header-h) - 240px)
-  );
+  max-height: var(--result-table-min-h);
   overflow: auto;
 }
 

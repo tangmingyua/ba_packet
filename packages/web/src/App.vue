@@ -52,38 +52,6 @@
           查看表样
         </router-link>
 
-        <router-link to="/form-template-search" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-          </span>
-          表样搜索
-        </router-link>
-
-        <router-link to="/documents" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-            </svg>
-          </span>
-          填报说明
-        </router-link>
-
-        <router-link to="/document-search" class="nav-item" active-class="active">
-          <span class="nav-icon">
-            <svg viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-          </span>
-          说明搜索
-        </router-link>
-
         <router-link to="/conversion-scripts" class="nav-item" active-class="active">
           <span class="nav-icon">
             <svg viewBox="0 0 24 24">
@@ -117,16 +85,20 @@
 
       <div
         class="content"
-        :class="{ 'content-search-landing': isSearchLanding, 'content-fill': isFillPage }"
+        :class="{
+          'content-search-landing': isSearchLanding,
+          'content-search-results': isSearchResults,
+          'content-fill': isFillPage,
+        }"
       >
-        <router-view @search-state="onSearchState" />
+        <router-view :key="route.fullPath" @search-state="onSearchState" />
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, provide, ref } from 'vue';
+import { computed, defineComponent, h, onMounted, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getHealth } from './api';
 
@@ -146,6 +118,10 @@ const isSearchLanding = computed(
   () => route.name === 'search' && !searchLayoutActive.value
 );
 
+const isSearchResults = computed(
+  () => route.name === 'search' && searchLayoutActive.value
+);
+
 const isFillPage = computed(() =>
   route.name === 'conversionScripts' || route.name === 'conversionScriptDetail'
 );
@@ -153,9 +129,6 @@ const isFillPage = computed(() =>
 const pageTitle = computed(() => {
   if (route.name === 'import') return '资料导入';
   if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '表样';
-  if (route.name === 'formTemplateSearch') return '表样搜索（测试）';
-  if (route.name === 'documents' || route.name === 'documentDetail') return '填报说明';
-  if (route.name === 'documentSearch') return '填报说明搜索';
   if (route.name === 'conversionScripts' || route.name === 'conversionScriptDetail') {
     return '转1104 脚本';
   }
@@ -214,6 +187,16 @@ function onSearchState(payload) {
   if (payload?.title) searchPageTitle.value = payload.title;
   if (payload?.landingMode) landingMode.value = payload.landingMode;
 }
+
+watch(
+  () => route.name,
+  (name) => {
+    if (name !== 'search') {
+      searchLayoutActive.value = false;
+      searchPageTitle.value = '';
+    }
+  }
+);
 
 onMounted(async () => {
   try {

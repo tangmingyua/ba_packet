@@ -48,7 +48,7 @@
     </nav>
 
     <!-- 标签：资料导入 -->
-    <div v-show="activeTab === 'import'" class="tab-panel">
+    <div v-if="activeTab === 'import'" class="tab-panel">
       <fieldset class="form-section import-subtype-picker">
         <legend>选择资料子类</legend>
         <div class="form-grid">
@@ -79,7 +79,7 @@
         </p>
       </fieldset>
 
-      <template v-if="importStorageKind === 'excel'">
+      <div v-if="importStorageKind === 'excel'">
       <fieldset class="form-section">
         <legend>上传 Excel</legend>
         <div class="form-grid">
@@ -228,9 +228,9 @@
           </tbody>
         </table>
       </div>
-      </template>
+      </div>
 
-      <div v-else-if="importStorageKind === 'form_template'" class="import-kind-panel">
+      <div v-if="importStorageKind === 'form_template'" class="import-kind-panel">
       <p class="hint">
         上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。仅导入 Sheet 名以字母开头且可解析表号的
         Sheet（如 G0100_231、S2400_201、NR0100_231）；Sheet 名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
@@ -330,7 +330,7 @@
       </fieldset>
       </div>
 
-      <div v-else-if="importStorageKind === 'script'" class="import-kind-panel">
+      <div v-if="importStorageKind === 'script'" class="import-kind-panel">
       <p class="hint">
         上传转 1104 SQL/TXT 脚本。须选择模块（与子类配置主类一致）。文件名格式为「表号_版本.sql/.txt」或「表号.sql/.txt」（无版本时记为
         LASTEST）。同模块+表号+版本再次导入将覆盖。删除请在本页已导入列表中操作。
@@ -433,7 +433,7 @@
       </fieldset>
       </div>
 
-      <div v-else-if="importStorageKind === 'document'" class="import-kind-panel">
+      <div v-if="importStorageKind === 'document'" class="import-kind-panel">
       <p class="hint">
         上传填报说明 Word（.docx）。系统自动识别合并填报说明或 IMAS 采集规范等格式，按表号拆分为多条记录；
         无法识别切分锚点时将整本导入为 1 条。Word 内表格不解析，显示「表样见 xx Excel 导入」。同 doc_code
@@ -480,7 +480,7 @@
           <button type="button" class="btn" :disabled="fillInstructionLoading" @click="refreshFillInstructions">
             刷新列表
           </button>
-          <router-link to="/documents" class="btn">查看填报说明</router-link>
+          <router-link to="/" class="btn">去首页查询</router-link>
         </div>
         <p
           v-if="fillInstructionMessage"
@@ -521,10 +521,7 @@
               <td>{{ item.importedAt }}</td>
               <td>{{ item.sourceFileName }}</td>
               <td>
-                <router-link
-                  :to="{ name: 'documentDetail', params: { id: item.id } }"
-                  class="btn-link"
-                >
+                <router-link :to="{ path: '/', query: { q: item.docCode || '' } }" class="btn-link">
                   查看
                 </router-link>
                 <button type="button" class="btn-link danger" @click="removeFillInstruction(item)">删除</button>
@@ -536,7 +533,7 @@
       </fieldset>
       </div>
 
-      <div v-else-if="importStorageKind === 'code_value'" class="import-kind-panel">
+      <div v-if="importStorageKind === 'code_value'" class="import-kind-panel">
         <CodeValuesPanel
           :modules="catalog.modules"
           :fixed-module-code="selectedImportSubtype?.moduleCode || ''"
@@ -548,7 +545,7 @@
     </div>
 
     <!-- 标签：子类配置 -->
-    <div v-show="activeTab === 'subtypes'" class="tab-panel config-section subtype-config">
+    <div v-if="activeTab === 'subtypes'" class="tab-panel config-section subtype-config">
       <div class="flow-guide">
         <div class="flow-guide-title">配置流程</div>
         <ol class="flow-steps">
@@ -1090,12 +1087,12 @@
     </div>
 
     <!-- 标签：标准字段 -->
-    <div v-show="activeTab === 'fields'" class="tab-panel">
+    <div v-if="activeTab === 'fields'" class="tab-panel">
       <StandardFieldsPanel @changed="refreshCatalog" />
     </div>
 
     <!-- 标签：数据查看 -->
-    <div v-show="activeTab === 'data'" class="tab-panel">
+    <div v-if="activeTab === 'data'" class="tab-panel">
       <VersionDataPanel :catalog="catalog" :active="activeTab === 'data'" />
     </div>
   </section>

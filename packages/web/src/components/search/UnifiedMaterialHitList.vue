@@ -102,15 +102,21 @@ function openCodeValue(hit) {
 
 <style scoped>
 .material-hit-section {
-  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 0;
+  overflow: auto;
 }
 
 .material-hit-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .material-hit-head h3 {

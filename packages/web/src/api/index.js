@@ -312,8 +312,12 @@ export async function importFillInstructionDocument(file, { moduleCode, subtypeC
   return response.json();
 }
 
-export function listDocuments() {
-  return request('/api/documents');
+export function listDocuments({ moduleCode, subtypeCode } = {}) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  const qs = query.toString();
+  return request(`/api/documents${qs ? `?${qs}` : ''}`);
 }
 
 export function getDocument(id) {
@@ -342,9 +346,11 @@ export function updateDocumentReportMapping(id, reportCode) {
   });
 }
 
-export function searchDocumentsApi(q, { maxDocuments } = {}) {
-  const query = new URLSearchParams({ q: String(q) });
+export function searchDocumentsApi(q, { maxDocuments, subtypeCode, moduleCode } = {}) {
+  const query = new URLSearchParams({ q: String(q ?? '') });
   if (maxDocuments != null) query.set('maxDocuments', String(maxDocuments));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
   return request(`/api/documents/search?${query}`);
 }
 

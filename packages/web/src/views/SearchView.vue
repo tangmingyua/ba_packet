@@ -11,7 +11,6 @@
       <div class="header-top">
         <div class="header-title-block">
           <h1 class="module-title">{{ moduleLabel }}</h1>
-          <p class="header-sub muted">资料标签可多选以筛选子类；请选择一个子类，查询结果按该子类展示</p>
         </div>
         <label v-if="modules.length > 1" class="module-picker field compact">
           <span class="label">主类</span>
@@ -72,32 +71,8 @@
       </form>
     </header>
 
-    <!-- 结果区：沿用 Phase C 样式与逻辑 -->
+    <!-- 结果区 -->
     <section v-if="searched" class="search-results">
-      <template v-if="isQaLayout && !showSubtypeTabs && filteredReports.length">
-        <div class="qa-sheet-tabs">
-          <button
-            type="button"
-            class="qa-sheet-tab"
-            :class="{ active: activeReportCode === ALL_SUBTYPE }"
-            @click="activeReportCode = ALL_SUBTYPE"
-          >
-            全部 ({{ moduleHitsTotal }})
-          </button>
-          <button
-            v-for="report in filteredReports"
-            :key="report.code"
-            type="button"
-            class="qa-sheet-tab"
-            :class="{ active: activeReportCode === report.code }"
-            :disabled="!report.hitCount"
-            @click="activeReportCode = report.code"
-          >
-            {{ report.name }} ({{ report.hitCount }})
-          </button>
-        </div>
-      </template>
-
       <ResultFilterBar
         v-if="showResultFilterBar"
         :variant="isQaLayout ? 'qa' : 'norm'"
@@ -125,18 +100,6 @@
 
       <p v-if="error" class="message error">{{ error }}</p>
 
-      <div v-if="searched" class="result-meta">
-        <span v-if="lastKeyword">关键词「{{ lastKeyword }}」</span>
-        <span v-else>全部资料</span>
-        <span v-if="moduleLabel">模块 {{ moduleLabel }}</span>
-        <span v-if="selectedSubtypeLabel">子类 {{ selectedSubtypeLabel }}</span>
-        <span v-if="elapsedMs">耗时 {{ elapsedMs }}ms</span>
-        <span v-if="isQaLayout && activeReportCode !== ALL_SUBTYPE && !useSubtypeScopedRender">
-          当前子类 {{ displayTotal }} 条 / 主类合计 {{ moduleHitsTotal }} 条
-        </span>
-        <span v-else>共 {{ resultTotalCount }} 条</span>
-      </div>
-
       <!-- 聚合查询：按所选子类 storageKind 切换渲染 -->
       <template v-if="useSubtypeScopedRender">
         <DynamicResultTable
@@ -153,6 +116,21 @@
           :reports="materialReports"
           :keyword="lastKeyword"
           :title="subtypeResultTitle"
+          :empty-text="emptyText"
+        />
+
+        <FormTemplateResultPanel
+          v-else-if="selectedStorageKind === 'form_template'"
+          :keyword="lastKeyword"
+          :module-code="moduleCode"
+          :empty-text="emptyText"
+        />
+
+        <DocumentResultPanel
+          v-else-if="selectedStorageKind === 'document'"
+          :keyword="lastKeyword"
+          :module-code="moduleCode"
+          :subtype-code="selectedSubtypeCode"
           :empty-text="emptyText"
         />
 
@@ -217,6 +195,8 @@ import {
 import ResultFilterBar from '../components/search/ResultFilterBar.vue';
 import DynamicResultTable from '../components/search/DynamicResultTable.vue';
 import CodeValueResultTable from '../components/search/CodeValueResultTable.vue';
+import FormTemplateResultPanel from '../components/search/FormTemplateResultPanel.vue';
+import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
 import SubtypeTabs from '../components/search/SubtypeTabs.vue';
@@ -330,7 +310,7 @@ const useSubtypeScopedRender = computed(
   () => isAggregateMode.value && Boolean(selectedSubtypeCode.value && selectedStorageKind.value)
 );
 
-const MATERIAL_STORAGE_KINDS = new Set(['form_template', 'document', 'script']);
+const MATERIAL_STORAGE_KINDS = new Set(['script']);
 
 const isMaterialStorageKind = computed(() =>
   MATERIAL_STORAGE_KINDS.has(selectedStorageKind.value)
@@ -939,7 +919,10 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => document.removeEventListener('click', onDocumentClick));
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick);
+  emit('search-state', { layout: false, landingMode: homeMode.value });
+});
 </script>
 
 <style scoped>
@@ -1144,28 +1127,64 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick));
   color: var(--text-secondary, #6b7280);
 }
 
-/* 聚合查询结果页：压缩头部，留出更多列表空间 */
+/* 聚合查询结果页：头部 30vh + 表格区 70vh */
 .search-page-compact {
-  gap: 8px;
-  padding-bottom: 12px;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .search-page-compact .search-page-header {
-  gap: 8px;
-  padding: 0 0 4px;
+  flex: 0 0 auto;
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 6px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.search-page-compact .search-results {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-page-compact .search-results > .message {
+  flex: 0 0 auto;
+}
+
+.search-page-compact .search-results > .filter-bar-wrap {
+  flex: 0 0 auto;
+}
+
+.search-page-compact .search-results > .table-wrap,
+.search-page-compact .search-results > .code-value-result-section,
+.search-page-compact .search-results > .material-hit-section,
+.search-page-compact .search-results > .form-template-result-panel,
+.search-page-compact .search-results > .document-result-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
 }
 
 .search-page-compact .header-top {
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
 .search-page-compact .module-title {
-  font-size: 17px;
-}
-
-.search-page-compact .header-sub {
-  display: none;
+  font-size: 16px;
 }
 
 .search-page-compact .header-search {
@@ -1173,12 +1192,12 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick));
 }
 
 .search-page-compact .header-search-input {
-  padding: 7px 12px;
+  padding: 6px 10px;
   font-size: 13px;
 }
 
 .search-page-compact .header-search .btn-primary {
-  padding: 7px 16px;
+  padding: 6px 14px;
   font-size: 13px;
 }
 
@@ -1187,15 +1206,15 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick));
 }
 
 .search-page-compact :deep(.cards-row) {
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
 }
 
 .search-page-compact :deep(.category-card) {
-  min-height: 62px;
-  padding: 8px 6px 6px;
+  min-height: 52px;
+  padding: 6px 4px 4px;
   border-radius: 8px;
-  gap: 3px;
+  gap: 2px;
 }
 
 .search-page-compact :deep(.category-card.selected) {
@@ -1207,41 +1226,25 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick));
 }
 
 .search-page-compact :deep(.card-icon) {
-  width: 26px;
-  height: 26px;
-  font-size: 12px;
-  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  border-radius: 5px;
 }
 
 .search-page-compact :deep(.card-label) {
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .search-page-compact :deep(.card-count) {
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .search-page-compact :deep(.cards-clear) {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .search-page-compact :deep(.subtype-tabs-wrap) {
   margin: 0;
-}
-
-.search-page-compact :deep(.qa-sheet-tabs) {
-  margin-bottom: 4px;
-  gap: 4px;
-}
-
-.search-page-compact :deep(.qa-sheet-tab) {
-  padding: 4px 10px;
-  font-size: 11px;
-}
-
-.search-page-compact .result-meta {
-  margin: 2px 0 4px;
-  font-size: 12px;
-  gap: 6px 10px;
 }
 </style>

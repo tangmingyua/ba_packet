@@ -30,7 +30,11 @@ export function indicatorNodeMatches(node, queryKey) {
 
 export function subtreeHasIndicatorMatch(node, queryKey, nodeId = null) {
   if (!node) return false;
-  if (nodeId != null && node.id === nodeId) return true;
+  const resolvedNodeId =
+    nodeId != null && Number.isFinite(Number(nodeId)) ? Number(nodeId) : null;
+  if (resolvedNodeId != null && Number(node.id) === resolvedNodeId) return true;
   if (indicatorNodeMatches(node, queryKey)) return true;
-  return (node.children || []).some((child) => subtreeHasIndicatorMatch(child, queryKey, nodeId));
+  return (node.children || []).some((child) =>
+    subtreeHasIndicatorMatch(child, queryKey, resolvedNodeId)
+  );
 }

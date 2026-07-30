@@ -1,12 +1,12 @@
 <template>
-  <div class="document-tree-wrap">
+  <div ref="wrapRef" class="document-tree-wrap">
     <ul v-if="rootChildren.length" class="document-tree">
       <DocumentTreeNode
         v-for="child in rootChildren"
         :key="child.id"
         :node="child"
         :highlight-indicator-key="resolvedHighlightKey"
-        :highlight-node-id="highlightNodeId"
+        :highlight-node-id="resolvedHighlightNodeId"
       />
     </ul>
     <p v-else class="muted">暂无节点内容</p>
@@ -14,7 +14,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import DocumentTreeNode from './DocumentTreeNode.vue';
 
 const props = defineProps({
@@ -37,6 +37,65 @@ const resolvedHighlightKey = computed(() => {
   if (props.highlightIndicatorNo != null) return String(props.highlightIndicatorNo);
   return '';
 });
+
+const resolvedHighlightNodeId = computed(() => {
+  const id = Number(props.highlightNodeId);
+  return Number.isFinite(id) && id > 0 ? id : null;
+});
+
+const wrapRef = ref(null);
+
+function scrollToHighlightedNode(nodeId, attempt = 0) {
+  const wrap = wrapRef.value;
+  if (!wrap || nodeId == null) return;
+
+  const el = wrap.querySelector(`[data-node-id="${nodeId}"]`);
+  if (el) {
+    const row = el.querySelector('.doc-tree-row') || el;
+    const wrapRect = wrap.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const top =
+      rowRect.top - wrapRect.top + wrap.scrollTop - wrap.clientHeight / 2 + rowRect.height / 2;
+    wrap.scrollTo({
+      top: Math.max(0, top),
+      behavior: attempt === 0 ? 'smooth' : 'auto',
+    });
+    return;
+  }
+
+  if (attempt < 12) {
+    setTimeout(() => scrollToHighlightedNode(nodeId, attempt + 1), 50);
+  }
+}
+
+watch(
+  () => [resolvedHighlightNodeId.value, resolvedHighlightKey.value, props.tree],
+  ([nodeId, indicatorKey]) => {
+    if (nodeId == null && !indicatorKey) return;
+    nextTick(() => {
+      nextTick(() => {
+        if (nodeId != null) {
+          scrollToHighlightedNode(nodeId);
+          return;
+        }
+        scrollToHighlightedIndicator(indicatorKey);
+      });
+    });
+  }
+);
+
+function scrollToHighlightedIndicator(indicatorKey, attempt = 0) {
+  const wrap = wrapRef.value;
+  if (!wrap || !indicatorKey) return;
+  const el = wrap.querySelector('.doc-tree-node.highlighted');
+  if (el) {
+    scrollToHighlightedNode(Number(el.getAttribute('data-node-id')), attempt);
+    return;
+  }
+  if (attempt < 12) {
+    setTimeout(() => scrollToHighlightedIndicator(indicatorKey, attempt + 1), 50);
+  }
+}
 </script>
 
 <style scoped>

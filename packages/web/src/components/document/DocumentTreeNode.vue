@@ -40,7 +40,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   indicatorNodeMatches,
   subtreeHasIndicatorMatch,
@@ -86,15 +86,23 @@ const showKindBadge = computed(() =>
 
 const nodeRef = ref(null);
 
+const resolvedHighlightNodeId = computed(() => {
+  const id = Number(props.highlightNodeId);
+  return Number.isFinite(id) && id > 0 ? id : null;
+});
+
 const isMatchTarget = computed(
   () =>
-    (props.highlightNodeId != null && props.node.id === props.highlightNodeId) ||
+    (resolvedHighlightNodeId.value != null && props.node.id === resolvedHighlightNodeId.value) ||
     indicatorNodeMatches(props.node, props.highlightIndicatorKey)
 );
 
 const expanded = ref(
-  subtreeHasIndicatorMatch(props.node, props.highlightIndicatorKey, props.highlightNodeId) ||
-    defaultExpanded(props.node)
+  subtreeHasIndicatorMatch(
+    props.node,
+    props.highlightIndicatorKey,
+    resolvedHighlightNodeId.value ?? props.highlightNodeId
+  ) || defaultExpanded(props.node)
 );
 
 const visible = computed(() => props.node.nodeKind !== 'doc_title');
@@ -109,18 +117,10 @@ const nodeClass = computed(() => [
 watch(
   () => [props.highlightIndicatorKey, props.highlightNodeId],
   ([key, nodeId]) => {
-    if ((key || nodeId != null) && subtreeHasIndicatorMatch(props.node, key, nodeId)) {
+    const resolvedNodeId =
+      nodeId != null && Number.isFinite(Number(nodeId)) ? Number(nodeId) : null;
+    if ((key || resolvedNodeId != null) && subtreeHasIndicatorMatch(props.node, key, resolvedNodeId)) {
       expanded.value = true;
-    }
-    if (isMatchTarget.value) {
-      // 等祖先 section/part 展开、子节点挂载后再滚动
-      nextTick(() => {
-        nextTick(() => {
-          setTimeout(() => {
-            nodeRef.value?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-          }, 50);
-        });
-      });
     }
   },
   { immediate: true }
@@ -129,7 +129,7 @@ watch(
 function defaultExpanded(node) {
   if (node.nodeKind === 'part') return node.sortOrder === 1;
   if (node.nodeKind === 'section') return false;
-  if (node.nodeKind === 'heading') return node.level <= 2;
+  if (node.nodeKind === 'heading') return true;
   return true;
 }
 </script>

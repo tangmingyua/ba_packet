@@ -520,6 +520,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.result-table-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.result-table-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
 .cell-link {
   position: relative;
   padding-right: 24px;

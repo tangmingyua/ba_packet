@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { fileURLToPath } from 'url';
-import { closeDb, initDb } from './db/database.js';
+import { closeDb, initDb, queryAll } from './db/database.js';
 import {
   clearVersionRecords,
   createStandardField,
@@ -553,17 +553,35 @@ app.post('/api/document/import', async (request, reply) => {
   }
 });
 
-app.get('/api/documents', async () => ({ items: listDocuments() }));
+app.get('/api/documents', async (request) => {
+  const { moduleCode, subtypeCode } = request.query || {};
+  return {
+    items: listDocuments({
+      moduleCode: moduleCode ? String(moduleCode) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
+    }),
+  };
+});
 
 app.get('/api/documents/search', async (request, reply) => {
   try {
-    const { q, maxDocuments } = request.query || {};
-    if (!String(q ?? '').trim()) {
-      return reply.code(400).send({ message: '请提供搜索关键词 q' });
-    }
-    return searchDocuments(q, {
+    const { q, maxDocuments, subtypeCode, moduleCode } = request.query || {};
+    const result = searchDocuments(String(q ?? '').trim(), {
       maxDocuments: maxDocuments ? Number(maxDocuments) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
     });
+    const mod = String(moduleCode ?? '').trim();
+    if (mod && result.items?.length) {
+      const allowed = new Set(
+        queryAll(`SELECT id FROM documents WHERE module_code = ?`, [mod]).map((r) =>
+          Number(r.id)
+        )
+      );
+      result.items = result.items.filter((doc) => allowed.has(doc.id));
+      result.totalDocuments = result.items.length;
+      result.totalHits = result.items.reduce((sum, item) => sum + (item.hitCount || 0), 0);
+    }
+    return result;
   } catch (error) {
     return reply.code(500).send({ message: error.message || '搜索失败' });
   }

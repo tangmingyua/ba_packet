@@ -6,9 +6,6 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import SearchView from '../views/SearchView.vue';
 import ImportView from '../views/ImportView.vue';
 import FormTemplateView from '../views/FormTemplateView.vue';
-import FormTemplateSearchView from '../views/FormTemplateSearchView.vue';
-import DocumentView from '../views/DocumentView.vue';
-import DocumentSearchView from '../views/DocumentSearchView.vue';
 import ConversionScriptView from '../views/ConversionScriptView.vue';
 
 export default createRouter({
@@ -18,10 +15,6 @@ export default createRouter({
     { path: '/import', name: 'import', component: ImportView },
     { path: '/form-templates', name: 'formTemplates', component: FormTemplateView },
     { path: '/form-templates/:id', name: 'formTemplateDetail', component: FormTemplateView },
-    { path: '/form-template-search', name: 'formTemplateSearch', component: FormTemplateSearchView },
-    { path: '/documents', name: 'documents', component: DocumentView },
-    { path: '/documents/:id', name: 'documentDetail', component: DocumentView },
-    { path: '/document-search', name: 'documentSearch', component: DocumentSearchView },
     { path: '/conversion-scripts', name: 'conversionScripts', component: ConversionScriptView },
     {
       path: '/conversion-scripts/:id',

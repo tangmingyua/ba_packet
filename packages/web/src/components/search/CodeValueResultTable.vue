@@ -98,14 +98,19 @@ function openDict(row) {
 
 <style scoped>
 .code-value-result-section {
-  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 0;
 }
 
 .code-value-result-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .code-value-result-head h3 {
@@ -120,6 +125,8 @@ function openDict(row) {
 }
 
 .table-scroll {
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 8px;

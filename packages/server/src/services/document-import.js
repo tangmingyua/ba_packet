@@ -23,6 +23,7 @@ function mapDocumentRow(row) {
     docTitle: row.doc_title || '',
     versionLabel: row.version_label || '',
     moduleCode: row.module_code || '1104',
+    subtypeCode: row.subtype_code || '',
     sourceFileName: row.source_file_name || '',
     fileHash: row.file_hash || '',
     sourceId: row.source_id == null ? null : Number(row.source_id),
@@ -366,14 +367,28 @@ export function importFillInstructionDocument(buffer, options = {}) {
   return base;
 }
 
-export function listDocuments() {
-  const rows = queryAll(
-    `SELECT d.id, d.doc_code, d.doc_title, d.version_label, d.module_code,
+export function listDocuments({ moduleCode, subtypeCode } = {}) {
+  let sql = `
+    SELECT d.id, d.doc_code, d.doc_title, d.version_label, d.module_code, d.subtype_code,
             d.source_file_name, d.file_hash, d.imported_at,
             (SELECT COUNT(*) FROM document_nodes n WHERE n.document_id = d.id) AS node_count
      FROM documents d
-     ORDER BY d.doc_code`
-  );
+  `;
+  const params = [];
+  const conditions = [];
+  const mod = String(moduleCode ?? '').trim();
+  const subtype = String(subtypeCode ?? '').trim();
+  if (mod) {
+    conditions.push('d.module_code = ?');
+    params.push(mod);
+  }
+  if (subtype) {
+    conditions.push('d.subtype_code = ?');
+    params.push(subtype);
+  }
+  if (conditions.length) sql += ` WHERE ${conditions.join(' AND ')}`;
+  sql += ' ORDER BY d.doc_code';
+  const rows = queryAll(sql, params);
   return rows.map((row) => ({
     ...mapDocumentWithReport(row),
     nodeCount: Number(row.node_count || 0),
