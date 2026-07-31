@@ -33,16 +33,6 @@
         </div>
       </div>
 
-      <div v-if="variant === 'norm'" class="filter-group filter-group-table">
-        <label>{{ tableLabel }}</label>
-        <select :value="tableFilter" @change="emit('update:tableFilter', ($event.target).value)">
-          <option value="__all__">全部</option>
-          <option v-for="opt in tableOptions" :key="opt.name" :value="opt.name">
-            {{ opt.name }} ({{ opt.count }})
-          </option>
-        </select>
-      </div>
-
       <div class="custom-filters-inline">
         <span v-if="localFilters.length" class="custom-filters-label">自定义筛选</span>
 
@@ -265,11 +255,9 @@ const keywordLabel = computed(() => '关键字');
 
 const keywordPlaceholder = computed(() => {
   if (props.variant === 'qa') return '表名/数据项/问题描述';
-  if (props.mode === 'aggregate') return '聚合搜索...';
+  if (props.mode === 'aggregate') return '按模块搜索...';
   return '表名/数据项/说明';
 });
-
-const tableLabel = computed(() => (props.mode === 'aggregate' ? '来源' : '表名'));
 
 function highlightName(name) {
   return highlightKeyword(name, props.keyword.trim());

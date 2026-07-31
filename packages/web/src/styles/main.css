@@ -323,9 +323,10 @@ textarea {
 .content-search-landing {
   display: flex;
   flex-direction: column;
-  padding: 20px 36px 28px;
+  padding: 24px 32px 32px;
   overflow-y: auto;
   min-height: 0;
+  background: var(--bg);
 }
 
 .content-search-landing > * {
@@ -402,9 +403,9 @@ textarea {
 }
 
 .home-logo-text {
-  font-size: 28px;
+  font-size: clamp(26px, 3vw, 32px);
   font-weight: 700;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.4px;
   color: var(--text);
 }
 
@@ -669,28 +670,44 @@ textarea {
   background: transparent;
   box-shadow: none;
   gap: 6px;
+  align-items: center;
 }
 
 .filter-bar-wrap.compact .filter-group label,
 .filter-bar-wrap.compact .filter-group .filter-label {
-  font-size: 10px;
-  padding-bottom: 1px;
+  display: none;
 }
 
 .filter-bar-wrap.compact .filter-group select,
 .filter-bar-wrap.compact .filter-group input,
 .filter-bar-wrap.compact .filter-input-compact {
-  padding: 4px 7px !important;
-  font-size: 12px !important;
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+  line-height: 1.25;
+  box-sizing: border-box;
 }
 
 .filter-bar-wrap.compact .filter-actions {
   margin-left: 0;
+  align-items: center;
 }
 
 .filter-bar-wrap.compact .filter-actions .btn {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 6px 14px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.filter-bar-wrap.compact .filter-group-table select {
+  min-height: 0;
+}
+
+.filter-bar-wrap.compact .btn-add-filter,
+.filter-bar-wrap.compact .btn-icon {
+  height: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+  margin-bottom: 0;
 }
 
 .unified-filter-bar.filter-bar,
@@ -698,6 +715,11 @@ textarea {
   align-items: flex-end;
   flex-wrap: wrap;
   gap: 6px 8px;
+}
+
+.filter-bar-wrap.compact .unified-filter-bar.filter-bar,
+.filter-bar-wrap.compact .unified-filter-bar.qa-filter-bar {
+  align-items: center;
 }
 
 /* Suggest dropdown for keyword input */

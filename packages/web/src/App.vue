@@ -81,7 +81,7 @@ const pageTitle = computed(() => {
   if (route.name === 'import') return '资料导入';
   if (route.name === 'formTemplates' || route.name === 'formTemplateDetail') return '表样';
   if (route.name === 'conversionScripts' || route.name === 'conversionScriptDetail') {
-    return '转1104 脚本';
+    return 'SQL 转换脚本';
   }
   return '';
 });

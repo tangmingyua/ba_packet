@@ -6,7 +6,7 @@ export const MATERIAL_CATEGORIES = [
   { code: 'logic', label: '逻辑' },
   { code: 'peer', label: '同业经验' },
   { code: 'changelog', label: '变更记录' },
-  { code: 'to1104', label: '转1104' },
+  { code: 'to1104', label: 'sql转换' },
   { code: 'code_value', label: '码值' },
 ];
 

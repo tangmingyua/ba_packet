@@ -85,46 +85,60 @@ function searchFormTemplateReports(keyword, { moduleCode, subtypeCode } = {}) {
   });
   if (!result.items.length) return [];
 
-  const blocks = result.items.map((item) => ({
-    blockKey: `${item.reportCode}_${item.versionLabel}`,
-    tableName: `${item.reportCode} / ${item.versionLabel}`,
-    versionLabel: item.versionLabel,
-    items: [
-      {
-        dataItemName: item.reportTitle || item.reportCode,
-        snippet: `${item.hitCount} 处命中 · Sheet ${item.sheetName}`,
-        moduleCode: item.moduleCode,
-        moduleName: moduleLabel(item.moduleCode),
-        category: 'norm',
-        categoryLabel: '规范',
-        entityKind: 'form_template',
-        entityId: item.id,
-        linkPath: `/form-templates/${item.id}`,
-        payload: {
-          report_code: item.reportCode,
-          version: item.versionLabel,
-          hit_count: item.hitCount,
-        },
-        fields: [
-          { key: '表号', value: item.reportCode },
-          { key: '版本', value: item.versionLabel },
-          { key: '命中数', value: String(item.hitCount) },
-        ],
-      },
-    ],
-  }));
+  const bySubtype = new Map();
+  for (const item of result.items) {
+    const stCode = String(item.subtypeCode || '').trim();
+    if (!stCode) continue;
+    const st = getSubtype(stCode);
+    if (!st?.enabled || st.storageKind !== 'form_template') continue;
+    if (!bySubtype.has(stCode)) bySubtype.set(stCode, { st, items: [] });
+    bySubtype.get(stCode).items.push(item);
+  }
+  if (!bySubtype.size) return [];
 
-  const mod = moduleCode || result.items[0]?.moduleCode || '1104';
-  return [
-    buildMaterialReport({
-      code: `${mod}_FORM_TEMPLATE`,
-      name: '表样',
-      moduleCode: mod,
-      category: 'norm',
-      layout: 'form_template',
-      blocks,
-    }),
-  ];
+  const reports = [];
+  for (const [stCode, { st, items }] of bySubtype) {
+    const blocks = items.map((item) => ({
+      blockKey: `${item.reportCode}_${item.versionLabel}`,
+      tableName: `${item.reportCode} / ${item.versionLabel}`,
+      versionLabel: item.versionLabel,
+      items: [
+        {
+          dataItemName: item.reportTitle || item.reportCode,
+          snippet: `${item.hitCount} 处命中 · Sheet ${item.sheetName}`,
+          moduleCode: item.moduleCode,
+          moduleName: moduleLabel(item.moduleCode),
+          category: 'norm',
+          categoryLabel: '规范',
+          entityKind: 'form_template',
+          entityId: item.id,
+          linkPath: `/form-templates/${item.id}`,
+          payload: {
+            report_code: item.reportCode,
+            version: item.versionLabel,
+            hit_count: item.hitCount,
+          },
+          fields: [
+            { key: '表号', value: item.reportCode },
+            { key: '版本', value: item.versionLabel },
+            { key: '命中数', value: String(item.hitCount) },
+          ],
+        },
+      ],
+    }));
+
+    reports.push(
+      buildMaterialReport({
+        code: stCode,
+        name: st.name,
+        moduleCode: st.moduleCode,
+        category: st.category || 'norm',
+        layout: 'form_template',
+        blocks,
+      })
+    );
+  }
+  return reports;
 }
 
 function searchDocumentReports(keyword, { moduleCode, subtypeCode } = {}) {

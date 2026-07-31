@@ -127,9 +127,13 @@ export function searchFormTemplates(keyword, options = {}) {
   };
 
   const templates = queryAll(
-    `SELECT id, report_code, report_title, version_label, module_code, sheet_name, subtype_code
-     FROM form_templates
-     ORDER BY report_code, version_label`
+    `SELECT ft.id, ft.report_code, ft.report_title, ft.version_label, ft.module_code, ft.sheet_name, ft.subtype_code
+     FROM form_templates ft
+     INNER JOIN subtypes s ON s.code = ft.subtype_code
+       AND s.enabled = 1
+       AND s.storage_kind = 'form_template'
+       AND s.module_code = ft.module_code
+     ORDER BY ft.report_code, ft.version_label`
   ).filter((template) => matchesTemplateFilters(template, filters));
 
   if (!q) {
@@ -153,6 +157,7 @@ export function searchFormTemplates(keyword, options = {}) {
         versionLabel: template.version_label,
         sheetName: template.sheet_name,
         moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
+        subtypeCode: template.subtype_code || '',
         hitCount: cellHits || 1,
       };
     });
@@ -200,6 +205,7 @@ export function searchFormTemplates(keyword, options = {}) {
       versionLabel: template.version_label,
       sheetName: template.sheet_name,
       moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
+      subtypeCode: template.subtype_code || '',
       hitCount,
     });
 

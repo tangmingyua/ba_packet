@@ -11,27 +11,41 @@
       <div
         v-if="searched"
         class="module-tabs-row"
-        :class="{ 'module-tabs-row--solo': modules.length <= 1 }"
+        :class="{ 'module-tabs-row--solo': !modules.length }"
       >
         <ModuleTabs
-          v-if="modules.length > 1"
+          v-if="modules.length"
           v-model="moduleCode"
           :options="modules"
           @change="onModuleChange"
         />
+        <p v-else-if="moduleLabel" class="module-tab-fallback" :title="moduleCode">
+          {{ moduleLabel }}
+        </p>
         <button type="button" class="btn back-home-btn" @click="onGoHome">← 返回首页</button>
       </div>
 
-      <SearchLandingModeCards
-        v-if="!searched"
-        v-model="landingQueryMode"
-        @change="onLandingModeChange"
-      />
+      <div v-if="!searched" class="landing-hero home-center">
+        <div class="home-logo">
+          <div class="home-logo-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+          </div>
+          <span class="home-logo-text">Pocket BA</span>
+        </div>
+        <SearchLandingModeCards
+          v-model="landingQueryMode"
+          @change="onLandingModeChange"
+        />
+      </div>
 
       <ModuleCategoryCards
-        v-if="searched && isAggregateMode && categoryStats.length"
+        v-if="searched && isAggregateMode && visibleCategoryStats.length"
         v-model="selectedCategories"
-        :options="categoryStats"
+        :options="visibleCategoryStats"
         @change="onCategoriesChange"
       />
 
@@ -43,7 +57,25 @@
       />
 
       <div class="header-search-row">
-        <form class="header-search" @submit.prevent="doSearch">
+        <form
+          class="header-search"
+          :class="{ 'landing-search-shell': !searched }"
+          @submit.prevent="doSearch"
+        >
+          <span v-if="!searched" class="landing-search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="16.5" y1="16.5" x2="21" y2="21" />
+            </svg>
+          </span>
+          <select
+            v-if="showLandingModuleSelect"
+            v-model="moduleCode"
+            class="header-module-select"
+            aria-label="主类"
+          >
+            <option v-for="m in modules" :key="m.code" :value="m.code">{{ m.name }}</option>
+          </select>
           <input
             v-model="keyword"
             type="search"
@@ -145,6 +177,14 @@
           :empty-text="emptyText"
         />
 
+        <ConversionScriptListPanel
+          v-else-if="selectedStorageKind === 'script'"
+          embedded
+          :module-code="moduleCode"
+          :keyword="lastKeyword"
+          :fetch-key="scriptListFetchKey"
+        />
+
         <UnifiedMaterialHitList
           v-else-if="isMaterialStorageKind && materialReports.length"
           :reports="materialReports"
@@ -208,6 +248,7 @@ import DynamicResultTable from '../components/search/DynamicResultTable.vue';
 import CodeValueResultTable from '../components/search/CodeValueResultTable.vue';
 import FormTemplateResultPanel from '../components/search/FormTemplateResultPanel.vue';
 import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
+import ConversionScriptListPanel from '../components/conversion-script/ConversionScriptListPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
 import SearchLandingModeCards from '../components/search/SearchLandingModeCards.vue';
@@ -258,6 +299,7 @@ const error = ref('');
 const reports = ref([]);
 const activeReportCode = ref('');
 const elapsedMs = ref(0);
+const scriptListFetchKey = ref(0);
 
 const tableFilter = ref('__all__');
 const customFilters = ref([]);
@@ -277,13 +319,16 @@ const MODE_TO_CATEGORIES = {
   aggregate: [],
 };
 
-const modeLabels = { norm: '查规范', qa: '查答疑', aggregate: '聚合查询' };
+const modeLabels = { norm: '查规范', qa: '查答疑', aggregate: '按模块查询' };
 
 const modeConfig = {
   norm: { placeholder: '搜索数据项名称，如：贷款、客户、机构...' },
   qa: { placeholder: '搜索答疑问题或关键词...' },
-  aggregate: { placeholder: '聚合搜索规范、答疑、表样、说明、脚本、码值...' },
+  aggregate: { placeholder: '按模块搜索规范、答疑、表样、说明、脚本...' },
 };
+
+/** 详情页不展示的资料类型标签（仍可通过子类等检索） */
+const DETAIL_HIDDEN_CATEGORY_CODES = new Set(['code_value']);
 
 const searchMode = computed(() => {
   if (searched.value) {
@@ -307,6 +352,14 @@ function apiSearchMode() {
 }
 
 const isAggregateMode = computed(() => apiSearchMode() === 'aggregate');
+
+const visibleCategoryStats = computed(() =>
+  categoryStats.value.filter((c) => !DETAIL_HIDDEN_CATEGORY_CODES.has(c.code))
+);
+
+const showLandingModuleSelect = computed(
+  () => !searched.value && landingQueryMode.value === 'aggregate' && modules.value.length > 0
+);
 
 const filterBarVariant = computed(() => (apiSearchMode() === 'qa' ? 'qa' : 'norm'));
 
@@ -334,7 +387,7 @@ const useSubtypeScopedRender = computed(
     searched.value && Boolean(selectedSubtypeCode.value && selectedStorageKind.value)
 );
 
-const MATERIAL_STORAGE_KINDS = new Set(['script']);
+const MATERIAL_STORAGE_KINDS = new Set([]);
 
 const isMaterialStorageKind = computed(() =>
   MATERIAL_STORAGE_KINDS.has(selectedStorageKind.value)
@@ -547,7 +600,7 @@ const resultTotalCount = computed(() => {
 });
 
 const tableTitle = computed(() => {
-  if (isQaLayout.value) return searchMode.value === 'aggregate' ? '聚合数据' : '答疑数据';
+  if (isQaLayout.value) return searchMode.value === 'aggregate' ? '模块资料' : '答疑数据';
   return '查询结果';
 });
 
@@ -702,8 +755,10 @@ function previewSearchApiOptions() {
 async function applyLandingDefaultsBeforeSearch() {
   if (searched.value) return;
 
-  const ybt = resolveYbtModuleCode();
-  if (ybt) moduleCode.value = ybt;
+  if (!moduleCode.value) {
+    const ybt = resolveYbtModuleCode();
+    if (ybt) moduleCode.value = ybt;
+  }
 
   const mode = VALID_SEARCH_MODES.includes(landingQueryMode.value)
     ? landingQueryMode.value
@@ -795,14 +850,23 @@ async function refreshSubtypeStats() {
 }
 
 async function loadModules() {
-  const catalog = await getDatasetCatalog();
-  modules.value = catalog.modules || [];
-  if (!moduleCode.value && modules.value.length) {
-    moduleCode.value =
-      route.query.moduleCode ||
-      modules.value.find((m) => m.code === 'YBT')?.code ||
-      modules.value[0].code;
+  try {
+    const catalog = await getDatasetCatalog();
+    modules.value = catalog.modules || [];
+    if (!moduleCode.value && modules.value.length) {
+      moduleCode.value =
+        route.query.moduleCode ||
+        modules.value.find((m) => m.code === 'YBT')?.code ||
+        modules.value[0].code;
+    }
+  } catch {
+    modules.value = [];
   }
+}
+
+async function ensureModulesLoaded() {
+  if (modules.value.length) return;
+  await loadModules();
 }
 
 async function refreshCategoryStats() {
@@ -810,7 +874,7 @@ async function refreshCategoryStats() {
   try {
     const { items } = await getModuleCategoryStats(moduleCode.value);
     categoryStats.value = items || [];
-    const allowed = new Set(categoryStats.value.map((c) => c.code));
+    const allowed = new Set(visibleCategoryStats.value.map((c) => c.code));
     if (selectedCategories.value.length) {
       selectedCategories.value = selectedCategories.value.filter((c) => allowed.has(c));
     }
@@ -820,7 +884,7 @@ async function refreshCategoryStats() {
 }
 
 function selectAllModuleCategories() {
-  selectedCategories.value = categoryStats.value.map((c) => c.code);
+  selectedCategories.value = visibleCategoryStats.value.map((c) => c.code);
 }
 
 function onModuleChange() {
@@ -947,6 +1011,8 @@ function pickDefaultTabs() {
 }
 
 async function doSearch() {
+  await ensureModulesLoaded();
+
   if (!searched.value) {
     await applyLandingDefaultsBeforeSearch();
   }
@@ -985,6 +1051,15 @@ async function doSearch() {
     appliedTableFilter.value = tableFilter.value;
     appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
     searched.value = true;
+    scriptListFetchKey.value += 1;
+    if (apiSearchMode() === 'aggregate' && moduleCode.value) {
+      if (!visibleCategoryStats.value.length) {
+        await refreshCategoryStats();
+      }
+      if (visibleCategoryStats.value.length && !selectedCategories.value.length) {
+        selectAllModuleCategories();
+      }
+    }
     await router.replace({ path: '/', query: buildSearchQuery() });
   } catch (e) {
     searched.value = false;
@@ -1059,14 +1134,123 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 28px;
-  padding: 16px 0 40px;
+  gap: 22px;
+  padding: 8px 0 48px;
   border-bottom: none;
 }
 
-.search-page-landing :deep(.landing-mode-cards) {
+.search-page-landing .landing-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
   width: 100%;
-  max-width: 560px;
+}
+
+.search-page-landing .landing-hero .home-logo {
+  margin-bottom: 0;
+}
+
+.search-page-landing .header-search-row {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.search-page-landing .landing-search-shell {
+  position: relative;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 8px 8px 8px 22px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.search-page-landing .landing-search-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-page-landing .landing-search-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.search-page-landing .landing-search-shell .header-module-select {
+  flex: 0 0 auto;
+  min-width: 64px;
+  max-width: 92px;
+  margin: 0;
+  padding: 8px 18px 8px 2px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.search-page-landing .landing-search-shell .header-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 4px;
+  font-size: 16px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.search-page-landing .landing-search-shell .header-search-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.search-page-landing .landing-search-shell .btn-primary {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: none;
+  background: #1a1a1a;
+}
+
+.search-page-landing .landing-search-shell .btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.search-page-landing .landing-search-shell .header-suggestions {
+  left: 20px;
+  right: 8px;
+  top: calc(100% + 10px);
+  border-radius: var(--radius-lg);
+}
+
+.search-page-landing :deep(.landing-mode-tabs) {
+  width: auto;
 }
 
 .search-page-landing .module-title {
@@ -1083,44 +1267,16 @@ onUnmounted(() => {
   max-width: none;
 }
 
-.search-page-landing .header-search-input {
-  flex: 1 1 320px;
-  padding: 14px 18px;
-  font-size: 16px;
-}
-
-.search-page-landing .header-search .btn-primary {
-  padding: 14px 28px;
-  font-size: 15px;
-}
-
-.search-page-landing :deep(.cards-row) {
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 16px;
-}
-
-.search-page-landing :deep(.category-card) {
-  min-height: 132px;
-  padding: 18px 12px 16px;
-  border-radius: 14px;
-}
-
-.search-page-landing :deep(.card-icon) {
-  width: 48px;
-  height: 48px;
-  font-size: 19px;
-}
-
-.search-page-landing :deep(.card-label) {
-  font-size: 14px;
-}
-
-.search-page-landing :deep(.card-count) {
-  font-size: 26px;
-}
-
-.search-page-landing :deep(.subtype-tabs-wrap) {
-  margin-top: 4px;
+.search-page-compact .header-module-select {
+  flex: 0 0 auto;
+  min-width: 96px;
+  max-width: 160px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .search-page-header {
@@ -1156,6 +1312,20 @@ onUnmounted(() => {
   border-bottom: none;
 }
 
+.module-tab-fallback {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  align-self: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .back-home-btn {
   flex-shrink: 0;
   align-self: center;
@@ -1173,8 +1343,11 @@ onUnmounted(() => {
 }
 
 .search-page-compact .module-tabs-row :deep(.module-tabs) {
+  margin: 0;
   border-top: 1px solid var(--border);
   border-left: 1px solid var(--border);
+  border-right: none;
+  border-radius: 0;
   min-height: 24px;
 }
 
@@ -1327,7 +1500,8 @@ onUnmounted(() => {
 .search-page-compact .search-results > .code-value-result-section,
 .search-page-compact .search-results > .material-hit-section,
 .search-page-compact .search-results > .form-template-result-panel,
-.search-page-compact .search-results > .document-result-panel {
+.search-page-compact .search-results > .document-result-panel,
+.search-page-compact .search-results > .cs-panel {
   flex: 1 1 0;
   min-height: 0;
   display: flex;
@@ -1337,7 +1511,7 @@ onUnmounted(() => {
 
 .search-page-compact .header-search-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 2px;
@@ -1416,20 +1590,6 @@ onUnmounted(() => {
 
 .search-page-compact :deep(.subtype-tabs-wrap) {
   margin: 0;
-}
-
-.search-page-compact :deep(.module-tabs) {
-  border-radius: 0;
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  margin: 0 -12px;
-  min-height: 24px;
-}
-
-.search-page-compact .module-tabs-row :deep(.module-tabs) {
-  margin: 0;
-  border-right: none;
 }
 
 .search-page-compact :deep(.module-tabs-scroll) {

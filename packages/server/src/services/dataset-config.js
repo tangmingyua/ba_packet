@@ -652,7 +652,24 @@ export function listSearchableCategories({ moduleCode } = {}) {
     return Boolean(queryOne(sql, params));
   }
 
-  if (tableHasRows('form_templates') || tableHasRows('documents')) {
+  function tableHasLinkedFormTemplates() {
+    let sql = `
+      SELECT 1 AS ok FROM form_templates ft
+      INNER JOIN subtypes s ON s.code = ft.subtype_code
+        AND s.enabled = 1
+        AND s.storage_kind = 'form_template'
+        AND s.module_code = ft.module_code
+      WHERE 1=1`;
+    const params = [];
+    if (mod) {
+      sql += ' AND ft.module_code = ?';
+      params.push(mod);
+    }
+    sql += ' LIMIT 1';
+    return Boolean(queryOne(sql, params));
+  }
+
+  if (tableHasLinkedFormTemplates() || tableHasRows('documents')) {
     codes.add('norm');
   }
   if (tableHasRows('conversion_scripts')) {

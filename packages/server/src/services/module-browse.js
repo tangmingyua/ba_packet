@@ -43,7 +43,18 @@ function countCategoryRecords(mod, catCode) {
   );
   if (catCode !== 'norm') return excelCount;
   const formCount = Number(
-    queryOne('SELECT COUNT(*) AS c FROM form_templates WHERE module_code = ?', [mod])?.c || 0
+    queryOne(
+      `
+      SELECT COUNT(*) AS c
+      FROM form_templates ft
+      INNER JOIN subtypes s ON s.code = ft.subtype_code
+        AND s.enabled = 1
+        AND s.storage_kind = 'form_template'
+        AND s.module_code = ft.module_code
+      WHERE ft.module_code = ?
+      `,
+      [mod]
+    )?.c || 0
   );
   const docCount = Number(
     queryOne('SELECT COUNT(*) AS c FROM documents WHERE module_code = ?', [mod])?.c || 0
@@ -92,6 +103,21 @@ function countSubtypeRecords(st, categoryList) {
   };
   const table = tableMap[st.storageKind];
   if (!table) return 0;
+  if (st.storageKind === 'form_template') {
+    return Number(
+      queryOne(
+        `
+        SELECT COUNT(*) AS c FROM form_templates ft
+        WHERE ft.subtype_code = ? AND ft.module_code = ?
+          AND EXISTS (
+            SELECT 1 FROM subtypes s
+            WHERE s.code = ft.subtype_code AND s.enabled = 1 AND s.storage_kind = 'form_template'
+          )
+        `,
+        [st.code, st.moduleCode]
+      )?.c || 0
+    );
+  }
   return Number(
     queryOne(`SELECT COUNT(*) AS c FROM ${table} WHERE subtype_code = ?`, [st.code])?.c || 0
   );

@@ -403,6 +403,45 @@ function backfillSubtypeCategories() {
   `);
 }
 
+/** 移除 EAST 下误建的表样子类及其表样数据（一次性存量清理） */
+function removeEastFormTemplateSubtypes() {
+  const rows = queryAll(
+    `SELECT code FROM subtypes
+     WHERE storage_kind = 'form_template'
+       AND (module_code = 'EAST' OR code IN ('EAST_FORM_TEMPLATE', 'EAST_FORM_TPL'))`
+  );
+  if (!rows.length) return;
+  for (const { code } of rows) {
+    const templates = queryAll('SELECT id FROM form_templates WHERE subtype_code = ?', [code]);
+    for (const t of templates) {
+      run('DELETE FROM form_template_cells WHERE template_id = ?', [t.id]);
+      run('DELETE FROM form_templates WHERE id = ?', [t.id]);
+    }
+    run('DELETE FROM subtypes WHERE code = ?', [code]);
+    console.log(`[db] 已移除 EAST 表样子类：${code}（表样 ${templates.length} 条）`);
+  }
+}
+
+/** 删除未挂到有效表样子类记录的 form_templates（子类已删或未启用） */
+function purgeOrphanFormTemplates() {
+  const orphans = queryAll(
+    `
+    SELECT ft.id FROM form_templates ft
+    LEFT JOIN subtypes s ON s.code = ft.subtype_code
+      AND s.enabled = 1
+      AND s.storage_kind = 'form_template'
+      AND s.module_code = ft.module_code
+    WHERE s.code IS NULL
+    `
+  );
+  if (!orphans.length) return;
+  for (const { id } of orphans) {
+    run('DELETE FROM form_template_cells WHERE template_id = ?', [id]);
+    run('DELETE FROM form_templates WHERE id = ?', [id]);
+  }
+  console.log(`[db] 已清理无子类挂接的表样 ${orphans.length} 条`);
+}
+
 /** 业务表挂接 subtype_code 并回填历史数据 */
 function ensureSubtypeCodeColumns() {
   const tables = [
@@ -489,6 +528,8 @@ function ensureDatasetModelSchema() {
   }
   ensureSeedSubtypes();
   backfillSubtypeCategories();
+  removeEastFormTemplateSubtypes();
+  purgeOrphanFormTemplates();
   ensureSubtypeCodeColumns();
   saveDb();
 }

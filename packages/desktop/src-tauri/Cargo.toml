@@ -1,6 +1,6 @@
 [package]
 name = "ba-packet-desktop"
-version = "1.0.0"
+version = "0.9.0"
 description = "监管资料库搜索"
 authors = ["ba-packet"]
 edition = "2021"

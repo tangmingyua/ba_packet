@@ -12,7 +12,7 @@ describe('material-categories', () => {
     assert.equal(MATERIAL_CATEGORIES.length, 8);
     assert.deepEqual(
       MATERIAL_CATEGORIES.map((c) => c.label),
-      ['规范', '校验', '答疑', '逻辑', '同业经验', '变更记录', '转1104', '码值']
+      ['规范', '校验', '答疑', '逻辑', '同业经验', '变更记录', 'sql转换', '码值']
     );
   });
 
