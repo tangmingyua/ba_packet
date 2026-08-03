@@ -143,13 +143,41 @@ function normalizeCellValue(value) {
   return cellToString(value);
 }
 
+function colWidthToPixels(col) {
+  if (!col) return 0;
+  if (col.wpx && col.wpx > 0) return Math.round(col.wpx);
+  if (col.wch && col.wch > 0) return Math.round(col.wch * 7.5 + 8);
+  return 0;
+}
+
+function rowHeightToPixels(row) {
+  if (!row) return 0;
+  if (row.hpx && row.hpx > 0) return Math.round(row.hpx);
+  if (row.hpt && row.hpt > 0) return Math.round(row.hpt * 1.333);
+  return 0;
+}
+
+function readSheetDimensions(sheet, colCount, rowCount) {
+  const cols = sheet['!cols'] || [];
+  const rows = sheet['!rows'] || [];
+  const colWidths = Array.from({ length: colCount }, (_, c) => {
+    const w = colWidthToPixels(cols[c]);
+    return w > 0 ? w : 72; // 默认列宽
+  });
+  const rowHeights = Array.from({ length: rowCount }, (_, r) => {
+    const h = rowHeightToPixels(rows[r]);
+    return h > 0 ? h : 24; // 默认行高
+  });
+  return { colWidths, rowHeights };
+}
+
 /**
- * 将 sheet 转为从 (0,0) 起的完整矩阵与相对 merges
+ * 将 sheet 转为从 (0,0) 起的完整矩阵、相对 merges、原生列宽/行高
  */
 export function sheetToMatrix(sheet) {
   const ref = sheet['!ref'];
   if (!ref) {
-    return { matrix: [], merges: [], rowCount: 0, colCount: 0 };
+    return { matrix: [], merges: [], colWidths: [], rowHeights: [], rowCount: 0, colCount: 0 };
   }
 
   const range = XLSX.utils.decode_range(ref);
@@ -172,7 +200,9 @@ export function sheetToMatrix(sheet) {
     e: { r: m.e.r - range.s.r, c: m.e.c - range.s.c },
   }));
 
-  return { matrix, merges, rowCount, colCount };
+  const { colWidths, rowHeights } = readSheetDimensions(sheet, colCount, rowCount);
+
+  return { matrix, merges, colWidths, rowHeights, rowCount, colCount };
 }
 
 export function cleanMatrix(matrix) {
@@ -227,7 +257,7 @@ export function findLastContentCol(matrix, merges = []) {
 /**
  * 裁掉矩阵末尾连续空行（保留中间空行）
  */
-export function trimTrailingEmptyRows(matrix, merges = []) {
+export function trimTrailingEmptyRows(matrix, merges = [], dimensions = null) {
   if (!matrix.length) {
     return { matrix: [], merges: [], rowCount: 0, colCount: 0 };
   }
@@ -245,18 +275,26 @@ export function trimTrailingEmptyRows(matrix, merges = []) {
       e: { r: Math.min(m.e.r, lastRow), c: m.e.c },
     }));
 
-  return {
+  const result = {
     matrix: trimmedMatrix,
     merges: trimmedMerges,
     rowCount: trimmedMatrix.length,
     colCount: trimmedMatrix[0]?.length || 0,
   };
+
+  if (dimensions?.rowHeights?.length) {
+    result.rowHeights = dimensions.rowHeights.slice(0, lastRow + 1);
+  }
+  if (dimensions?.colWidths?.length) {
+    result.colWidths = dimensions.colWidths.slice();
+  }
+  return result;
 }
 
 /**
  * 裁掉矩阵右侧连续空列（保留中间空列）
  */
-export function trimTrailingEmptyCols(matrix, merges = []) {
+export function trimTrailingEmptyCols(matrix, merges = [], dimensions = null) {
   if (!matrix.length) {
     return { matrix: [], merges: [], rowCount: 0, colCount: 0 };
   }
@@ -274,18 +312,26 @@ export function trimTrailingEmptyCols(matrix, merges = []) {
       e: { r: m.e.r, c: Math.min(m.e.c, lastCol) },
     }));
 
-  return {
+  const result = {
     matrix: trimmedMatrix,
     merges: trimmedMerges,
     rowCount: trimmedMatrix.length,
     colCount: lastCol + 1,
   };
+
+  if (dimensions?.colWidths?.length) {
+    result.colWidths = dimensions.colWidths.slice(0, lastCol + 1);
+  }
+  if (dimensions?.rowHeights?.length) {
+    result.rowHeights = dimensions.rowHeights.slice();
+  }
+  return result;
 }
 
 /** 裁掉末尾空行与右侧空列 */
-export function trimMatrixPadding(matrix, merges = []) {
-  const rowTrimmed = trimTrailingEmptyRows(matrix, merges);
-  return trimTrailingEmptyCols(rowTrimmed.matrix, rowTrimmed.merges);
+export function trimMatrixPadding(matrix, merges = [], dimensions = null) {
+  const rowTrimmed = trimTrailingEmptyRows(matrix, merges, dimensions);
+  return trimTrailingEmptyCols(rowTrimmed.matrix, rowTrimmed.merges, rowTrimmed);
 }
 
 /**
@@ -293,14 +339,16 @@ export function trimMatrixPadding(matrix, merges = []) {
  */
 export function parseFormTemplateFromSheet(sheet, options = {}) {
   const sheetName = options.sheetName || 'Sheet1';
-  const { matrix: rawMatrix, merges } = sheetToMatrix(sheet);
+  const { matrix: rawMatrix, merges, colWidths, rowHeights } = sheetToMatrix(sheet);
   const cleaned = cleanMatrix(rawMatrix);
   const {
     matrix,
     merges: trimmedMerges,
     rowCount,
     colCount,
-  } = trimMatrixPadding(cleaned, merges);
+    colWidths: trimmedColWidths,
+    rowHeights: trimmedRowHeights,
+  } = trimMatrixPadding(cleaned, merges, { colWidths, rowHeights });
   const reportTitle = cellToString(matrix[0]?.[0]) || sheetName;
   const sheetMeta = parseFormTemplateSheetMeta(sheetName);
   const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();
@@ -309,7 +357,10 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
       ? options.versionLabel
       : resolveFormTemplateVersionLabel(sheetMeta, options.fileMeta);
 
-  const layout = buildFormTemplateLayout(matrix, trimmedMerges);
+  const layout = buildFormTemplateLayout(matrix, trimmedMerges, {
+    colWidths: trimmedColWidths,
+    rowHeights: trimmedRowHeights,
+  });
 
   return {
     reportCode,
@@ -323,6 +374,8 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     colCount,
     matrix,
     merges: trimmedMerges,
+    colWidths: trimmedColWidths,
+    rowHeights: trimmedRowHeights,
     layout,
   };
 }
@@ -336,7 +389,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
 export function parseFormTemplateWorkbook(buffer, options = {}) {
   const fileName = options.fileName || 'upload.xls';
   const moduleCode = normalizeFormTemplateModuleCode(options.moduleCode || options.module);
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
   if (!workbook.SheetNames.length) {
     throw new Error('工作簿无 Sheet');
   }
@@ -429,12 +482,16 @@ export function getFormTemplate(id) {
 
   const matrix = JSON.parse(row.matrix_json || '[]');
   const merges = JSON.parse(row.merges_json || '[]');
+  const colWidths = JSON.parse(row.col_widths_json || '[]');
+  const rowHeights = JSON.parse(row.row_heights_json || '[]');
 
   return {
     ...mapFormTemplateRow(row),
     matrix,
     merges,
-    layout: parseFormTemplateLayoutJson(row.layout_json, matrix, merges),
+    colWidths,
+    rowHeights,
+    layout: parseFormTemplateLayoutJson(row.layout_json, matrix, merges, { colWidths, rowHeights }),
   };
 }
 
@@ -510,14 +567,16 @@ function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
   const matrixJson = JSON.stringify(parsed.matrix);
   const mergesJson = JSON.stringify(parsed.merges);
   const layoutJson = JSON.stringify(parsed.layout || buildFormTemplateLayout(parsed.matrix, parsed.merges));
+  const colWidthsJson = JSON.stringify(parsed.colWidths || []);
+  const rowHeightsJson = JSON.stringify(parsed.rowHeights || []);
   const moduleCode = parsed.module || '1104';
   const resolvedSubtypeCode = subtypeCode || resolveSubtypeCode('form_template', moduleCode);
 
   run(
     `INSERT INTO form_templates (
        report_code, report_title, version_label, subtype_code, module_code, sheet_name, source_file_name, file_hash,
-       matrix_json, merges_json, layout_json, row_count, col_count
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       matrix_json, merges_json, layout_json, col_widths_json, row_heights_json, row_count, col_count
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       parsed.reportCode,
       parsed.reportTitle,
@@ -530,6 +589,8 @@ function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
       matrixJson,
       mergesJson,
       layoutJson,
+      colWidthsJson,
+      rowHeightsJson,
       parsed.rowCount,
       parsed.colCount,
     ]

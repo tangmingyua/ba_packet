@@ -164,6 +164,29 @@ describe('form-template-import', () => {
     assert.equal(result.colCount, 3);
   });
 
+  it('sheetToMatrix 读取 Excel 原生列宽与行高', () => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['标题', 'A列'],
+      ['行1', '内容'],
+    ]);
+    ws['!cols'] = [{ wch: 20 }, { wch: 30 }];
+    ws['!rows'] = [{ hpt: 20 }, { hpt: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'G0100');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
+
+    assert.equal(parsed.colWidths.length, 2);
+    assert.equal(parsed.rowHeights.length, 2);
+    assert.ok(parsed.colWidths[0] > 0);
+    assert.ok(parsed.colWidths[1] > parsed.colWidths[0]);
+    assert.ok(parsed.rowHeights[0] > 0);
+    assert.ok(parsed.rowHeights[1] > 0);
+    const layout = parsed.layout;
+    assert.deepEqual(layout.colWidths, parsed.colWidths);
+    assert.deepEqual(layout.rowHeights, parsed.rowHeights);
+  });
+
   it('parseFormTemplate G0100 元数据与 merges', () => {
     const buffer = readSample('G0100-logic_231.xls');
     const parsed = parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' });
@@ -298,6 +321,10 @@ describe('form-template-import', () => {
     assert.ok(Array.isArray(detail.matrix));
     assert.equal(detail.merges.length, 8);
     assert.ok(detail.layout?.kinds?.length === detail.rowCount);
+    assert.ok(Array.isArray(detail.colWidths));
+    assert.ok(detail.colWidths.length === detail.colCount || detail.colWidths.length === 0);
+    assert.ok(Array.isArray(detail.rowHeights));
+    assert.ok(detail.rowHeights.length === detail.rowCount || detail.rowHeights.length === 0);
     assert.ok(countCellsForTemplate(second.id) > 0);
     assert.equal(getFormTemplate(first.id), null);
   });

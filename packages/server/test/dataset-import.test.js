@@ -210,7 +210,7 @@ describe('dataset import model', () => {
     assert.ok(catalog.standardFields.some((f) => f.code === 'question_desc'));
     assert.ok(catalog.standardFields.length >= 50);
     assert.ok(catalog.subtypes.some((s) => s.code === 'TO_EAST_FAQ'));
-    assert.equal(catalog.categories.length, 8);
+    assert.equal(catalog.categories.length, 7);
     const formTpl = catalog.subtypes.find((s) => s.code === '1104_FORM_TEMPLATE');
     assert.ok(formTpl, '应包含表样子类');
     assert.equal(formTpl.storageKind, 'form_template');

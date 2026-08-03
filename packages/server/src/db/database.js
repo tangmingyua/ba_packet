@@ -338,6 +338,18 @@ function ensureFormTemplateLayoutColumn() {
   }
 }
 
+/** form_templates：Excel 原生列宽 / 行高 */
+function ensureFormTemplateDimensionColumns() {
+  const cols = queryAll('PRAGMA table_info(form_templates)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'col_widths_json')) {
+    run(`ALTER TABLE form_templates ADD COLUMN col_widths_json TEXT NOT NULL DEFAULT '[]'`);
+  }
+  if (!cols.some((c) => c.name === 'row_heights_json')) {
+    run(`ALTER TABLE form_templates ADD COLUMN row_heights_json TEXT NOT NULL DEFAULT '[]'`);
+  }
+}
+
 /** form_templates：导入时选择的模块 */
 function ensureFormTemplateModuleColumn() {
   const cols = queryAll('PRAGMA table_info(form_templates)');
@@ -500,6 +512,7 @@ function ensureDatasetModelSchema() {
   // 已有库可能缺 indicator_key，须先于 schema 中的索引语句补齐
   ensureDocumentNodeIndicatorKeyColumn();
   ensureFormTemplateLayoutColumn();
+  ensureFormTemplateDimensionColumns();
   ensureFormTemplateModuleColumn();
   ensureWordImportSchema();
   db.run(schema);
@@ -512,6 +525,7 @@ function ensureDatasetModelSchema() {
   ensureFieldMappingAggregateDisplayColumn();
   ensureDocumentNodeIndicatorKeyColumn();
   ensureFormTemplateLayoutColumn();
+  ensureFormTemplateDimensionColumns();
   ensureFormTemplateModuleColumn();
   ensureWordImportSchema();
   backfillFormTemplateCells();

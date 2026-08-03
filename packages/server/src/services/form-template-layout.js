@@ -218,7 +218,7 @@ function computeColumnWidths(matrix, kinds, colCount) {
  * @param {unknown[][]} matrix
  * @param {{ s: { r: number, c: number }, e: { r: number, c: number } }[]} merges
  */
-export function buildFormTemplateLayout(matrix, merges = []) {
+export function buildFormTemplateLayout(matrix, merges = [], dimensions = {}) {
   const renderMap = buildMergeRenderMap(merges);
   const colCount = matrixColumnCount(matrix);
   const { firstDataRow, rowKinds } = classifyRowKinds(matrix, renderMap, colCount);
@@ -237,27 +237,44 @@ export function buildFormTemplateLayout(matrix, merges = []) {
     kinds.push(rowKindsRow);
   }
 
+  const colWidths =
+    Array.isArray(dimensions.colWidths) && dimensions.colWidths.length === colCount
+      ? dimensions.colWidths
+      : computeColumnWidths(matrix, kinds, colCount);
+  const rowHeights =
+    Array.isArray(dimensions.rowHeights) && dimensions.rowHeights.length === matrix.length
+      ? dimensions.rowHeights
+      : [];
+
   return {
     v: LAYOUT_VERSION,
     firstDataRow,
     kinds,
-    colWidths: computeColumnWidths(matrix, kinds, colCount),
+    colWidths,
+    rowHeights,
   };
 }
 
-export function parseFormTemplateLayoutJson(raw, matrix, merges) {
+export function parseFormTemplateLayoutJson(raw, matrix, merges, dimensions = {}) {
   if (!raw || raw === '{}') {
-    return buildFormTemplateLayout(matrix, merges);
+    return buildFormTemplateLayout(matrix, merges, dimensions);
   }
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (parsed?.v === LAYOUT_VERSION && Array.isArray(parsed.kinds) && parsed.kinds.length) {
+      // 存量 layout_json 没有原生尺寸，用传入的 dimensions 补全
+      if (!parsed.rowHeights?.length && dimensions.rowHeights?.length) {
+        parsed.rowHeights = dimensions.rowHeights;
+      }
+      if (!parsed.colWidths?.length && dimensions.colWidths?.length) {
+        parsed.colWidths = dimensions.colWidths;
+      }
       return parsed;
     }
   } catch {
     /* fall through */
   }
-  return buildFormTemplateLayout(matrix, merges);
+  return buildFormTemplateLayout(matrix, merges, dimensions);
 }
 
 /**
@@ -277,7 +294,7 @@ export function getLayoutCellPresentation(layout, renderMap, row, col) {
 export function backfillFormTemplateLayouts(dbHelpers) {
   const { queryAll, run, saveDb } = dbHelpers;
   const templates = queryAll(
-    'SELECT id, matrix_json, merges_json, layout_json FROM form_templates'
+    'SELECT id, matrix_json, merges_json, layout_json, col_widths_json, row_heights_json FROM form_templates'
   );
   let filled = 0;
 
@@ -294,14 +311,18 @@ export function backfillFormTemplateLayouts(dbHelpers) {
 
     let matrix;
     let merges;
+    let colWidths;
+    let rowHeights;
     try {
       matrix = JSON.parse(t.matrix_json || '[]');
       merges = JSON.parse(t.merges_json || '[]');
+      colWidths = JSON.parse(t.col_widths_json || '[]');
+      rowHeights = JSON.parse(t.row_heights_json || '[]');
     } catch {
       continue;
     }
 
-    const layout = buildFormTemplateLayout(matrix, merges);
+    const layout = buildFormTemplateLayout(matrix, merges, { colWidths, rowHeights });
     run('UPDATE form_templates SET layout_json = ? WHERE id = ?', [
       JSON.stringify(layout),
       t.id,

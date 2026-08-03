@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS form_templates (
   matrix_json TEXT NOT NULL,
   merges_json TEXT NOT NULL DEFAULT '[]',
   layout_json TEXT NOT NULL DEFAULT '{}',
+  col_widths_json TEXT NOT NULL DEFAULT '[]',
+  row_heights_json TEXT NOT NULL DEFAULT '[]',
   row_count INTEGER NOT NULL DEFAULT 0,
   col_count INTEGER NOT NULL DEFAULT 0,
   imported_at TEXT NOT NULL DEFAULT (datetime('now')),

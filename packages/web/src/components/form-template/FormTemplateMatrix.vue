@@ -1,8 +1,19 @@
 <template>
   <div ref="wrapRef" class="form-template-matrix-wrap">
     <table class="form-template-matrix">
+      <colgroup>
+        <col
+          v-for="(w, c) in effectiveColWidths"
+          :key="c"
+          :style="{ width: `${w}px`, minWidth: `${w}px` }"
+        />
+      </colgroup>
       <tbody>
-        <tr v-for="(row, r) in matrix" :key="r">
+        <tr
+          v-for="(row, r) in matrix"
+          :key="r"
+          :style="rowStyle(r)"
+        >
           <template v-for="(cell, c) in row" :key="`${r}-${c}`">
             <td
               v-if="!isCovered(r, c)"
@@ -55,6 +66,9 @@ const effectiveLayout = computed(() => {
   return buildFormTemplateLayout(props.matrix, props.merges);
 });
 
+const effectiveColWidths = computed(() => effectiveLayout.value.colWidths || []);
+const effectiveRowHeights = computed(() => effectiveLayout.value.rowHeights || []);
+
 const highlightSet = computed(() => {
   if (props.highlightCells?.length) {
     return new Set(props.highlightCells.map((h) => `${h.row},${h.col}`));
@@ -106,6 +120,11 @@ function cellClass(r, c) {
     classes.push('cell-clickable');
   }
   return classes;
+}
+
+function rowStyle(r) {
+  const h = effectiveRowHeights.value[r];
+  return h ? { height: `${h}px` } : {};
 }
 
 function cellStyle(r, c) {
@@ -165,6 +184,11 @@ defineExpose({ scrollToCell });
   line-height: 1.45;
   color: var(--text);
   background: #fff;
+  box-sizing: border-box;
+}
+
+.form-template-matrix tr {
+  height: 24px;
 }
 
 .cell-kind-title {
