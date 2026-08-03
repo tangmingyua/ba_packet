@@ -8,10 +8,13 @@ import {
   mergeFieldMappingsByVersion as mergeFieldMappingsByVersionFromUtil,
   mergeDefaultDisplayLabels,
   mergeMappingOrderedLabels,
+  getRowValueForExcelColumn,
   pickTableNameFromPayload,
   TABLE_NAME_PAYLOAD_KEYS,
 } from '../utils/fieldLabels.js';
 import { getCategoryLabel } from '../constants/materialCategories.js';
+
+export { getRowValueForExcelColumn } from '../utils/fieldLabels.js';
 
 export const PAGE_SIZE = 10;
 
@@ -252,12 +255,7 @@ function collectColumnKeys(rows) {
 
 function buildDisplayColumnOrder(allKeys, mode) {
   const prefix = [];
-  if (mode === 'aggregate' && allKeys.includes(SYSTEM_COL_TYPE)) {
-    prefix.push(SYSTEM_COL_TYPE);
-  }
-  if (allKeys.includes(SYSTEM_COL_CATEGORY)) {
-    prefix.push(SYSTEM_COL_CATEGORY);
-  }
+  // 仅保留「版本」作为默认显示字段；「分类」「类型」放入 secondaryCols，默认折叠
   for (const label of excelColumnLabelsForCode('version', allKeys)) {
     if (!prefix.includes(label)) prefix.push(label);
   }
@@ -269,13 +267,21 @@ function buildDisplayColumnOrder(allKeys, mode) {
   const primaryFromMapped = orderedMapped.filter((col) => defaultVisibleSet.has(col));
   const secondaryFromMapped = orderedMapped.filter((col) => !defaultVisibleSet.has(col));
 
-  const used = new Set([...prefix, ...orderedMapped]);
+  const systemSecondary = [];
+  if (mode === 'aggregate' && allKeys.includes(SYSTEM_COL_TYPE)) {
+    systemSecondary.push(SYSTEM_COL_TYPE);
+  }
+  if (allKeys.includes(SYSTEM_COL_CATEGORY)) {
+    systemSecondary.push(SYSTEM_COL_CATEGORY);
+  }
+
+  const used = new Set([...prefix, ...orderedMapped, ...systemSecondary]);
   const rest = allKeys.filter((k) => !used.has(k));
 
   return {
     displayCols: [...prefix, ...orderedMapped, ...rest],
     primaryCols: [...prefix, ...primaryFromMapped],
-    secondaryCols: [...secondaryFromMapped, ...rest],
+    secondaryCols: [...secondaryFromMapped, ...systemSecondary, ...rest],
   };
 }
 
@@ -370,9 +376,11 @@ export const FILTER_OPERATORS = [
   { value: 'ends_with', label: '结尾是' },
   { value: 'empty', label: '为空' },
   { value: 'not_empty', label: '不为空' },
+  { value: 'in', label: '多选' },
 ];
 
 export const NO_VALUE_OPERATORS = new Set(['empty', 'not_empty']);
+export const MULTI_SELECT_OPERATOR = 'in';
 
 let filterRuleSeq = 0;
 
@@ -387,10 +395,24 @@ export function createFilterRule(overrides = {}) {
   };
 }
 
+/** 多选筛选规则：val 为数组 */
+export function createMultiSelectFilterRule(overrides = {}) {
+  return createFilterRule({ op: 'in', val: [], ...overrides });
+}
+
 export function normalizeActiveFilters(rules) {
   return (rules || [])
-    .filter((r) => r.col && (NO_VALUE_OPERATORS.has(r.op) || String(r.val ?? '').trim()))
-    .map((r) => ({ ...r, val: String(r.val ?? '').trim() }));
+    .filter((r) => {
+      if (!r.col) return false;
+      if (r.op === 'in') {
+        return Array.isArray(r.val) && r.val.length > 0;
+      }
+      return NO_VALUE_OPERATORS.has(r.op) || String(r.val ?? '').trim();
+    })
+    .map((r) => {
+      if (r.op === 'in') return { ...r, val: [...(r.val || [])] };
+      return { ...r, val: String(r.val ?? '').trim() };
+    });
 }
 
 function compareValues(cellVal, filterVal, op) {
@@ -411,7 +433,7 @@ function compareValues(cellVal, filterVal, op) {
 }
 
 export function matchesFilterRule(row, rule) {
-  const cellVal = String(row[rule.col] ?? '').trim();
+  const cellVal = getRowValueForExcelColumn(row, rule.col);
   const filterVal = String(rule.val ?? '').trim();
   const lowerCell = cellVal.toLowerCase();
   const lowerFilter = filterVal.toLowerCase();
@@ -421,6 +443,10 @@ export function matchesFilterRule(row, rule) {
       return cellVal === '';
     case 'not_empty':
       return cellVal !== '';
+    case 'in': {
+      const values = Array.isArray(rule.val) ? rule.val : [];
+      return values.some((v) => String(v ?? '').toLowerCase() === lowerCell);
+    }
     case 'eq':
       return lowerCell === lowerFilter;
     case 'ne':

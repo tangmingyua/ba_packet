@@ -5,10 +5,15 @@ export const MATERIAL_CATEGORIES = [
   { code: 'qa', label: '答疑' },
   { code: 'logic', label: '逻辑' },
   { code: 'peer', label: '同业经验' },
-  { code: 'changelog', label: '变更记录' },
-  { code: 'to1104', label: 'sql转换' },
+  { code: 'composite', label: '综合' },
   { code: 'code_value', label: '码值' },
 ];
+
+/** 查询页（聚合）固定展示的资料标签，不含码值 */
+export const QUERY_DISPLAY_CATEGORIES = ['norm', 'logic', 'check', 'qa', 'peer', 'composite'];
+
+/** 已合并进 composite 的旧 code（库内子类/记录可能仍存在） */
+export const LEGACY_COMPOSITE_CATEGORY_CODES = ['changelog', 'to1104'];
 
 const LABEL_TO_CODE = Object.fromEntries(
   MATERIAL_CATEGORIES.flatMap((c) => [
@@ -20,13 +25,20 @@ const LABEL_TO_CODE = Object.fromEntries(
 
 LABEL_TO_CODE.faq = 'qa';
 LABEL_TO_CODE.FAQ = 'qa';
+LABEL_TO_CODE.changelog = 'composite';
+LABEL_TO_CODE.to1104 = 'composite';
+LABEL_TO_CODE['变更记录'] = 'composite';
+LABEL_TO_CODE['sql转换'] = 'composite';
+LABEL_TO_CODE['SQL转换'] = 'composite';
+
+const VALID_CATEGORY_CODES = new Set(MATERIAL_CATEGORIES.map((c) => c.code));
 
 export function listMaterialCategories() {
   return MATERIAL_CATEGORIES.map((c) => ({ ...c }));
 }
 
 export function isValidCategoryCode(code) {
-  return MATERIAL_CATEGORIES.some((c) => c.code === code);
+  return VALID_CATEGORY_CODES.has(String(code ?? '').trim());
 }
 
 export function normalizeCategory(value, fallback = 'norm') {
@@ -37,11 +49,32 @@ export function normalizeCategory(value, fallback = 'norm') {
   const lower = raw.toLowerCase();
   if (LABEL_TO_CODE[raw]) return LABEL_TO_CODE[raw];
   if (LABEL_TO_CODE[lower]) return LABEL_TO_CODE[lower];
+  if (VALID_CATEGORY_CODES.has(lower)) return lower;
   return isValidCategoryCode(fallback) ? fallback : 'norm';
 }
 
+/** SQL / 统计用：composite 展开为库内可能出现的 category 值 */
+export function expandCategoryStorageCodes(code) {
+  const c = normalizeCategory(code);
+  if (c === 'composite') {
+    return ['composite', ...LEGACY_COMPOSITE_CATEGORY_CODES];
+  }
+  return [c];
+}
+
+export function expandCategoriesForStorage(codes) {
+  const out = new Set();
+  for (const code of codes || []) {
+    for (const c of expandCategoryStorageCodes(code)) {
+      out.add(c);
+    }
+  }
+  return [...out];
+}
+
 export function getCategoryLabel(code) {
-  return MATERIAL_CATEGORIES.find((c) => c.code === code)?.label || '规范';
+  const normalized = normalizeCategory(code, '');
+  return MATERIAL_CATEGORIES.find((c) => c.code === normalized)?.label || '规范';
 }
 
 /** 解析 ?categories=norm,qa 或数组 */

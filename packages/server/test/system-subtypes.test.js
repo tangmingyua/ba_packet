@@ -28,7 +28,7 @@ describe('system-subtypes', () => {
     );
     assert.equal(
       SYSTEM_SUBTYPES.find((s) => s.code === 'CONVERSION_SCRIPT')?.category,
-      'to1104'
+      'composite'
     );
     assert.equal(
       SYSTEM_SUBTYPES.find((s) => s.code === 'YBT_CODE_VALUE')?.category,

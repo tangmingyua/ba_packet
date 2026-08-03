@@ -180,6 +180,112 @@ export function fieldLabel(code) {
   return runtimeLabelMap[code] || FIELD_LABEL_MAP[code] || code;
 }
 
+/** 统一 Excel 列名比较（全角/半角括号等） */
+export function normalizeExcelColumnKey(name) {
+  return String(name || '')
+    .trim()
+    .replace(/\(/g, '（')
+    .replace(/\)/g, '）');
+}
+
+function excelColumnKeysEqual(a, b) {
+  return normalizeExcelColumnKey(a) === normalizeExcelColumnKey(b);
+}
+
+/** 在当前结果行中解析与配置列名等价的行键 */
+export function resolveExcelColumnKeyForRows(rows, excelColumnName) {
+  const name = String(excelColumnName || '').trim();
+  if (!name || !rows?.length) return name;
+  if (rows.some((row) => row && Object.prototype.hasOwnProperty.call(row, name))) {
+    return name;
+  }
+  const normalized = normalizeExcelColumnKey(name);
+  for (const row of rows) {
+    if (!row) continue;
+    for (const key of Object.keys(row)) {
+      if (key.startsWith('$')) continue;
+      if (excelColumnKeysEqual(key, normalized)) return key;
+    }
+  }
+  return name;
+}
+
+/** 某 Excel 列名在任意版本中对应的标准字段 code（可多个版本映射同一列名） */
+export function standardFieldsForExcelColumn(excelColumnName) {
+  const name = String(excelColumnName || '').trim();
+  if (!name) return [];
+  const codes = new Set();
+  const target = normalizeExcelColumnKey(name);
+  for (const map of Object.values(runtimeMappingsByVersion)) {
+    for (const [code, orig] of Object.entries(map || {})) {
+      if (excelColumnKeysEqual(orig, target)) codes.add(code);
+    }
+  }
+  return [...codes];
+}
+
+/**
+ * 按「默认筛选 / 多选」使用的 Excel 列名取值（与表格行键可能因版本映射不一致，需反查标准字段）
+ */
+export function getRowValueForExcelColumn(row, excelColumnName) {
+  const name = String(excelColumnName || '').trim();
+  if (!name || !row) return '';
+  let direct = row[name];
+  if ((direct == null || String(direct).trim() === '') && !Object.prototype.hasOwnProperty.call(row, name)) {
+    for (const key of Object.keys(row)) {
+      if (key.startsWith('$')) continue;
+      if (excelColumnKeysEqual(key, name)) {
+        direct = row[key];
+        break;
+      }
+    }
+  }
+  if (direct != null && String(direct).trim() !== '') {
+    return String(direct).trim();
+  }
+  const stdFields = standardFieldsForExcelColumn(name);
+  const rowKeys = Object.keys(row).filter((k) => !k.startsWith('$'));
+  for (const code of stdFields) {
+    for (const label of excelColumnLabelsForCode(code, rowKeys)) {
+      const v = row[label];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+    if (TABLE_NAME_PAYLOAD_KEYS.includes(code)) {
+      const tableMeta = row.$tableName;
+      if (tableMeta != null && String(tableMeta).trim() !== '') {
+        return String(tableMeta).trim();
+      }
+    }
+  }
+  return direct != null && direct !== undefined ? String(direct).trim() : '';
+}
+
+/** 根据 Excel 列名反查标准字段 code（取第一个匹配） */
+export function getStandardFieldByColumnLabel(label) {
+  if (!label) return '';
+  for (const map of Object.values(runtimeMappingsByVersion)) {
+    for (const [code, excel] of Object.entries(map || {})) {
+      if (excel === label) return code;
+    }
+  }
+  return '';
+}
+
+/** 根据标准字段 code 取所有版本中的 Excel 列名 */
+export function getColumnLabelsForStandardField(code) {
+  if (!code) return [];
+  const labels = [];
+  const seen = new Set();
+  for (const map of Object.values(runtimeMappingsByVersion)) {
+    const excel = map?.[code];
+    if (excel && !seen.has(excel)) {
+      seen.add(excel);
+      labels.push(excel);
+    }
+  }
+  return labels;
+}
+
 /** payload 中用于解析业务「表名」的字段（按优先级） */
 export const TABLE_NAME_PAYLOAD_KEYS = [
   'table_name',

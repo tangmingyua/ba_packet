@@ -6,9 +6,14 @@
         :key="cat.code"
         type="button"
         class="category-card"
-        :class="{ selected: isSelected(cat.code) }"
+        :class="{
+          selected: isSelected(cat.code),
+          disabled: isDisabled(cat),
+        }"
         :style="cardStyle(cat.code)"
         :aria-pressed="isSelected(cat.code)"
+        :disabled="isDisabled(cat)"
+        :title="isDisabled(cat) ? '当前主类下暂无该类型子类' : cat.label"
         @click="toggle(cat.code)"
       >
         <span v-if="isSelected(cat.code)" class="card-check" aria-hidden="true">✓</span>
@@ -41,17 +46,26 @@ const emit = defineEmits(['update:modelValue', 'change']);
 
 const hasSelection = computed(() => props.modelValue.length > 0);
 
+const selectableOptions = computed(() => props.options.filter((o) => !isDisabled(o)));
+
 const allSelected = computed(() => {
-  if (!props.options.length) return false;
+  const list = selectableOptions.value;
+  if (!list.length) return false;
   const selected = new Set(props.modelValue);
-  return props.options.every((o) => selected.has(o.code));
+  return list.every((o) => selected.has(o.code));
 });
+
+function isDisabled(cat) {
+  return cat?.hasSubtype === false;
+}
 
 function isSelected(code) {
   return props.modelValue.includes(code);
 }
 
 function toggle(code) {
+  const cat = props.options.find((o) => o.code === code);
+  if (cat && isDisabled(cat)) return;
   const next = props.modelValue.includes(code)
     ? props.modelValue.filter((c) => c !== code)
     : [...props.modelValue, code];
@@ -60,7 +74,7 @@ function toggle(code) {
 }
 
 function selectAll() {
-  const next = props.options.map((o) => o.code);
+  const next = selectableOptions.value.map((o) => o.code);
   emit('update:modelValue', next);
   emit('change', next);
 }
@@ -117,12 +131,19 @@ function cardStyle(code) {
     filter 0.15s ease;
 }
 
-.category-card:not(.selected) {
+.category-card:not(.selected):not(.disabled) {
   filter: saturate(0.72) brightness(0.94);
   opacity: 0.82;
 }
 
-.category-card:hover {
+.category-card.disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.85) brightness(0.72);
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.category-card:hover:not(.disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
   filter: none;

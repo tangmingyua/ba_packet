@@ -5,13 +5,36 @@ export const MATERIAL_CATEGORIES = [
   { code: 'qa', label: '答疑' },
   { code: 'logic', label: '逻辑' },
   { code: 'peer', label: '同业经验' },
-  { code: 'changelog', label: '变更记录' },
-  { code: 'to1104', label: 'sql转换' },
+  { code: 'composite', label: '综合' },
   { code: 'code_value', label: '码值' },
 ];
 
+export const QUERY_DISPLAY_CATEGORIES = ['norm', 'logic', 'check', 'qa', 'peer', 'composite'];
+
+const LABEL_TO_CODE = Object.fromEntries(
+  MATERIAL_CATEGORIES.flatMap((c) => [
+    [c.code, c.code],
+    [c.label, c.code],
+  ])
+);
+LABEL_TO_CODE.changelog = 'composite';
+LABEL_TO_CODE.to1104 = 'composite';
+LABEL_TO_CODE['变更记录'] = 'composite';
+LABEL_TO_CODE['sql转换'] = 'composite';
+
+export function normalizeCategory(value, fallback = 'norm') {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  const lower = raw.toLowerCase();
+  if (LABEL_TO_CODE[raw]) return LABEL_TO_CODE[raw];
+  if (LABEL_TO_CODE[lower]) return LABEL_TO_CODE[lower];
+  if (MATERIAL_CATEGORIES.some((c) => c.code === lower)) return lower;
+  return fallback;
+}
+
 export function getCategoryLabel(code) {
-  return MATERIAL_CATEGORIES.find((c) => c.code === code)?.label || '规范';
+  const normalized = normalizeCategory(code, '');
+  return MATERIAL_CATEGORIES.find((c) => c.code === normalized)?.label || '规范';
 }
 
 export function parseCategoryFilter(input) {
@@ -22,8 +45,8 @@ export function parseCategoryFilter(input) {
         .split(/[,，]/)
         .map((s) => s.trim())
         .filter(Boolean);
-  const codes = new Set(MATERIAL_CATEGORIES.map((c) => c.code));
-  return [...new Set(list.filter((c) => codes.has(c)))];
+  const valid = new Set(MATERIAL_CATEGORIES.map((c) => c.code));
+  return [...new Set(list.map((v) => normalizeCategory(v)).filter((c) => valid.has(c)))];
 }
 
 /** 解析 ?subtypeCode=A,B 或数组 */

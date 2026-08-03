@@ -676,7 +676,7 @@ export function listSearchableCategories({ moduleCode } = {}) {
     codes.add('norm');
   }
   if (tableHasRows('conversion_scripts')) {
-    codes.add('to1104');
+    codes.add('composite');
   }
   if (tableHasRows('module_code_values')) {
     codes.add('code_value');

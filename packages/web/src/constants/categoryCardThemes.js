@@ -5,8 +5,7 @@ export const CATEGORY_CARD_THEMES = {
   qa: { icon: '答', bg: '#70AD47' },
   logic: { icon: '逻', bg: '#7030A0' },
   peer: { icon: '同', bg: '#00B0F0' },
-  changelog: { icon: '变', bg: '#8497B0' },
-  to1104: { icon: '11', bg: '#ED7D31' },
+  composite: { icon: '综', bg: '#ED7D31' },
   code_value: { icon: '码', bg: '#FF6699' },
 };
 

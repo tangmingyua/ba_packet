@@ -43,7 +43,7 @@
       </div>
 
       <ModuleCategoryCards
-        v-if="searched && isAggregateMode && visibleCategoryStats.length"
+        v-if="searched && isAggregateMode && moduleCode"
         v-model="selectedCategories"
         :options="visibleCategoryStats"
         @change="onCategoriesChange"
@@ -125,6 +125,7 @@
           :category-options="[]"
           :table-options="tableOptions"
           :column-options="columnOptions"
+          :rows="filterBarRows"
           :suggestions="filterSuggestions"
           :suggest-index="filterSuggestIndex"
           :show-suggest="filterShowSuggest"
@@ -265,10 +266,11 @@ import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
 import SearchLandingModeCards from '../components/search/SearchLandingModeCards.vue';
 import ModuleTabs from '../components/search/ModuleTabs.vue';
 import SubtypeTabs from '../components/search/SubtypeTabs.vue';
-import { parseCategoryFilter } from '../constants/materialCategories.js';
+import { parseCategoryFilter, QUERY_DISPLAY_CATEGORIES, getCategoryLabel } from '../constants/materialCategories.js';
 import {
   buildColumnMeta,
   createFilterRule,
+  createMultiSelectFilterRule,
   filterRows,
   flattenReport,
   flattenReports,
@@ -279,6 +281,7 @@ import {
   mergeFieldMappingDefaultDisplayByVersion,
   mergeFieldMappingOrdersByVersion,
   mergeFieldMappingsByVersion,
+  MULTI_SELECT_OPERATOR,
   normalizeActiveFilters,
 } from '../composables/useDynamicTable.js';
 
@@ -314,6 +317,7 @@ const detailFromAggregateBrowse = ref(false);
 const activeReportCode = ref('');
 const elapsedMs = ref(0);
 const scriptListFetchKey = ref(0);
+const fieldMappingsByVersion = ref({});
 
 const tableFilter = ref('__all__');
 const customFilters = ref([]);
@@ -344,6 +348,19 @@ const modeConfig = {
 /** 详情页不展示的资料类型标签（仍可通过子类等检索） */
 const DETAIL_HIDDEN_CATEGORY_CODES = new Set(['code_value']);
 
+const visibleCategoryStats = computed(() => {
+  const byCode = new Map((categoryStats.value || []).map((c) => [c.code, c]));
+  return QUERY_DISPLAY_CATEGORIES.map((code) => {
+    const row = byCode.get(code);
+    return {
+      code,
+      label: row?.label || getCategoryLabel(code),
+      count: row?.count ?? 0,
+      hasSubtype: row?.hasSubtype ?? false,
+    };
+  });
+});
+
 const searchMode = computed(() => {
   if (searched.value) {
     const mode = route.query.mode;
@@ -366,10 +383,6 @@ function apiSearchMode() {
 }
 
 const isAggregateMode = computed(() => apiSearchMode() === 'aggregate');
-
-const visibleCategoryStats = computed(() =>
-  categoryStats.value.filter((c) => !DETAIL_HIDDEN_CATEGORY_CODES.has(c.code))
-);
 
 const showLandingModuleSelect = computed(
   () => !searched.value && landingQueryMode.value === 'aggregate' && modules.value.length > 0
@@ -671,6 +684,12 @@ const resultRowsForColumns = computed(() => {
   return flattenReports(scope, { mode: searchMode.value });
 });
 
+const filterBarRows = computed(() => {
+  const primary = baseRows.value;
+  if (primary.length) return primary;
+  return resultRowsForColumns.value;
+});
+
 const tableOptions = computed(() => getTableOptions(baseRows.value));
 const columnOptions = computed(() => getColumnOptions(resultRowsForColumns.value));
 
@@ -773,6 +792,7 @@ function resetLocalFilters() {
 }
 
 function applySearchFieldMappings(result) {
+  fieldMappingsByVersion.value = result?.fieldMappingsByVersion || {};
   mergeFieldMappingsByVersion(result?.fieldMappingsByVersion || {});
   mergeFieldMappingOrdersByVersion(result?.fieldMappingOrdersByVersion || {});
   mergeFieldMappingDefaultDisplayByVersion(result?.fieldMappingDefaultDisplayByVersion || {});
@@ -791,7 +811,9 @@ function applyDefaultFilterColumns(result) {
       }
     }
   }
-  customFilters.value = cols.map((col) => createFilterRule({ col, op: 'contains', val: '' }));
+  customFilters.value = cols.map((col) =>
+    createMultiSelectFilterRule({ col, op: 'in', val: [] })
+  );
 }
 
 function resetAll() {
@@ -980,7 +1002,9 @@ async function refreshCategoryStats() {
   try {
     const { items } = await getModuleCategoryStats(moduleCode.value);
     categoryStats.value = items || [];
-    const allowed = new Set(visibleCategoryStats.value.map((c) => c.code));
+    const allowed = new Set(
+      visibleCategoryStats.value.filter((c) => c.hasSubtype).map((c) => c.code)
+    );
     if (selectedCategories.value.length) {
       selectedCategories.value = selectedCategories.value.filter((c) => allowed.has(c));
     }
@@ -990,7 +1014,9 @@ async function refreshCategoryStats() {
 }
 
 function selectAllModuleCategories() {
-  selectedCategories.value = visibleCategoryStats.value.map((c) => c.code);
+  selectedCategories.value = visibleCategoryStats.value
+    .filter((c) => c.hasSubtype)
+    .map((c) => c.code);
 }
 
 function onModuleChange() {

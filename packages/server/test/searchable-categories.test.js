@@ -52,7 +52,7 @@ describe('searchable-categories', () => {
   it('仅返回库中已有资料的类型标签', () => {
     const all = listSearchableCategories();
     const codes = all.map((c) => c.code);
-    assert.ok(codes.includes('to1104'));
+    assert.ok(codes.includes('composite'));
     assert.ok(codes.includes('code_value'));
     assert.ok(!codes.includes('check'));
     assert.ok(!codes.includes('logic'));
@@ -60,11 +60,11 @@ describe('searchable-categories', () => {
 
   it('可按模块过滤标签', () => {
     const ybt = listSearchableCategories({ moduleCode: 'YBT' }).map((c) => c.code);
-    assert.ok(ybt.includes('to1104'));
+    assert.ok(ybt.includes('composite'));
     assert.ok(ybt.includes('code_value'));
 
     const east = listSearchableCategories({ moduleCode: 'EAST' }).map((c) => c.code);
-    assert.ok(!east.includes('to1104'));
+    assert.ok(!east.includes('composite'));
     assert.ok(!east.includes('code_value'));
   });
 });

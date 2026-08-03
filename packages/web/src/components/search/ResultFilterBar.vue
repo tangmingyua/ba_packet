@@ -34,76 +34,93 @@
       </div>
 
       <div class="custom-filters-inline">
-        <span v-if="localFilters.length" class="custom-filters-label">自定义筛选</span>
-
-        <div
-          v-for="(rule, index) in localFilters"
-          :key="rule.id"
-          class="custom-filter-row-inline"
-        >
-          <span v-if="localFilters.length > 1" class="custom-filter-index">{{ index + 1 }}</span>
-          <div class="filter-group filter-group-col filter-group-col-sm">
-            <label :class="{ 'sr-only': index > 0 }">筛选列</label>
-            <input
-              :value="rule.col"
-              type="text"
-              class="filter-input-compact"
-              placeholder="列名"
-              autocomplete="off"
-              @input="onColInput(rule.id, ($event.target).value)"
-              @focus="openColSuggest(rule.id)"
-              @keydown.down.prevent="moveColSuggest(1)"
-              @keydown.up.prevent="moveColSuggest(-1)"
-              @keydown.enter.prevent="pickActiveColSuggest(rule.id)"
-              @keydown.escape="closeColSuggest"
-            />
-            <div v-if="activeColSuggestRuleId === rule.id" class="col-suggest show">
-              <template v-if="colSuggestionsForRule(rule).length">
-                <div
-                  v-for="(col, colIdx) in colSuggestionsForRule(rule)"
-                  :key="col"
-                  class="col-suggest-item"
-                  :class="{ active: colIdx === colSuggestIndex }"
-                  @mousedown.prevent="pickColSuggestion(rule.id, col)"
-                >
-                  {{ col }}
-                </div>
-              </template>
-              <div v-else-if="rule.col.trim()" class="col-suggest-empty">无匹配列</div>
-            </div>
-          </div>
-          <div class="filter-group filter-group-op">
-            <label :class="{ 'sr-only': index > 0 }">条件</label>
-            <select
-              :value="rule.op"
-              @change="updateRule(rule.id, { op: ($event.target).value })"
-            >
-              <option v-for="op in operators" :key="op.value" :value="op.value">
-                {{ op.label }}
-              </option>
-            </select>
-          </div>
-          <div class="filter-group filter-group-val">
-            <label :class="{ 'sr-only': index > 0 }">筛选值</label>
-            <input
-              :value="rule.val"
-              type="text"
-              class="filter-input-compact"
-              placeholder="内容"
-              :disabled="isNoValueOp(rule.op)"
-              @input="updateRule(rule.id, { val: ($event.target).value })"
-              @keydown.enter.prevent="emit('search')"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn btn-icon"
-            title="删除此条件"
-            @click="removeRule(rule.id)"
+        <template v-for="(rule, index) in localFilters" :key="rule.id">
+          <div
+            v-if="isMultiSelectRule(rule)"
+            class="custom-filter-row-inline custom-filter-row-multi"
           >
-            ×
-          </button>
-        </div>
+            <span class="multi-select-field-name" :title="rule.col">{{ rule.col || '—' }}</span>
+            <MultiSelectFilter
+              :model-value="rule.val || []"
+              :rows="props.rows"
+              :col="rule.col"
+              placeholder="请选择"
+              @update:model-value="updateRule(rule.id, { val: $event })"
+            />
+            <button
+              type="button"
+              class="btn btn-icon"
+              title="删除此条件"
+              @click="removeRule(rule.id)"
+            >
+              ×
+            </button>
+          </div>
+          <div v-else class="custom-filter-row-inline">
+            <span v-if="localFilters.length > 1" class="custom-filter-index">{{ index + 1 }}</span>
+            <div class="filter-group filter-group-col filter-group-col-sm">
+              <label :class="{ 'sr-only': index > 0 }">筛选列</label>
+              <input
+                :value="rule.col"
+                type="text"
+                class="filter-input-compact"
+                placeholder="列名"
+                autocomplete="off"
+                @input="onColInput(rule.id, ($event.target).value)"
+                @focus="openColSuggest(rule.id)"
+                @keydown.down.prevent="moveColSuggest(1)"
+                @keydown.up.prevent="moveColSuggest(-1)"
+                @keydown.enter.prevent="pickActiveColSuggest(rule.id)"
+                @keydown.escape="closeColSuggest"
+              />
+              <div v-if="activeColSuggestRuleId === rule.id" class="col-suggest show">
+                <template v-if="colSuggestionsForRule(rule).length">
+                  <div
+                    v-for="(col, colIdx) in colSuggestionsForRule(rule)"
+                    :key="col"
+                    class="col-suggest-item"
+                    :class="{ active: colIdx === colSuggestIndex }"
+                    @mousedown.prevent="pickColSuggestion(rule.id, col)"
+                  >
+                    {{ col }}
+                  </div>
+                </template>
+                <div v-else-if="rule.col.trim()" class="col-suggest-empty">无匹配列</div>
+              </div>
+            </div>
+            <div class="filter-group filter-group-op">
+              <label :class="{ 'sr-only': index > 0 }">条件</label>
+              <select
+                :value="rule.op"
+                @change="updateRule(rule.id, { op: ($event.target).value })"
+              >
+                <option v-for="op in operators" :key="op.value" :value="op.value">
+                  {{ op.label }}
+                </option>
+              </select>
+            </div>
+            <div class="filter-group filter-group-val">
+              <label :class="{ 'sr-only': index > 0 }">筛选值</label>
+              <input
+                :value="rule.val"
+                type="text"
+                class="filter-input-compact"
+                placeholder="内容"
+                :disabled="isNoValueOp(rule.op)"
+                @input="updateRule(rule.id, { val: ($event.target).value })"
+                @keydown.enter.prevent="emit('search')"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn btn-icon"
+              title="删除此条件"
+              @click="removeRule(rule.id)"
+            >
+              ×
+            </button>
+          </div>
+        </template>
 
         <button type="button" class="btn btn-add-filter" @click="addRule">
           {{ localFilters.length ? '+ 添加条件' : '+ 自定义筛选' }}
@@ -124,11 +141,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   FILTER_OPERATORS,
+  MULTI_SELECT_OPERATOR,
   NO_VALUE_OPERATORS,
   createFilterRule,
   filterColumnSuggestions,
   highlightKeyword,
 } from '../../composables/useDynamicTable.js';
+import MultiSelectFilter from './MultiSelectFilter.vue';
 
 const props = defineProps({
   variant: { type: String, default: 'norm' },
@@ -146,6 +165,8 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
   categoryFilter: { type: Array, default: () => [] },
   categoryOptions: { type: Array, default: () => [] },
+  /** 当前结果行，用于多选下拉取去重值 */
+  rows: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -194,6 +215,10 @@ function removeRule(id) {
 
 function isNoValueOp(op) {
   return NO_VALUE_OPERATORS.has(op);
+}
+
+function isMultiSelectRule(rule) {
+  return rule.op === MULTI_SELECT_OPERATOR;
 }
 
 function colSuggestionsForRule(rule) {
@@ -312,16 +337,6 @@ function highlightName(name) {
   min-width: 140px;
 }
 
-.custom-filters-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding-bottom: 6px;
-  flex-shrink: 0;
-}
-
 .custom-filter-row-inline {
   display: flex;
   align-items: flex-end;
@@ -430,6 +445,29 @@ function highlightName(name) {
 .btn-icon:hover {
   color: #b91c1c;
   border-color: #fecaca;
+}
+
+.filter-group-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.custom-filter-row-multi {
+  align-items: center;
+}
+
+.multi-select-field-name {
+  flex-shrink: 0;
+  max-width: 120px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #374151);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-bottom: 0;
+  line-height: 28px;
 }
 
 .btn-add-filter {

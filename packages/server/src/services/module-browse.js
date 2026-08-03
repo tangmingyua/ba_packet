@@ -2,8 +2,14 @@
  * 按主类 + 资料标签浏览与统计（查询页卡片 + 列表）
  */
 import { queryAll, queryOne } from '../db/database.js';
-import { getCategoryLabel, parseCategoryFilter } from '../config/material-categories.js';
-import { listSearchableCategories, listVersionRecordsView, listSubtypes } from './dataset-config.js';
+import {
+  getCategoryLabel,
+  normalizeCategory,
+  parseCategoryFilter,
+  QUERY_DISPLAY_CATEGORIES,
+  expandCategoryStorageCodes,
+} from '../config/material-categories.js';
+import { listVersionRecordsView, listSubtypes } from './dataset-config.js';
 
 function normalizeModuleCode(code) {
   const mod = String(code || '').trim();
@@ -11,20 +17,36 @@ function normalizeModuleCode(code) {
   return mod;
 }
 
-function normalizeCategory(code) {
-  const cat = String(code || '').trim();
-  const allowed = new Set(listSearchableCategories().map((c) => c.code));
+function assertBrowseCategory(code) {
+  const cat = normalizeCategory(code);
+  const allowed = new Set([...QUERY_DISPLAY_CATEGORIES, 'code_value']);
   if (!allowed.has(cat)) throw new Error('无效的资料标签');
   return cat;
 }
 
 function countCategoryRecords(mod, catCode) {
-  if (catCode === 'to1104') {
-    return Number(
+  const cat = normalizeCategory(catCode);
+  if (cat === 'composite') {
+    const scriptCount = Number(
       queryOne('SELECT COUNT(*) AS c FROM conversion_scripts WHERE module_code = ?', [mod])?.c || 0
     );
+    const storageCodes = expandCategoryStorageCodes('composite');
+    const placeholders = storageCodes.map(() => '?').join(',');
+    const excelCount = Number(
+      queryOne(
+        `
+        SELECT COUNT(*) AS c
+        FROM data_records r
+        JOIN subtype_versions sv ON sv.id = r.subtype_version_id
+        JOIN subtypes s ON s.code = sv.subtype_code
+        WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) IN (${placeholders})
+        `,
+        [mod, ...storageCodes]
+      )?.c || 0
+    );
+    return scriptCount + excelCount;
   }
-  if (catCode === 'code_value') {
+  if (cat === 'code_value') {
     return Number(
       queryOne('SELECT COUNT(*) AS c FROM module_code_values WHERE module_code = ?', [mod])?.c || 0
     );
@@ -38,10 +60,10 @@ function countCategoryRecords(mod, catCode) {
       JOIN subtypes s ON s.code = sv.subtype_code
       WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) = ?
       `,
-      [mod, catCode]
+      [mod, cat]
     )?.c || 0
   );
-  if (catCode !== 'norm') return excelCount;
+  if (cat !== 'norm') return excelCount;
   const formCount = Number(
     queryOne(
       `
@@ -62,15 +84,22 @@ function countCategoryRecords(mod, catCode) {
   return excelCount + formCount + docCount;
 }
 
-/** 各标签在该模块下的记录数（仅含库中已有资料的类型标签，与 listSearchableCategories 一致） */
+/** 各标签在该模块下的记录数 + 是否有启用子类（查询页固定展示六类） */
 export function getModuleCategoryStats(moduleCode) {
   const mod = normalizeModuleCode(moduleCode);
-  const searchable = listSearchableCategories({ moduleCode: mod });
+  const subtypeCats = new Set();
+  for (const row of queryAll(
+    `SELECT category FROM subtypes WHERE module_code = ? AND enabled = 1`,
+    [mod]
+  )) {
+    subtypeCats.add(normalizeCategory(row.category));
+  }
 
-  return searchable.map((cat) => ({
-    code: cat.code,
-    label: cat.label,
-    count: countCategoryRecords(mod, cat.code),
+  return QUERY_DISPLAY_CATEGORIES.map((code) => ({
+    code,
+    label: getCategoryLabel(code),
+    count: countCategoryRecords(mod, code),
+    hasSubtype: subtypeCats.has(code),
   }));
 }
 
@@ -84,9 +113,11 @@ function countExcelSubtypeRecords(subtypeCode, categoryList) {
   `;
   const params = [subtypeCode];
   if (categoryList.length) {
-    const placeholders = categoryList.map(() => '?').join(',');
+    const expanded = categoryList.flatMap((c) => expandCategoryStorageCodes(c));
+    const unique = [...new Set(expanded)];
+    const placeholders = unique.map(() => '?').join(',');
     sql += ` AND COALESCE(r.std_category, s.category) IN (${placeholders})`;
-    params.push(...categoryList);
+    params.push(...unique);
   }
   return Number(queryOne(sql, params)?.c || 0);
 }
@@ -118,14 +149,32 @@ function countSubtypeRecords(st, categoryList) {
       )?.c || 0
     );
   }
-  return Number(
-    queryOne(`SELECT COUNT(*) AS c FROM ${table} WHERE subtype_code = ?`, [st.code])?.c || 0
-  );
+  if (st.storageKind === 'document') {
+    return Number(
+      queryOne('SELECT COUNT(*) AS c FROM documents WHERE subtype_code = ? AND module_code = ?', [
+        st.code,
+        st.moduleCode,
+      ])?.c || 0
+    );
+  }
+  if (st.storageKind === 'script') {
+    return Number(
+      queryOne('SELECT COUNT(*) AS c FROM conversion_scripts WHERE module_code = ?', [st.moduleCode])?.c || 0
+    );
+  }
+  if (st.storageKind === 'code_value') {
+    return Number(
+      queryOne('SELECT COUNT(*) AS c FROM module_code_values WHERE module_code = ?', [st.moduleCode])?.c || 0
+    );
+  }
+  return 0;
 }
 
 function subtypeMatchesCategories(st, categoryList) {
   if (!categoryList.length) return true;
-  if (categoryList.includes(st.category)) return true;
+  const stCat = normalizeCategory(st.category);
+  const selected = categoryList.map((c) => normalizeCategory(c));
+  if (selected.includes(stCat)) return true;
   if (st.storageKind === 'excel') {
     return countExcelSubtypeRecords(st.code, categoryList) > 0;
   }
@@ -143,7 +192,7 @@ export function getModuleSubtypeStats(moduleCode, categories) {
     .map((st) => ({
       code: st.code,
       name: st.name,
-      category: st.category,
+      category: normalizeCategory(st.category),
       categoryLabel: getCategoryLabel(st.category),
       storageKind: st.storageKind,
       count: countSubtypeRecords(st, categoryList),
@@ -194,8 +243,8 @@ function browseConversionScripts({ moduleCode, keyword, limit, offset }) {
 
   return {
     layout: 'script',
-    category: 'to1104',
-    categoryLabel: getCategoryLabel('to1104'),
+    category: 'composite',
+    categoryLabel: getCategoryLabel('composite'),
     moduleCode: mod,
     total,
     limit: normalizedLimit,
@@ -264,13 +313,15 @@ function browseCodeValues({ moduleCode, keyword, limit, offset }) {
 
 function browseExcelCategory({ moduleCode, category, keyword, limit, offset }) {
   const mod = normalizeModuleCode(moduleCode);
-  const cat = normalizeCategory(category);
+  const cat = assertBrowseCategory(category);
+  const catCodes = expandCategoryStorageCodes(cat);
   const normalizedLimit = Math.min(Math.max(Number(limit) || 20, 1), 200);
   const normalizedOffset = Math.max(Number(offset) || 0, 0);
   const q = String(keyword || '').trim();
 
-  const where = ['s.module_code = ?', 'COALESCE(r.std_category, s.category) = ?'];
-  const params = [mod, cat];
+  const placeholders = catCodes.map(() => '?').join(',');
+  const where = ['s.module_code = ?', `COALESCE(r.std_category, s.category) IN (${placeholders})`];
+  const params = [mod, ...catCodes];
   if (q) {
     where.push('(r.payload LIKE ? OR r.std_data_item LIKE ? OR r.std_subtype LIKE ? OR r.std_version LIKE ?)');
     const pattern = `%${q}%`;
@@ -371,9 +422,11 @@ function browseExcelCategory({ moduleCode, category, keyword, limit, offset }) {
 
 /** 按模块 + 标签浏览列表 */
 export function browseModuleCategory({ moduleCode, category, keyword, limit, offset } = {}) {
-  const cat = normalizeCategory(category);
-  if (cat === 'to1104') {
-    return browseConversionScripts({ moduleCode, keyword, limit, offset });
+  const cat = assertBrowseCategory(category);
+  if (cat === 'composite') {
+    const scripts = browseConversionScripts({ moduleCode, keyword, limit, offset });
+    if (scripts.total > 0) return scripts;
+    return browseExcelCategory({ moduleCode, category: 'composite', keyword, limit, offset });
   }
   if (cat === 'code_value') {
     return browseCodeValues({ moduleCode, keyword, limit, offset });

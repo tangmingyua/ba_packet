@@ -47,7 +47,7 @@ export const SEED_SUBTYPES = [
     code: 'CONVERSION_SCRIPT',
     name: '转1104 脚本',
     moduleCode: 'YBT',
-    category: 'to1104',
+    category: 'composite',
     storageKind: 'script',
     importEnabled: true,
     sortOrder: 202,

@@ -46,14 +46,17 @@ describe('module-browse', () => {
   it('getModuleCategoryStats 仅返回可检索标签', () => {
     const stats = getModuleCategoryStats('YBT');
     const codes = stats.map((s) => s.code);
+    assert.ok(codes.includes('composite'));
+    assert.ok(codes.includes('norm'));
+    assert.ok(codes.includes('logic'));
+    assert.ok(codes.includes('check'));
+    assert.ok(codes.includes('peer'));
     assert.ok(codes.includes('qa'));
-    assert.ok(codes.includes('to1104'));
-    assert.ok(!codes.includes('check'));
-    assert.ok(!codes.includes('logic'));
+    assert.equal(codes.length, 6);
   });
 
-  it('browseModuleCategory 转1104 含脚本预览', () => {
-    const result = browseModuleCategory({ moduleCode: 'YBT', category: 'to1104', limit: 10 });
+  it('browseModuleCategory 综合含脚本预览', () => {
+    const result = browseModuleCategory({ moduleCode: 'YBT', category: 'composite', limit: 10 });
     assert.equal(result.layout, 'script');
     assert.ok(result.items.length >= 1);
     assert.ok('scriptPreview' in result.items[0]);

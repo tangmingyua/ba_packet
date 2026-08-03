@@ -14,6 +14,7 @@ import {
 import {
   getCategoryLabel,
   parseCategoryFilter,
+  expandCategoriesForStorage,
 } from '../config/material-categories.js';
 
 function parsePayload(raw) {
@@ -43,7 +44,7 @@ export function resolveSearchMode(mode) {
 function categoryFilterClause(mode, categories) {
   const resolved = resolveSearchMode(mode);
   if (resolved === 'aggregate') {
-    const selected = parseCategoryFilter(categories);
+    const selected = expandCategoriesForStorage(parseCategoryFilter(categories));
     if (!selected.length) return { clause: '', params: [] };
     const placeholders = selected.map(() => '?').join(',');
     return {

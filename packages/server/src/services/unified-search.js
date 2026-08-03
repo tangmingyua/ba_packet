@@ -18,7 +18,7 @@ import { buildAggregateBrowseIndex } from './aggregate-browse.js';
 const STORAGE_KIND_CATEGORIES = {
   form_template: ['norm'],
   document: ['norm'],
-  script: ['to1104'],
+  script: ['composite'],
   code_value: ['code_value'],
 };
 
@@ -34,12 +34,12 @@ function resolveCategoryList(mode, categories) {
   return parseCategoryFilter(categories);
 }
 
-const NON_EXCEL_CATEGORIES = new Set(['to1104', 'code_value']);
+const NON_EXCEL_CATEGORIES = new Set(['composite', 'code_value']);
 
 function shouldSearchStorageKind(categoryList, kind) {
   if (kind === 'excel') {
     if (!categoryList.length) return true;
-    return categoryList.some((c) => !NON_EXCEL_CATEGORIES.has(c));
+    return categoryList.some((c) => c === 'composite' || !NON_EXCEL_CATEGORIES.has(c));
   }
   const allowed = STORAGE_KIND_CATEGORIES[kind];
   if (!allowed) return false;
@@ -233,8 +233,8 @@ function searchScriptReports(keyword, { moduleCode, subtypeCode } = {}) {
         snippet: `表号 ${row.report_code} · 版本 ${row.version_label}`,
         moduleCode: row.module_code,
         moduleName: moduleLabel(row.module_code),
-        category: 'to1104',
-        categoryLabel: getCategoryLabel('to1104'),
+        category: 'composite',
+        categoryLabel: getCategoryLabel('composite'),
         entityKind: 'script',
         entityId: Number(row.id),
         linkPath: `/conversion-scripts/${row.id}`,
@@ -256,7 +256,7 @@ function searchScriptReports(keyword, { moduleCode, subtypeCode } = {}) {
       code: 'CONVERSION_SCRIPT',
       name: '转1104 脚本',
       moduleCode: mod,
-      category: 'to1104',
+      category: 'composite',
       layout: 'script',
       blocks,
     }),

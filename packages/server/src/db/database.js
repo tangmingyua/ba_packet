@@ -400,6 +400,7 @@ function backfillSubtypeCategories() {
   run(`UPDATE subtypes SET name = '个人征信表头定义' WHERE code = 'header_definition' AND name = '表头定义'`);
   run(`UPDATE subtypes SET name = '表样' WHERE code = '1104_FORM_TEMPLATE' AND name IN ('1104 表样', '1104表样')`);
   run(`UPDATE subtypes SET name = '填报说明' WHERE code = '1104_FILL_INSTRUCTION' AND name IN ('1104 填报说明', '1104填报说明')`);
+  run(`UPDATE subtypes SET category = 'composite' WHERE category IN ('changelog', 'to1104')`);
   run(`
     UPDATE data_records
     SET std_category = 'norm'
