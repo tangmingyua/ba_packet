@@ -46,6 +46,7 @@ function rowToMapping(row) {
     isRequired: Boolean(row.is_required),
     defaultDisplay: Boolean(row.is_default_display),
     defaultFilter: Boolean(row.is_default_filter),
+    aggregateDisplay: Boolean(row.is_aggregate_display),
   };
 }
 
@@ -567,8 +568,9 @@ export function saveFieldMappings(versionId, mappings) {
   for (const m of mappings) {
     run(
       `INSERT INTO field_mappings (
-        subtype_version_id, original_column, standard_field, field_type, is_required, is_default_display, is_default_filter
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        subtype_version_id, original_column, standard_field, field_type, is_required,
+        is_default_display, is_default_filter, is_aggregate_display
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         versionId,
         m.originalColumn,
@@ -577,6 +579,7 @@ export function saveFieldMappings(versionId, mappings) {
         m.isRequired ? 1 : 0,
         m.defaultDisplay ? 1 : 0,
         m.defaultFilter ? 1 : 0,
+        m.aggregateDisplay ? 1 : 0,
       ]
     );
   }

@@ -144,6 +144,10 @@
                 </label>
                 <p v-if="!filteredVersionOptions.length" class="muted">该主类下暂无可导入版本</p>
               </div>
+              <p v-if="bulkImportModeSelected" class="hint bulk-import-hint">
+                已选<strong>全量导入</strong>版本：请上传整本 Excel（须含 Sheet「目录」及「报表」列）。除目录外每个
+                Sheet 均会导入；目录行按「报表」与 Sheet 名匹配并拼到各行。须全部 Sheet 校验通过才会写入，否则整本不落库。
+              </p>
             </template>
           </div>
           <label class="field span-2">
@@ -935,8 +939,8 @@
                   </select>
                 </label>
                 <p class="muted version-picker-hint">
-                  下方「版本设置」与「字段映射」均作用于所选版本；保存字段映射后，资料导入时按 Sheet
-                  名匹配该版本。
+                  下方「版本设置」与「字段映射」均作用于所选版本。Sheet 名为「全量导入」时，资料导入页须单独勾选该版本并上传整本
+                  Excel；否则按 Sheet 名匹配版本。
                 </p>
               </div>
               <p v-else class="muted version-picker-empty">
@@ -1191,6 +1195,7 @@ function clearStepMessage(step) {
 const file = ref(null);
 const description = ref('');
 const selectedVersionIds = ref([]);
+const BULK_IMPORT_VERSION_SHEET_NAME = '全量导入';
 const importing = ref(false);
 const dragging = ref(false);
 const importMessage = ref('');
@@ -1401,6 +1406,8 @@ const versionOptions = computed(() =>
           id: v.id,
           moduleCode: s.moduleCode || 'OTHER',
           moduleName: s.moduleName || s.moduleCode || '其他',
+          sheetName: v.sheetName || '',
+          isBulkImport: v.sheetName === BULK_IMPORT_VERSION_SHEET_NAME,
           label: `${s.name} / ${v.versionLabel}（sheet: ${v.sheetName}）`,
         }))
     )
@@ -1439,6 +1446,25 @@ const filteredVersionOptions = computed(() => {
   if (!code) return versionOptions.value;
   return versionOptions.value.filter((o) => o.moduleCode === code);
 });
+
+const bulkImportModeSelected = computed(() =>
+  selectedVersionIds.value.some((id) =>
+    versionOptions.value.some((o) => o.id === id && o.isBulkImport)
+  )
+);
+
+watch(
+  selectedVersionIds,
+  (ids) => {
+    const bulkIds = ids.filter((id) =>
+      versionOptions.value.some((o) => o.id === id && o.isBulkImport)
+    );
+    if (bulkIds.length && ids.length > 1) {
+      selectedVersionIds.value = [bulkIds[bulkIds.length - 1]];
+    }
+  },
+  { deep: true }
+);
 
 const formTemplateModules = computed(() => catalog.value.modules || []);
 
@@ -1663,6 +1689,7 @@ async function selectVersion(id) {
       isRequired: m.isRequired,
       defaultDisplay: m.defaultDisplay,
       defaultFilter: m.defaultFilter,
+      aggregateDisplay: m.aggregateDisplay,
     })
   );
 }
@@ -1936,6 +1963,14 @@ async function doImport() {
     importMessageType.value =
       summary.failed > 0 && summary.success === 0 ? 'error' : 'success';
     importMessage.value = `完成：成功 ${summary.success} 个 sheet，失败 ${summary.failed}，跳过 ${summary.skipped}；共导入 ${summary.inserted} 行`;
+    if (summary.bulkAborted) {
+      importMessageType.value = 'error';
+      importMessage.value =
+        '全量导入未写入：存在校验失败的 Sheet，已保留该版本原有数据。请修正 Excel 后重试。';
+    }
+    if (summary.sheetsWithIgnoredColumns > 0) {
+      importMessage.value += `；${summary.sheetsWithIgnoredColumns} 个 sheet 含未映射列已忽略（见下表说明）`;
+    }
     await refreshCatalog();
     await refreshDatasets();
     if (activeVersionId.value) await selectVersion(activeVersionId.value);

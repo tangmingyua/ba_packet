@@ -14,6 +14,7 @@ import {
   saveFieldMappings,
   updateSubtype,
   upsertSubtype,
+  countRecordsForVersion,
 } from '../src/services/dataset-config.js';
 import { importDatasetExcel, validateHeaders } from '../src/services/dataset-import.js';
 import { searchDatasetRecords, suggestDatasetItems } from '../src/services/dataset-search.js';
@@ -56,13 +57,13 @@ describe('dataset import model', () => {
     closeDb();
   });
 
-  it('表头多余列导致校验失败', () => {
+  it('表头未映射列默认忽略', () => {
     const mappings = [
       { originalColumn: '数据项名称', standardField: 'data_item', isRequired: false },
     ];
     const result = validateHeaders(['数据项名称', '多余列'], mappings);
-    assert.equal(result.ok, false);
-    assert.match(result.message, /多余列/);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.ignoredColumns, ['多余列']);
   });
 
   it('缺可选列可通过，缺必填列失败', () => {
@@ -192,7 +193,8 @@ describe('dataset import model', () => {
 
     const east = result.sheets.find((s) => s.sheetName === '转EAST问答');
     const faq = result.sheets.find((s) => s.sheetName === '一表通制度问答');
-    assert.equal(east.status, 'failed');
+    assert.equal(east.status, 'success');
+    assert.deepEqual(east.ignoredColumns, ['多余列']);
     assert.equal(faq.status, 'success');
 
     const search = searchDatasetRecords('合同');
@@ -354,6 +356,118 @@ describe('dataset import model', () => {
     const result = importDatasetExcel(buffer, { fileName: 'east.xlsx' });
     assert.equal(result.summary.skipped, 1);
     assert.match(result.sheets[0].message, /尚未创建版本/);
+  });
+
+  it('全量导入：目录拼行、全 Sheet 成功才写入', () => {
+    const bulkVersion = createSubtypeVersion('TO_EAST_FAQ', {
+      versionLabel: 'SAFE V1.4',
+      sheetName: '全量导入',
+      headerRow: 1,
+      dataStartRow: 2,
+      isDefault: false,
+      bizKeyFields: [],
+    });
+    saveFieldMappings(bulkVersion.id, [
+      { originalColumn: '字段', standardField: 'data_item', isRequired: true },
+      { originalColumn: '报表', standardField: 'collection_scope', isRequired: false },
+    ]);
+
+    const buffer = buildExcel([
+      {
+        name: '目录',
+        rows: [
+          ['序号', '模块名', '报表'],
+          [1, 'BOP', '表A'],
+          [2, 'BOP', '表B'],
+        ],
+      },
+      {
+        name: '表A',
+        rows: [
+          ['序号', '字段', '内容'],
+          [1, 'F1', 'v1'],
+        ],
+      },
+      {
+        name: '表B',
+        rows: [
+          ['序号', '字段', '内容'],
+          [1, 'F2', 'v2'],
+        ],
+      },
+    ]);
+
+    const result = importDatasetExcel(buffer, {
+      fileName: 'bulk.xlsx',
+      versionIds: [bulkVersion.id],
+    });
+    assert.equal(result.mode, 'bulk');
+    assert.equal(result.summary.success, 2);
+    assert.equal(result.summary.inserted, 2);
+    assert.equal(result.summary.bulkAborted, false);
+    assert.equal(countRecordsForVersion(bulkVersion.id), 2);
+    assert.ok(searchDatasetRecords('F1').reports[0]?.hitCount >= 1);
+  });
+
+  it('全量导入：任一 Sheet 失败则整本不落库', () => {
+    const bulkVersion = createSubtypeVersion('TO_EAST_FAQ', {
+      versionLabel: 'bulk-fail',
+      sheetName: '全量导入',
+      headerRow: 1,
+      dataStartRow: 2,
+      bizKeyFields: [],
+    });
+    saveFieldMappings(bulkVersion.id, [
+      { originalColumn: '字段', standardField: 'data_item', isRequired: true },
+    ]);
+
+    const bufferOk = buildExcel([
+      { name: '目录', rows: [['报表'], ['表A']] },
+      { name: '表A', rows: [['字段'], ['OK']] },
+    ]);
+    importDatasetExcel(bufferOk, { fileName: 'seed.xlsx', versionIds: [bulkVersion.id] });
+    assert.equal(countRecordsForVersion(bulkVersion.id), 1);
+
+    const bufferBad = buildExcel([
+      { name: '目录', rows: [['报表'], ['表A'], ['表B']] },
+      { name: '表A', rows: [['字段'], ['OK']] },
+      { name: '表B', rows: [['字段'], ['']] },
+    ]);
+    const result = importDatasetExcel(bufferBad, {
+      fileName: 'bad.xlsx',
+      versionIds: [bulkVersion.id],
+    });
+    assert.equal(result.summary.bulkAborted, true);
+    assert.equal(result.summary.success, 0);
+    assert.equal(countRecordsForVersion(bulkVersion.id), 1, '失败导入不应覆盖已有数据');
+  });
+
+  it('全量导入：目录报表重复整本失败', () => {
+    const bulkVersion = createSubtypeVersion('TO_EAST_FAQ', {
+      versionLabel: 'dup',
+      sheetName: '全量导入',
+      headerRow: 1,
+      dataStartRow: 2,
+      bizKeyFields: [],
+    });
+    saveFieldMappings(bulkVersion.id, [
+      { originalColumn: '字段', standardField: 'data_item', isRequired: false },
+    ]);
+    const buffer = buildExcel([
+      {
+        name: '目录',
+        rows: [
+          ['报表'],
+          ['表A'],
+          ['表A'],
+        ],
+      },
+      { name: '表A', rows: [['字段'], ['x']] },
+    ]);
+    assert.throws(
+      () => importDatasetExcel(buffer, { fileName: 'dup.xlsx', versionIds: [bulkVersion.id] }),
+      /重复/
+    );
   });
 });
 

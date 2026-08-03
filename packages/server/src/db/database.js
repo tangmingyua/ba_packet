@@ -267,6 +267,13 @@ function ensureFieldMappingDefaultFilterColumn() {
   run(`ALTER TABLE field_mappings ADD COLUMN is_default_filter INTEGER NOT NULL DEFAULT 0`);
 }
 
+/** field_mappings：空关键词浏览时在聚合索引页展示并组合去重 */
+function ensureFieldMappingAggregateDisplayColumn() {
+  const cols = queryAll('PRAGMA table_info(field_mappings)');
+  if (cols.some((c) => c.name === 'is_aggregate_display')) return;
+  run(`ALTER TABLE field_mappings ADD COLUMN is_aggregate_display INTEGER NOT NULL DEFAULT 0`);
+}
+
 /** 主类（modules）+ 子类归属 module_code */
 function ensureModuleSchema() {
   for (const m of MATERIAL_MODULES) {
@@ -501,6 +508,7 @@ function ensureDatasetModelSchema() {
   ensureCategoryColumns();
   ensureFieldMappingDefaultDisplayColumn();
   ensureFieldMappingDefaultFilterColumn();
+  ensureFieldMappingAggregateDisplayColumn();
   ensureDocumentNodeIndicatorKeyColumn();
   ensureFormTemplateLayoutColumn();
   ensureFormTemplateModuleColumn();

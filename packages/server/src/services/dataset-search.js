@@ -148,6 +148,10 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
   return rows;
 }
 
+export function queryDatasetMatchingRows(options) {
+  return queryMatchingRows(options);
+}
+
 /** 联想：在模式限定字段内匹配，返回数据项名称 */
 export function suggestDatasetItems(keyword, options = {}) {
   const limit = typeof options === 'number' ? options : Number(options.limit ?? 10);
@@ -266,7 +270,7 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories, mod
     };
   });
 
-  const { fieldMappingsByVersion, fieldMappingOrdersByVersion, fieldMappingDefaultDisplayByVersion, fieldMappingDefaultFilterByVersion } =
+  const { fieldMappingsByVersion, fieldMappingOrdersByVersion, fieldMappingDefaultDisplayByVersion, fieldMappingDefaultFilterByVersion, fieldMappingAggregateDisplayByVersion } =
     buildFieldMappingsByVersion(versionIds);
   return {
     keyword: q,
@@ -277,6 +281,7 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories, mod
     fieldMappingOrdersByVersion,
     fieldMappingDefaultDisplayByVersion,
     fieldMappingDefaultFilterByVersion,
+    fieldMappingAggregateDisplayByVersion,
   };
 }
 
@@ -290,6 +295,7 @@ function emptySearchResult(keyword, mode) {
     fieldMappingOrdersByVersion: {},
     fieldMappingDefaultDisplayByVersion: {},
     fieldMappingDefaultFilterByVersion: {},
+    fieldMappingAggregateDisplayByVersion: {},
   };
 }
 
@@ -298,6 +304,7 @@ function buildFieldMappingsByVersion(versionIds) {
   const fieldMappingOrdersByVersion = {};
   const fieldMappingDefaultDisplayByVersion = {};
   const fieldMappingDefaultFilterByVersion = {};
+  const fieldMappingAggregateDisplayByVersion = {};
   for (const vid of versionIds) {
     const mappings = listFieldMappings(vid);
     if (!mappings.length) continue;
@@ -312,12 +319,16 @@ function buildFieldMappingsByVersion(versionIds) {
     fieldMappingDefaultFilterByVersion[key] = mappings
       .filter((m) => m.defaultFilter)
       .map((m) => m.originalColumn);
+    fieldMappingAggregateDisplayByVersion[key] = mappings
+      .filter((m) => m.aggregateDisplay)
+      .map((m) => m.originalColumn);
   }
   return {
     fieldMappingsByVersion,
     fieldMappingOrdersByVersion,
     fieldMappingDefaultDisplayByVersion,
     fieldMappingDefaultFilterByVersion,
+    fieldMappingAggregateDisplayByVersion,
   };
 }
 

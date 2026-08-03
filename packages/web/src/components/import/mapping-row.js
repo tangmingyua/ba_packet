@@ -9,6 +9,7 @@ export function createMappingRow(data = {}) {
     isRequired: false,
     defaultDisplay: false,
     defaultFilter: false,
+    aggregateDisplay: false,
     ...data,
   };
 }

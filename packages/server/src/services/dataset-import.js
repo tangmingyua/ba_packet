@@ -15,6 +15,15 @@ import {
   listSubtypeVersions,
 } from './dataset-config.js';
 
+/** 版本 Sheet 名为该值时，走整本「全量导入」流程（须单选该版本） */
+export const BULK_IMPORT_VERSION_SHEET_NAME = '全量导入';
+export const BULK_CATALOG_SHEET_NAME = '目录';
+export const BULK_CATALOG_REPORT_COLUMN = '报表';
+
+export function isBulkImportVersion(version) {
+  return version?.sheetName === BULK_IMPORT_VERSION_SHEET_NAME;
+}
+
 function hashBuffer(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
@@ -77,27 +86,28 @@ function extractHeaders(matrix, headerRow) {
 }
 
 /**
- * 校验表头与映射
- * @returns {{ ok: true } | { ok: false, message: string }}
+ * 校验表头与映射（未映射的 Excel 列默认忽略，不阻断导入）
+ * @returns {{ ok: true, ignoredColumns: string[] } | { ok: false, message: string, ignoredColumns: string[] }}
  */
 export function validateHeaders(excelHeaders, mappings) {
   const headerSet = new Set(excelHeaders.filter((h) => !h.startsWith('__EMPTY_COL_')));
   const mappedOriginals = mappings.map((m) => m.originalColumn);
 
-  const extra = [...headerSet].filter((h) => !mappedOriginals.includes(h));
-  if (extra.length) {
-    return { ok: false, message: `存在未配置的多余列：${extra.join('、')}` };
-  }
+  const ignoredColumns = [...headerSet].filter((h) => !mappedOriginals.includes(h));
 
   const requiredMissing = mappings
     .filter((m) => m.isRequired)
     .map((m) => m.originalColumn)
     .filter((col) => !headerSet.has(col));
   if (requiredMissing.length) {
-    return { ok: false, message: `缺少必填列：${requiredMissing.join('、')}` };
+    return {
+      ok: false,
+      message: `缺少必填列：${requiredMissing.join('、')}`,
+      ignoredColumns: [],
+    };
   }
 
-  return { ok: true };
+  return { ok: true, ignoredColumns };
 }
 
 function mapRowToPayload(rowCells, excelHeaders, mappings, linkRow) {
@@ -125,6 +135,168 @@ function validateRequiredValues(payload, mappings, rowNum) {
     }
   }
   return null;
+}
+
+function formatIgnoredColumnsNote(ignoredColumns) {
+  if (!ignoredColumns?.length) return '';
+  return `；已忽略未映射列：${ignoredColumns.join('、')}`;
+}
+
+function formatColumnConflictNote(warnings) {
+  if (!warnings?.length) return '';
+  return `；${warnings.join('；')}`;
+}
+
+function catalogRowToMap(headers, rowCells) {
+  const map = {};
+  headers.forEach((h, i) => {
+    map[h] = cellToString(rowCells[i]);
+  });
+  return map;
+}
+
+/**
+ * 解析「目录」Sheet：报表列 → 目录行字段
+ */
+export function parseBulkCatalogSheet(sheet, headerRow, dataStartRow) {
+  const headers = extractHeaders(sheet.matrix, headerRow);
+  const reportIdx = headers.indexOf(BULK_CATALOG_REPORT_COLUMN);
+  if (reportIdx === -1) {
+    return { ok: false, message: `目录 Sheet 缺少「${BULK_CATALOG_REPORT_COLUMN}」列` };
+  }
+
+  const dataStart = Math.max(0, dataStartRow - 1);
+  const byReport = new Map();
+  const duplicateReports = new Set();
+
+  for (let i = dataStart; i < sheet.matrix.length; i += 1) {
+    const rowCells = sheet.matrix[i] || [];
+    const report = cellToString(rowCells[reportIdx]);
+    if (!report) continue;
+    if (byReport.has(report)) {
+      duplicateReports.add(report);
+    } else {
+      byReport.set(report, catalogRowToMap(headers, rowCells));
+    }
+  }
+
+  if (duplicateReports.size) {
+    return {
+      ok: false,
+      message: `目录中「${BULK_CATALOG_REPORT_COLUMN}」重复：${[...duplicateReports].join('、')}`,
+    };
+  }
+
+  return { ok: true, headers, byReport };
+}
+
+/**
+ * 目录行拼入业务 Sheet 每一行（列名冲突时保留业务列）
+ */
+export function mergeBusinessSheetWithCatalog({
+  sheet,
+  catalogHeaders,
+  catalogRowMap,
+  headerRow,
+  dataStartRow,
+}) {
+  const businessHeaders = extractHeaders(sheet.matrix, headerRow);
+  const businessHeaderSet = new Set(
+    businessHeaders.filter((h) => !h.startsWith('__EMPTY_COL_'))
+  );
+  const columnWarnings = [];
+  for (const h of catalogHeaders) {
+    if (businessHeaderSet.has(h)) {
+      columnWarnings.push(`列「${h}」与业务表重复，已采用业务列`);
+    }
+  }
+  const catalogOnlyHeaders = catalogHeaders.filter(
+    (h) => !businessHeaderSet.has(h) && !h.startsWith('__EMPTY_COL_')
+  );
+  const mergedHeaders = [...businessHeaders, ...catalogOnlyHeaders];
+
+  const dataStart = Math.max(0, dataStartRow - 1);
+  const dataRows = [];
+  for (let i = dataStart; i < sheet.matrix.length; i += 1) {
+    const rowCells = sheet.matrix[i] || [];
+    const linkRow = sheet.linkMatrix?.[i] || [];
+    const excelRowNum = i + 1;
+    if (rowCells.every((c) => cellToString(c) === '')) continue;
+
+    const mergedCells = [...rowCells];
+    while (mergedCells.length < businessHeaders.length) mergedCells.push('');
+    for (const h of catalogOnlyHeaders) {
+      mergedCells.push(catalogRowMap?.[h] ?? '');
+    }
+    dataRows.push({ rowNum: excelRowNum, cells: mergedCells, linkRow });
+  }
+
+  return { mergedHeaders, dataRows, columnWarnings };
+}
+
+function prepareRowsFromTable({ headers, dataRows, mappings, version, subtype, sheetName }) {
+  const headerCheck = validateHeaders(headers, mappings);
+  if (!headerCheck.ok) {
+    return {
+      ok: false,
+      message: headerCheck.message,
+      ignoredColumns: headerCheck.ignoredColumns || [],
+      sheetName,
+      subtypeCode: version.subtypeCode,
+      versionId: version.id,
+      versionLabel: version.versionLabel,
+    };
+  }
+  const ignoredColumns = headerCheck.ignoredColumns || [];
+  const pendingRows = [];
+
+  for (const row of dataRows) {
+    const payload = mapRowToPayload(row.cells, headers, mappings, row.linkRow);
+    payload.subtype = subtype.name;
+
+    const systemVersion = version.versionLabel;
+    const excelVersion = cellToString(payload.version);
+    if (systemVersion) {
+      payload.version = systemVersion;
+    } else if (excelVersion) {
+      payload.version = excelVersion;
+    } else {
+      return {
+        ok: false,
+        message: '无法确定版本：未选择系统版本且 Excel 无版本列',
+        sheetName,
+        subtypeCode: version.subtypeCode,
+        versionId: version.id,
+        versionLabel: version.versionLabel,
+      };
+    }
+
+    const reqErr = validateRequiredValues(payload, mappings, row.rowNum);
+    if (reqErr) {
+      return {
+        ok: false,
+        message: reqErr,
+        sheetName,
+        subtypeCode: version.subtypeCode,
+        versionId: version.id,
+        versionLabel: version.versionLabel,
+      };
+    }
+    pendingRows.push({ rowNum: row.rowNum, payload });
+  }
+
+  if (!pendingRows.length) {
+    return {
+      ok: false,
+      message: '无有效数据行',
+      sheetName,
+      subtypeCode: version.subtypeCode,
+      versionId: version.id,
+      versionLabel: version.versionLabel,
+    };
+  }
+
+  return { ok: true, pendingRows, ignoredColumns, sheetName };
 }
 
 /**
@@ -234,78 +406,36 @@ function importOneSheet({ sheet, version, sourceFileName, fileHash, description 
 
   const subtype = getSubtype(version.subtypeCode);
   const headers = extractHeaders(sheet.matrix, version.headerRow);
-  const headerCheck = validateHeaders(headers, mappings);
-  if (!headerCheck.ok) {
-    return {
-      sheetName: sheet.sheetName,
-      status: 'failed',
-      message: headerCheck.message,
-      subtypeCode: version.subtypeCode,
-      versionId: version.id,
-      versionLabel: version.versionLabel,
-    };
-  }
-
   const dataStart = Math.max(0, version.dataStartRow - 1);
-  const pendingRows = [];
-
+  const dataRows = [];
   for (let i = dataStart; i < sheet.matrix.length; i += 1) {
     const rowCells = sheet.matrix[i] || [];
     const linkRow = sheet.linkMatrix?.[i] || [];
     const excelRowNum = i + 1;
     if (rowCells.every((c) => cellToString(c) === '')) continue;
-
-    const payload = mapRowToPayload(rowCells, headers, mappings, linkRow);
-
-    // subtype: 仅系统
-    payload.subtype = subtype.name;
-
-    // version: 优先系统，否则 Excel，都无则失败
-    const systemVersion = version.versionLabel;
-    const excelVersion = cellToString(payload.version);
-    if (systemVersion) {
-      payload.version = systemVersion;
-    } else if (excelVersion) {
-      payload.version = excelVersion;
-    } else {
-      return {
-        sheetName: sheet.sheetName,
-        status: 'failed',
-        message: '无法确定版本：未选择系统版本且 Excel 无版本列',
-        subtypeCode: version.subtypeCode,
-        versionId: version.id,
-        versionLabel: version.versionLabel,
-      };
-    }
-
-    const reqErr = validateRequiredValues(payload, mappings, excelRowNum);
-    if (reqErr) {
-      return {
-        sheetName: sheet.sheetName,
-        status: 'failed',
-        message: reqErr,
-        subtypeCode: version.subtypeCode,
-        versionId: version.id,
-        versionLabel: version.versionLabel,
-      };
-    }
-
-    pendingRows.push({
-      rowNum: excelRowNum,
-      payload,
-    });
+    dataRows.push({ rowNum: excelRowNum, cells: rowCells, linkRow });
   }
 
-  if (!pendingRows.length) {
+  const prepared = prepareRowsFromTable({
+    headers,
+    dataRows,
+    mappings,
+    version,
+    subtype,
+    sheetName: sheet.sheetName,
+  });
+  if (!prepared.ok) {
     return {
       sheetName: sheet.sheetName,
       status: 'failed',
-      message: '无有效数据行',
-      subtypeCode: version.subtypeCode,
-      versionId: version.id,
-      versionLabel: version.versionLabel,
+      message: prepared.message,
+      ignoredColumns: prepared.ignoredColumns || [],
+      subtypeCode: prepared.subtypeCode,
+      versionId: prepared.versionId,
+      versionLabel: prepared.versionLabel,
     };
   }
+  const { pendingRows, ignoredColumns } = prepared;
 
   let inserted = 0;
   clearVersionRecords(version.id);
@@ -347,7 +477,8 @@ function importOneSheet({ sheet, version, sourceFileName, fileHash, description 
   return {
     sheetName: sheet.sheetName,
     status: 'success',
-    message: `导入成功：共 ${inserted} 行（已替换该版本原有数据）`,
+    message: `导入成功：共 ${inserted} 行（已替换该版本原有数据）${formatIgnoredColumnsNote(ignoredColumns)}`,
+    ignoredColumns,
     subtypeCode: version.subtypeCode,
     subtypeName: subtype.name,
     versionId: version.id,
@@ -357,6 +488,184 @@ function importOneSheet({ sheet, version, sourceFileName, fileHash, description 
     inserted,
     updated: 0,
   };
+}
+
+function importBulkWorkbook({ sheets, version, sourceFileName, fileHash, description }) {
+  const mappings = listFieldMappings(version.id);
+  if (!mappings.length) {
+    throw new Error('该版本尚未配置字段映射');
+  }
+  const subtype = getSubtype(version.subtypeCode);
+  if (!subtype?.enabled) {
+    throw new Error('该子类未启用');
+  }
+
+  const catalogSheet = sheets.find((s) => s.sheetName === BULK_CATALOG_SHEET_NAME);
+  if (!catalogSheet) {
+    throw new Error(`全量导入工作簿须包含 Sheet「${BULK_CATALOG_SHEET_NAME}」`);
+  }
+
+  const catalogParsed = parseBulkCatalogSheet(
+    catalogSheet,
+    version.headerRow,
+    version.dataStartRow
+  );
+  if (!catalogParsed.ok) {
+    throw new Error(catalogParsed.message);
+  }
+
+  const businessSheets = sheets.filter((s) => s.sheetName !== BULK_CATALOG_SHEET_NAME);
+  if (!businessSheets.length) {
+    throw new Error('除目录外无业务 Sheet');
+  }
+
+  const sheetPlans = [];
+  const failedResults = [];
+  const allColumnWarnings = new Set();
+
+  for (const sheet of businessSheets) {
+    const catalogRowMap = catalogParsed.byReport.get(sheet.sheetName) || null;
+    const merged = mergeBusinessSheetWithCatalog({
+      sheet,
+      catalogHeaders: catalogParsed.headers,
+      catalogRowMap,
+      headerRow: version.headerRow,
+      dataStartRow: version.dataStartRow,
+    });
+    for (const w of merged.columnWarnings) allColumnWarnings.add(w);
+
+    const prepared = prepareRowsFromTable({
+      headers: merged.mergedHeaders,
+      dataRows: merged.dataRows,
+      mappings,
+      version,
+      subtype,
+      sheetName: sheet.sheetName,
+    });
+
+    if (!prepared.ok) {
+      failedResults.push({
+        sheetName: sheet.sheetName,
+        status: 'failed',
+        message: prepared.message + formatColumnConflictNote(merged.columnWarnings),
+        ignoredColumns: prepared.ignoredColumns || [],
+        subtypeCode: version.subtypeCode,
+        versionId: version.id,
+        versionLabel: version.versionLabel,
+      });
+      continue;
+    }
+
+    sheetPlans.push({
+      sheetName: sheet.sheetName,
+      pendingRows: prepared.pendingRows,
+      ignoredColumns: prepared.ignoredColumns,
+      columnWarnings: merged.columnWarnings,
+    });
+  }
+
+  if (failedResults.length) {
+    return {
+      mode: 'bulk',
+      fileName: sourceFileName,
+      fileHash,
+      sheets: failedResults,
+      summary: {
+        success: 0,
+        failed: failedResults.length,
+        skipped: 0,
+        inserted: 0,
+        updated: 0,
+        sheetsWithIgnoredColumns: 0,
+        bulkAborted: true,
+      },
+    };
+  }
+
+  const results = [];
+  clearVersionRecords(version.id);
+
+  try {
+    for (const plan of sheetPlans) {
+      const datasetId = insertDataset({
+        name: `${sourceFileName || 'import'} / ${plan.sheetName}`,
+        description,
+        sourceFileName,
+        sheetName: plan.sheetName,
+        versionId: version.id,
+        fileHash,
+      });
+      let inserted = 0;
+      for (const row of plan.pendingRows) {
+        insertRecord({
+          datasetId,
+          versionId: version.id,
+          sheetName: plan.sheetName,
+          rowNum: row.rowNum,
+          payload: row.payload,
+          stdCategory: subtype.category || 'norm',
+        });
+        inserted += 1;
+      }
+      results.push({
+        sheetName: plan.sheetName,
+        status: 'success',
+        message:
+          `导入成功：共 ${inserted} 行${formatIgnoredColumnsNote(plan.ignoredColumns)}` +
+          formatColumnConflictNote(plan.columnWarnings),
+        ignoredColumns: plan.ignoredColumns,
+        subtypeCode: version.subtypeCode,
+        subtypeName: subtype.name,
+        versionId: version.id,
+        versionLabel: version.versionLabel,
+        datasetId,
+        recordCount: plan.pendingRows.length,
+        inserted,
+        updated: 0,
+      });
+    }
+    saveDb();
+  } catch (error) {
+    clearVersionRecords(version.id);
+    saveDb();
+    throw error;
+  }
+
+  const success = results.filter((r) => r.status === 'success');
+  const ignoredColumnSheets = success.filter((r) => (r.ignoredColumns || []).length);
+
+  return {
+    mode: 'bulk',
+    fileName: sourceFileName,
+    fileHash,
+    sheets: results,
+    summary: {
+      success: success.length,
+      failed: 0,
+      skipped: 0,
+      inserted: success.reduce((n, r) => n + (r.inserted || 0), 0),
+      updated: 0,
+      sheetsWithIgnoredColumns: ignoredColumnSheets.length,
+      bulkAborted: false,
+      columnConflictNotes: allColumnWarnings.size ? [...allColumnWarnings] : undefined,
+    },
+  };
+}
+
+function resolveBulkImportVersion(selectedVersionIds) {
+  const bulkIds = selectedVersionIds.filter((id) => {
+    const v = getSubtypeVersion(id);
+    return v && isBulkImportVersion(v);
+  });
+  if (!bulkIds.length) return null;
+  if (selectedVersionIds.length !== 1 || bulkIds.length !== 1) {
+    throw new Error(`「${BULK_IMPORT_VERSION_SHEET_NAME}」版本只能单独选择一个，且勿与其他版本混选`);
+  }
+  const version = getSubtypeVersion(bulkIds[0]);
+  if (version.status !== 'active') {
+    throw new Error('所选全量导入版本未启用');
+  }
+  return version;
 }
 
 /**
@@ -373,6 +682,17 @@ export function importDatasetExcel(buffer, options = {}) {
   const fileHash = hashBuffer(buffer);
   const sheets = parseWorkbookSheets(buffer);
 
+  const bulkVersion = resolveBulkImportVersion(selectedVersionIds);
+  if (bulkVersion) {
+    return importBulkWorkbook({
+      sheets,
+      version: bulkVersion,
+      sourceFileName: fileName,
+      fileHash,
+      description: options.description || '',
+    });
+  }
+
   const results = [];
   const skipped = [];
 
@@ -383,6 +703,14 @@ export function importDatasetExcel(buffer, options = {}) {
         sheetName: sheet.sheetName,
         status: 'skipped',
         message: buildSkipMessage(sheet.sheetName, selectedVersionIds),
+      });
+      continue;
+    }
+    if (isBulkImportVersion(version)) {
+      skipped.push({
+        sheetName: sheet.sheetName,
+        status: 'skipped',
+        message: `版本「${version.versionLabel}」为全量导入，请在导入页单独勾选该版本并上传整本 Excel`,
       });
       continue;
     }
@@ -399,6 +727,7 @@ export function importDatasetExcel(buffer, options = {}) {
 
   const success = results.filter((r) => r.status === 'success');
   const failed = results.filter((r) => r.status === 'failed');
+  const ignoredColumnSheets = success.filter((r) => (r.ignoredColumns || []).length);
 
   return {
     fileName,
@@ -410,6 +739,7 @@ export function importDatasetExcel(buffer, options = {}) {
       skipped: skipped.length,
       inserted: success.reduce((n, r) => n + (r.inserted || 0), 0),
       updated: success.reduce((n, r) => n + (r.updated || 0), 0),
+      sheetsWithIgnoredColumns: ignoredColumnSheets.length,
     },
   };
 }

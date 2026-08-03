@@ -149,7 +149,16 @@ export function getModuleSubtypeStats(moduleCode, categories) {
       count: countSubtypeRecords(st, categoryList),
     }))
     .filter((st) => st.count > 0)
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+    .sort((a, b) => {
+      const rank = (st) => {
+        if (st.category === 'norm' && st.storageKind === 'excel') return 0;
+        if (st.category === 'norm') return 1;
+        return 2;
+      };
+      const d = rank(a) - rank(b);
+      if (d !== 0) return d;
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
 }
 
 function browseConversionScripts({ moduleCode, keyword, limit, offset }) {

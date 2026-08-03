@@ -145,13 +145,23 @@
 
       <!-- 聚合查询：按所选子类 storageKind 切换渲染 -->
       <template v-if="useSubtypeScopedRender">
+        <AggregateBrowsePanel
+          v-if="showAggregateBrowse && aggregateBrowseData"
+          :columns="aggregateBrowseData.columns"
+          :items="aggregateBrowseData.items"
+          :link-column-label="aggregateLinkColumnLabel"
+          :empty-text="emptyText"
+          @pick="onAggregateBrowsePick"
+        />
         <DynamicResultTable
-          v-if="selectedStorageKind === 'excel'"
+          v-else-if="selectedStorageKind === 'excel'"
           :rows="filteredRows"
           :column-meta="columnMeta"
           :keyword="lastKeyword"
           :title="subtypeResultTitle"
           :empty-text="emptyText"
+          :show-back="detailFromAggregateBrowse"
+          @back="onBackFromAggregateDetail"
         />
 
         <CodeValueResultTable
@@ -250,6 +260,7 @@ import FormTemplateResultPanel from '../components/search/FormTemplateResultPane
 import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
 import ConversionScriptListPanel from '../components/conversion-script/ConversionScriptListPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
+import AggregateBrowsePanel from '../components/search/AggregateBrowsePanel.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
 import SearchLandingModeCards from '../components/search/SearchLandingModeCards.vue';
 import ModuleTabs from '../components/search/ModuleTabs.vue';
@@ -297,6 +308,9 @@ const loading = ref(false);
 const searched = ref(false);
 const error = ref('');
 const reports = ref([]);
+const aggregateBrowseData = ref(null);
+const showAggregateBrowse = ref(false);
+const detailFromAggregateBrowse = ref(false);
 const activeReportCode = ref('');
 const elapsedMs = ref(0);
 const scriptListFetchKey = ref(0);
@@ -407,7 +421,18 @@ const subtypeResultTitle = computed(() => {
   return selectedSubtypeLabel.value || tableTitle.value;
 });
 
+/** 聚合目录中可点击进入详情的列（表名 / 报表） */
+const aggregateLinkColumnLabel = computed(() => {
+  const cols = aggregateBrowseData.value?.columns || [];
+  const tableNameCol = cols.find((c) => c.code === 'table_name');
+  if (tableNameCol?.label) return tableNameCol.label;
+  const reportCol = cols.find((c) => c.label === '报表');
+  if (reportCol?.label) return reportCol.label;
+  return '';
+});
+
 const showResultFilterBar = computed(() => {
+  if (showAggregateBrowse.value) return false;
   if (useSubtypeScopedRender.value) {
     return selectedStorageKind.value === 'excel';
   }
@@ -434,18 +459,96 @@ watch(
   { immediate: true }
 );
 
+function subtypePickRank(st) {
+  if (st.category === 'norm' && st.storageKind === 'excel') return 0;
+  if (st.category === 'norm') return 1;
+  return 2;
+}
+
 function ensureSubtypeSelection() {
   if (!subtypeStats.value.length) {
     selectedSubtypeCode.value = '';
     return;
   }
   if (
-    !selectedSubtypeCode.value ||
-    !subtypeStats.value.some((s) => s.code === selectedSubtypeCode.value)
+    selectedSubtypeCode.value &&
+    subtypeStats.value.some((s) => s.code === selectedSubtypeCode.value)
   ) {
-    selectedSubtypeCode.value = subtypeStats.value[0].code;
+    return;
+  }
+  const sorted = [...subtypeStats.value].sort((a, b) => {
+    const d = subtypePickRank(a) - subtypePickRank(b);
+    if (d !== 0) return d;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+  selectedSubtypeCode.value = sorted[0].code;
+}
+
+function resolveAggregateBrowseFromResult(result) {
+  const browse = result?.aggregateBrowse;
+  if (!browse?.columns?.length) return null;
+  return browse;
+}
+
+function shouldEnterAggregateBrowse(result) {
+  const mode = apiSearchMode();
+  if (mode !== 'aggregate' && mode !== 'norm') return false;
+  if (String(result?.keyword ?? '').trim()) return false;
+  if (selectedStorageKind.value !== 'excel') return false;
+  if (selectedSubtypeMeta.value?.category !== 'norm') return false;
+  return Boolean(resolveAggregateBrowseFromResult(result));
+}
+
+function applyAggregateBrowseState(result) {
+  aggregateBrowseData.value = resolveAggregateBrowseFromResult(result);
+  if (shouldEnterAggregateBrowse(result)) {
+    showAggregateBrowse.value = true;
+    customFilters.value = [];
+    appliedCustomFilters.value = [];
+  } else {
+    showAggregateBrowse.value = false;
   }
 }
+
+function onAggregateBrowsePick(row) {
+  const linkLabel = aggregateLinkColumnLabel.value;
+  if (!linkLabel) return;
+  showAggregateBrowse.value = false;
+  detailFromAggregateBrowse.value = true;
+  const val = String(row.values?.[linkLabel] ?? '').trim();
+  const rule =
+    val === ''
+      ? createFilterRule({ col: linkLabel, op: 'empty', val: '' })
+      : createFilterRule({ col: linkLabel, op: 'eq', val });
+  customFilters.value = [rule];
+  appliedCustomFilters.value = normalizeActiveFilters([rule]);
+}
+
+function onBackFromAggregateDetail() {
+  detailFromAggregateBrowse.value = false;
+  customFilters.value = [];
+  appliedCustomFilters.value = [];
+  showAggregateBrowse.value = true;
+}
+
+watch(
+  [appliedCustomFilters, lastKeyword, aggregateBrowseData, selectedSubtypeCode, selectedStorageKind],
+  () => {
+    if (!searched.value || lastKeyword.value) {
+      if (lastKeyword.value) showAggregateBrowse.value = false;
+      return;
+    }
+    if (selectedStorageKind.value !== 'excel') return;
+    if (selectedSubtypeMeta.value?.category !== 'norm') return;
+    const mode = apiSearchMode();
+    if (mode !== 'aggregate' && mode !== 'norm') return;
+    if (!aggregateBrowseData.value?.columns?.length) return;
+    if (!normalizeActiveFilters(appliedCustomFilters.value).length) {
+      showAggregateBrowse.value = true;
+      detailFromAggregateBrowse.value = false;
+    }
+  }
+);
 
 watch(homeResetSignal, () => {
   resetAll();
@@ -695,6 +798,9 @@ function resetAll() {
   keyword.value = '';
   lastKeyword.value = '';
   reports.value = [];
+  aggregateBrowseData.value = null;
+  showAggregateBrowse.value = false;
+  detailFromAggregateBrowse.value = false;
   activeReportCode.value = '';
   error.value = '';
   searched.value = false;
@@ -1045,7 +1151,16 @@ async function doSearch() {
     }
     lastKeyword.value = result.keyword;
     applySearchFieldMappings(result);
+  if (shouldEnterAggregateBrowse(result)) {
+    detailFromAggregateBrowse.value = false;
+    applyAggregateBrowseState(result);
+  } else {
     applyDefaultFilterColumns(result);
+    applyAggregateBrowseState(result);
+    if (String(result?.keyword ?? '').trim()) {
+      detailFromAggregateBrowse.value = false;
+    }
+  }
     reports.value = result.reports;
     pickDefaultTabs();
     appliedTableFilter.value = tableFilter.value;

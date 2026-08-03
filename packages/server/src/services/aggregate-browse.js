@@ -1,0 +1,105 @@
+/**
+ * 空关键词浏览：按「聚合展示」字段组合去重索引
+ */
+import { queryOne } from '../db/database.js';
+import { getSubtype, listFieldMappings } from './dataset-config.js';
+import { resolveSearchMode, queryDatasetMatchingRows } from './dataset-search.js';
+
+function parsePayload(raw) {
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw || {};
+  } catch {
+    return {};
+  }
+}
+
+function cellToString(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+/** 跨版本合并聚合列（映射顺序：版本 id 升序，同版本按 mapping id） */
+export function collectAggregateColumnDefs(versionIds) {
+  const sortedIds = [...versionIds].sort((a, b) => a - b);
+  const seen = new Set();
+  const cols = [];
+  for (const vid of sortedIds) {
+    for (const m of listFieldMappings(vid)) {
+      if (!m.aggregateDisplay) continue;
+      if (seen.has(m.standardField)) continue;
+      seen.add(m.standardField);
+      cols.push({ code: m.standardField, label: m.originalColumn });
+    }
+  }
+  return cols;
+}
+
+function buildFiltersForValues(columnDefs, values) {
+  return columnDefs.map(({ label }) => {
+    const val = values[label] ?? '';
+    if (val === '') {
+      return { col: label, op: 'empty', val: '' };
+    }
+    return { col: label, op: 'eq', val };
+  });
+}
+
+/**
+ * @returns {null | { columns: { code, label }[], items: { values, count, filters }[] }}
+ */
+export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories, mode }) {
+  const st = getSubtype(subtypeCode);
+  if (!st?.enabled || st.storageKind !== 'excel' || st.category !== 'norm') {
+    return null;
+  }
+
+  const rows = queryDatasetMatchingRows({
+    keyword: '',
+    mode,
+    categories,
+    moduleCode,
+    subtypeCode,
+  });
+  if (!rows.length) return null;
+
+  const versionIds = [...new Set(rows.map((r) => r.subtype_version_id))];
+  const columnDefs = collectAggregateColumnDefs(versionIds);
+  if (!columnDefs.length) return null;
+
+  const bucket = new Map();
+
+  for (const row of rows) {
+    const payload = parsePayload(row.payload);
+    const values = {};
+    const keyParts = [];
+    for (const { code, label } of columnDefs) {
+      const v = cellToString(payload[code]);
+      values[label] = v;
+      keyParts.push(`${code}\u0000${v}`);
+    }
+    const key = keyParts.join('\u0001');
+    if (!bucket.has(key)) {
+      bucket.set(key, { values, count: 0 });
+    }
+    bucket.get(key).count += 1;
+  }
+
+  const items = [...bucket.values()]
+    .sort((a, b) => {
+      for (const { label } of columnDefs) {
+        const cmp = (a.values[label] || '').localeCompare(b.values[label] || '', 'zh-CN');
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    })
+    .map((entry) => ({
+      values: entry.values,
+      count: entry.count,
+      filters: buildFiltersForValues(columnDefs, entry.values),
+    }));
+
+  return {
+    columns: columnDefs.map(({ code, label }) => ({ code, label })),
+    items,
+  };
+}

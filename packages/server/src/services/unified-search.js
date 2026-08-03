@@ -13,6 +13,7 @@ import { searchFormTemplates } from './form-template-search.js';
 import { searchDocuments } from './document-search.js';
 import { sortByRelevance } from './relevance.js';
 import { listModules, getSubtype } from './dataset-config.js';
+import { buildAggregateBrowseIndex } from './aggregate-browse.js';
 
 const STORAGE_KIND_CATEGORIES = {
   form_template: ['norm'],
@@ -370,6 +371,10 @@ function mergeFieldMeta(target, source) {
       ...target.fieldMappingDefaultFilterByVersion,
       ...(source.fieldMappingDefaultFilterByVersion || {}),
     },
+    fieldMappingAggregateDisplayByVersion: {
+      ...target.fieldMappingAggregateDisplayByVersion,
+      ...(source.fieldMappingAggregateDisplayByVersion || {}),
+    },
   };
 }
 
@@ -380,7 +385,21 @@ function emptyFieldMeta() {
     fieldMappingOrdersByVersion: {},
     fieldMappingDefaultDisplayByVersion: {},
     fieldMappingDefaultFilterByVersion: {},
+    fieldMappingAggregateDisplayByVersion: {},
   };
+}
+
+function maybeAggregateBrowse(q, st, { mode, categories, moduleCode }) {
+  if (q) return null;
+  if (!st || st.storageKind !== 'excel' || st.category !== 'norm') return null;
+  const index = buildAggregateBrowseIndex({
+    subtypeCode: st.code,
+    moduleCode: moduleCode || st.moduleCode,
+    categories,
+    mode,
+  });
+  if (!index?.columns?.length) return null;
+  return index;
 }
 
 function searchReportsForSubtype(q, st, { mode, categories, versionId, moduleCode }) {
@@ -405,6 +424,7 @@ function searchReportsForSubtype(q, st, { mode, categories, versionId, moduleCod
       fieldMappingOrdersByVersion: excelResult.fieldMappingOrdersByVersion || {},
       fieldMappingDefaultDisplayByVersion: excelResult.fieldMappingDefaultDisplayByVersion || {},
       fieldMappingDefaultFilterByVersion: excelResult.fieldMappingDefaultFilterByVersion || {},
+      fieldMappingAggregateDisplayByVersion: excelResult.fieldMappingAggregateDisplayByVersion || {},
     };
   } else if (st.storageKind === 'form_template') {
     reports.push(...searchFormTemplateReports(q, opts));
@@ -416,7 +436,11 @@ function searchReportsForSubtype(q, st, { mode, categories, versionId, moduleCod
     reports.push(...searchCodeValueReports(q, opts));
   }
 
-  return { reports, ...fieldMeta };
+  return {
+    reports,
+    aggregateBrowse: maybeAggregateBrowse(q, st, { mode, categories, moduleCode: mod }),
+    ...fieldMeta,
+  };
 }
 
 export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId, subtypeCode } = {}) {
@@ -429,6 +453,7 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
   if (subtypeList.length) {
     const reports = [];
     let fieldMeta = emptyFieldMeta();
+    let aggregateBrowse = null;
     for (const code of subtypeList) {
       const st = getSubtype(code);
       if (!st || !st.enabled || (mod && st.moduleCode !== mod)) continue;
@@ -441,6 +466,9 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
       if (scoped.error) return scoped;
       reports.push(...scoped.reports);
       fieldMeta = mergeFieldMeta(fieldMeta, scoped);
+      if (subtypeList.length === 1) {
+        aggregateBrowse = scoped.aggregateBrowse ?? null;
+      }
     }
     return {
       keyword: q,
@@ -448,6 +476,7 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
       moduleCode: mod || null,
       subtypeCodes: subtypeList,
       reports,
+      aggregateBrowse,
       ...fieldMeta,
     };
   }
@@ -470,6 +499,7 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
       fieldMappingOrdersByVersion: excelResult.fieldMappingOrdersByVersion || {},
       fieldMappingDefaultDisplayByVersion: excelResult.fieldMappingDefaultDisplayByVersion || {},
       fieldMappingDefaultFilterByVersion: excelResult.fieldMappingDefaultFilterByVersion || {},
+      fieldMappingAggregateDisplayByVersion: excelResult.fieldMappingAggregateDisplayByVersion || {},
     };
   }
 

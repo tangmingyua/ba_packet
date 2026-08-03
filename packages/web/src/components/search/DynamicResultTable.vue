@@ -5,6 +5,7 @@
         {{ title }} <span class="table-count">{{ totalCount }}</span> 条
       </span>
       <div class="col-toggle-wrap">
+        <button v-if="showBack" type="button" class="btn" @click="emit('back')">返回</button>
         <button type="button" class="btn" :disabled="!totalCount" @click="exportCsv">导出 CSV</button>
         <button
           type="button"
@@ -198,9 +199,10 @@ const props = defineProps({
   title: { type: String, default: '查询结果' },
   emptyText: { type: String, default: '未找到匹配结果' },
   pageSize: { type: Number, default: PAGE_SIZE },
+  showBack: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['page-change']);
+const emit = defineEmits(['page-change', 'back']);
 
 const currentPage = ref(1);
 const extraColsVisible = ref(false);

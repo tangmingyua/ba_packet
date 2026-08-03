@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS field_mappings (
   is_required INTEGER NOT NULL DEFAULT 0,
   is_default_display INTEGER NOT NULL DEFAULT 0,
   is_default_filter INTEGER NOT NULL DEFAULT 0,
+  is_aggregate_display INTEGER NOT NULL DEFAULT 0,
   UNIQUE (subtype_version_id, original_column),
   UNIQUE (subtype_version_id, standard_field),
   FOREIGN KEY (subtype_version_id) REFERENCES subtype_versions(id) ON DELETE CASCADE,
