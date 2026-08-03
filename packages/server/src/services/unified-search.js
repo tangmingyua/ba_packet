@@ -12,7 +12,7 @@ import {
 import { searchFormTemplates } from './form-template-search.js';
 import { searchDocuments } from './document-search.js';
 import { sortByRelevance } from './relevance.js';
-import { listModules, getSubtype } from './dataset-config.js';
+import { listModules, getSubtype, listSubtypes } from './dataset-config.js';
 import { buildAggregateBrowseIndex } from './aggregate-browse.js';
 
 const STORAGE_KIND_CATEGORIES = {
@@ -44,7 +44,14 @@ function shouldSearchStorageKind(categoryList, kind) {
   const allowed = STORAGE_KIND_CATEGORIES[kind];
   if (!allowed) return false;
   if (!categoryList.length) return true;
-  return allowed.some((c) => categoryList.includes(c));
+  if (allowed.some((c) => categoryList.includes(c))) return true;
+  // 表样 / 填报说明子类可能挂在非 norm 分类下（如逻辑）
+  if (kind === 'form_template' || kind === 'document') {
+    return listSubtypes().some(
+      (st) => st.enabled && st.storageKind === kind && categoryList.includes(st.category)
+    );
+  }
+  return false;
 }
 
 function moduleLabel(code) {
@@ -78,10 +85,11 @@ function buildMaterialReport({
   };
 }
 
-function searchFormTemplateReports(keyword, { moduleCode, subtypeCode } = {}) {
+function searchFormTemplateReports(keyword, { moduleCode, subtypeCode, categories } = {}) {
   const result = searchFormTemplates(keyword, {
     moduleCode: moduleCode || undefined,
     subtypeCode: subtypeCode || undefined,
+    categories: categories || undefined,
     maxTemplates: 30,
   });
   if (!result.items.length) return [];
@@ -109,8 +117,8 @@ function searchFormTemplateReports(keyword, { moduleCode, subtypeCode } = {}) {
           snippet: `${item.hitCount} 处命中 · Sheet ${item.sheetName}`,
           moduleCode: item.moduleCode,
           moduleName: moduleLabel(item.moduleCode),
-          category: 'norm',
-          categoryLabel: '规范',
+          category: st.category || 'norm',
+          categoryLabel: getCategoryLabel(st.category || 'norm'),
           entityKind: 'form_template',
           entityId: item.id,
           linkPath: `/form-templates/${item.id}`,
@@ -142,10 +150,11 @@ function searchFormTemplateReports(keyword, { moduleCode, subtypeCode } = {}) {
   return reports;
 }
 
-function searchDocumentReports(keyword, { moduleCode, subtypeCode } = {}) {
+function searchDocumentReports(keyword, { moduleCode, subtypeCode, categories } = {}) {
   const result = searchDocuments(keyword, {
     maxDocuments: 30,
     subtypeCode: subtypeCode || undefined,
+    categories: categories || undefined,
   });
   if (!result.items.length) return [];
 
@@ -170,8 +179,8 @@ function searchDocumentReports(keyword, { moduleCode, subtypeCode } = {}) {
         snippet: `${item.hitCount} 处命中 · ${item.nodeCount} 个节点`,
         moduleCode: moduleCode || '1104',
         moduleName: moduleLabel(moduleCode || '1104'),
-        category: 'norm',
-        categoryLabel: '规范',
+        category: item.subtype_category || 'norm',
+        categoryLabel: getCategoryLabel(item.subtype_category || 'norm'),
         entityKind: 'document',
         entityId: item.id,
         linkPath: `/documents/${item.id}`,
@@ -193,7 +202,7 @@ function searchDocumentReports(keyword, { moduleCode, subtypeCode } = {}) {
       code: `${mod}_FILL_INSTRUCTION`,
       name: '填报说明',
       moduleCode: mod,
-      category: 'norm',
+      category: items[0]?.subtype_category || 'norm',
       layout: 'document',
       blocks,
     }),
@@ -504,10 +513,10 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
   }
 
   if (shouldSearchStorageKind(categoryList, 'form_template')) {
-    reports.push(...searchFormTemplateReports(q, { moduleCode: mod || undefined }));
+    reports.push(...searchFormTemplateReports(q, { moduleCode: mod || undefined, categories: categoryList }));
   }
   if (shouldSearchStorageKind(categoryList, 'document')) {
-    reports.push(...searchDocumentReports(q, { moduleCode: mod || undefined }));
+    reports.push(...searchDocumentReports(q, { moduleCode: mod || undefined, categories: categoryList }));
   }
   if (shouldSearchStorageKind(categoryList, 'script')) {
     reports.push(...searchScriptReports(q, { moduleCode: mod || undefined }));
@@ -533,7 +542,7 @@ function materialSuggestItems(keyword, { moduleCode, categoryList, limit, subtyp
   const q = String(keyword).trim();
   const items = [];
   const mod = normalizeModuleCode(moduleCode);
-  const opts = { moduleCode: mod || undefined, subtypeCode: subtypeCode || undefined };
+  const opts = { moduleCode: mod || undefined, subtypeCode: subtypeCode || undefined, categories: categoryList || undefined };
 
   if (shouldSearchStorageKind(categoryList, 'form_template')) {
     for (const report of searchFormTemplateReports(q, opts)) {

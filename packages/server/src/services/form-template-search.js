@@ -4,6 +4,7 @@
 import { queryAll, queryOne } from '../db/database.js';
 import { cellText } from './form-template-search-scope.js';
 import { inferFormTemplateModule } from '../config/form-template-catalog.js';
+import { normalizeCategory } from '../config/material-categories.js';
 
 const DEFAULT_HITS_PER_TEMPLATE = 30;
 const DEFAULT_MAX_TEMPLATES = 50;
@@ -93,6 +94,7 @@ function matchesTemplateFilters(template, filters = {}) {
   const moduleCode = normalizeFilterText(filters.moduleCode);
   const reportQuery = normalizeFilterText(filters.reportQuery).toLowerCase();
   const subtypeCode = normalizeFilterText(filters.subtypeCode);
+  const categorySet = filters.categorySet || new Set();
 
   if (moduleCode) {
     const mod = template.module_code || inferFormTemplateModule(template.report_code);
@@ -101,6 +103,11 @@ function matchesTemplateFilters(template, filters = {}) {
 
   if (subtypeCode && String(template.subtype_code || '') !== subtypeCode) {
     return false;
+  }
+
+  if (categorySet.size) {
+    const cat = normalizeCategory(template.subtype_category || '');
+    if (!categorySet.has(cat)) return false;
   }
 
   if (reportQuery) {
@@ -120,14 +127,16 @@ function matchesTemplateFilters(template, filters = {}) {
 export function searchFormTemplates(keyword, options = {}) {
   const q = String(keyword ?? '').trim();
   const maxTemplates = options.maxTemplates ?? DEFAULT_MAX_TEMPLATES;
+  const categories = Array.isArray(options.categories) ? options.categories : [];
   const filters = {
     moduleCode: options.moduleCode,
     reportQuery: options.reportQuery,
     subtypeCode: options.subtypeCode,
+    categorySet: categories.length ? new Set(categories.map((c) => normalizeCategory(c))) : new Set(),
   };
 
   const templates = queryAll(
-    `SELECT ft.id, ft.report_code, ft.report_title, ft.version_label, ft.module_code, ft.sheet_name, ft.subtype_code
+    `SELECT ft.id, ft.report_code, ft.report_title, ft.version_label, ft.module_code, ft.sheet_name, ft.subtype_code, s.category AS subtype_category
      FROM form_templates ft
      INNER JOIN subtypes s ON s.code = ft.subtype_code
        AND s.enabled = 1

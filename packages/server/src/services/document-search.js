@@ -3,6 +3,8 @@
  */
 import { queryAll, queryOne } from '../db/database.js';
 import { NODE_KIND_LABELS, SEARCHABLE_NODE_KINDS } from '../config/document-search-scope.js';
+import { normalizeCategory } from '../config/material-categories.js';
+import { listSubtypes } from './dataset-config.js';
 
 const DEFAULT_HITS_PER_DOCUMENT = 30;
 const DEFAULT_MAX_DOCUMENTS = 50;
@@ -101,19 +103,36 @@ function mapNodeHitRow(row, keyword) {
   };
 }
 
-function loadDocumentsWithMeta({ subtypeCode } = {}) {
+function loadDocumentsWithMeta({ subtypeCode, categories } = {}) {
   const subtype = String(subtypeCode ?? '').trim();
   let sql = `
-    SELECT d.id, d.doc_code, d.doc_title, d.subtype_code,
+    SELECT d.id, d.doc_code, d.doc_title, d.subtype_code, s.category AS subtype_category,
             (SELECT COUNT(*) FROM document_nodes n WHERE n.document_id = d.id) AS node_count,
             (SELECT report_code FROM report_doc_mapping m
              WHERE m.document_id = d.id AND m.version_label = '' LIMIT 1) AS report_code
      FROM documents d
+     JOIN subtypes s ON s.code = d.subtype_code
   `;
   const params = [];
+  const conditions = [];
   if (subtype) {
-    sql += ' WHERE d.subtype_code = ?';
+    conditions.push('d.subtype_code = ?');
     params.push(subtype);
+  }
+  if (categories?.length) {
+    const categorySet = new Set(categories.map((c) => normalizeCategory(c)));
+    const allowedSubtypes = listSubtypes()
+      .filter((st) => st.enabled && st.storageKind === 'document' && categorySet.has(st.category))
+      .map((st) => st.code);
+    if (allowedSubtypes.length) {
+      conditions.push(`d.subtype_code IN (${allowedSubtypes.map(() => '?').join(',')})`);
+      params.push(...allowedSubtypes);
+    } else {
+      return [];
+    }
+  }
+  if (conditions.length) {
+    sql += ' WHERE ' + conditions.join(' AND ');
   }
   sql += ' ORDER BY d.doc_code';
   return queryAll(sql, params);
@@ -125,7 +144,7 @@ function loadDocumentsWithMeta({ subtypeCode } = {}) {
 export function searchDocuments(keyword, options = {}) {
   const q = String(keyword ?? '').trim();
   const maxDocuments = options.maxDocuments ?? DEFAULT_MAX_DOCUMENTS;
-  const documents = loadDocumentsWithMeta({ subtypeCode: options.subtypeCode });
+  const documents = loadDocumentsWithMeta({ subtypeCode: options.subtypeCode, categories: options.categories });
 
   if (!q) {
     const nodeHitRows = queryAll(

@@ -672,9 +672,22 @@ export function listSearchableCategories({ moduleCode } = {}) {
     return Boolean(queryOne(sql, params));
   }
 
-  if (tableHasLinkedFormTemplates() || tableHasRows('documents')) {
-    codes.add('norm');
+  // 表样与填报说明按子类自身的 category 归类，不再只算 norm
+  let subtypeSql = `
+    SELECT DISTINCT category
+    FROM subtypes
+    WHERE enabled = 1 AND storage_kind IN ('form_template', 'document')
+  `;
+  const subtypeParams = [];
+  if (mod) {
+    subtypeSql += ' AND module_code = ?';
+    subtypeParams.push(mod);
   }
+  for (const row of queryAll(subtypeSql, subtypeParams)) {
+    const cat = normalizeCategory(row.category);
+    if (cat) codes.add(cat);
+  }
+
   if (tableHasRows('conversion_scripts')) {
     codes.add('composite');
   }

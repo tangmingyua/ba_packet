@@ -63,23 +63,27 @@ function countCategoryRecords(mod, catCode) {
       [mod, cat]
     )?.c || 0
   );
-  if (cat !== 'norm') return excelCount;
   const formCount = Number(
     queryOne(
       `
       SELECT COUNT(*) AS c
       FROM form_templates ft
-      INNER JOIN subtypes s ON s.code = ft.subtype_code
-        AND s.enabled = 1
-        AND s.storage_kind = 'form_template'
-        AND s.module_code = ft.module_code
-      WHERE ft.module_code = ?
+      JOIN subtypes s ON s.code = ft.subtype_code
+      WHERE ft.module_code = ? AND s.category = ?
       `,
-      [mod]
+      [mod, cat]
     )?.c || 0
   );
   const docCount = Number(
-    queryOne('SELECT COUNT(*) AS c FROM documents WHERE module_code = ?', [mod])?.c || 0
+    queryOne(
+      `
+      SELECT COUNT(*) AS c
+      FROM documents d
+      JOIN subtypes s ON s.code = d.subtype_code
+      WHERE d.module_code = ? AND s.category = ?
+      `,
+      [mod, cat]
+    )?.c || 0
   );
   return excelCount + formCount + docCount;
 }
