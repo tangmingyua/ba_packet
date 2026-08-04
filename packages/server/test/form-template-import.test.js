@@ -16,6 +16,7 @@ import {
   parseFormTemplate,
   parseFormTemplateWorkbook,
   resolveFormTemplateVersionLabel,
+  resolveFormTemplateReportTitle,
   parseFormTemplateSheetMeta,
   parseFileNameMeta,
   FORM_TEMPLATE_LATEST_VERSION,
@@ -214,7 +215,7 @@ describe('form-template-import', () => {
 
     assert.equal(parsed.reportCode, 'G0100');
     assert.equal(parsed.versionLabel, '231');
-    assert.equal(parsed.reportTitle, 'G01资产负债项目统计表');
+    assert.equal(parsed.reportTitle, 'G0100');
     assert.equal(parsed.sheetName, 'G0100_231');
     assert.equal(parsed.rowCount, 151);
     assert.ok(parsed.rowCount < 164, '应裁掉末尾空行');
@@ -302,6 +303,15 @@ describe('form-template-import', () => {
       FORM_TEMPLATE_LATEST_VERSION
     );
     assert.equal(parseFileNameMeta('1104汇总总表-整合版-20260428.xlsx'), null);
+  });
+
+  it('resolveFormTemplateReportTitle 取 Sheet 名最后一个「_」前的内容', () => {
+    assert.equal(resolveFormTemplateReportTitle('G0100_231'), 'G0100');
+    assert.equal(resolveFormTemplateReportTitle('G0100_'), 'G0100');
+    assert.equal(resolveFormTemplateReportTitle('表样_231'), '表样');
+    assert.equal(resolveFormTemplateReportTitle('G0100_231_修正'), 'G0100_231');
+    assert.equal(resolveFormTemplateReportTitle('G0100', 'G01表'), 'G01表');
+    assert.equal(resolveFormTemplateReportTitle('', ''), '');
   });
 
   it('importFormTemplate 未选模块时报错', () => {

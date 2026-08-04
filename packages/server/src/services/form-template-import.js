@@ -66,6 +66,17 @@ export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
   return FORM_TEMPLATE_LATEST_VERSION;
 }
 
+/**
+ * 表样显示名称：Sheet 名中最后一个「_」前的全部字符串；无下划线时回退到已存储标题或 Sheet 名
+ */
+export function resolveFormTemplateReportTitle(sheetName, reportTitle) {
+  const t = String(sheetName || '').trim();
+  if (t.includes('_')) {
+    return t.slice(0, t.lastIndexOf('_')).trim();
+  }
+  return String(reportTitle || '').trim() || t;
+}
+
 /** 表号段：字母开头 + 字母数字，如 G0100、S2400、NR0100 */
 const FORM_TEMPLATE_REPORT_CODE_RE = '([A-Za-z][A-Za-z0-9]*)';
 
@@ -351,9 +362,9 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     colWidths: trimmedColWidths,
     rowHeights: trimmedRowHeights,
   } = trimMatrixPadding(cleaned, merges, { colWidths, rowHeights });
-  const reportTitle = cellToString(matrix[0]?.[0]) || sheetName;
   const sheetMeta = parseFormTemplateSheetMeta(sheetName, options.fileMeta);
   const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();
+  const reportTitle = resolveFormTemplateReportTitle(sheetName);
   const versionLabel =
     options.versionLabel !== undefined
       ? options.versionLabel
@@ -456,7 +467,7 @@ function mapFormTemplateRow(row) {
   return {
     id: Number(row.id),
     reportCode: row.report_code,
-    reportTitle: row.report_title || '',
+    reportTitle: resolveFormTemplateReportTitle(row.sheet_name, row.report_title),
     versionLabel: row.version_label,
     moduleCode: row.module_code || '1104',
     subtypeCode: row.subtype_code || '',

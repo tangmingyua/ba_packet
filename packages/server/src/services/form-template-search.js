@@ -5,6 +5,7 @@ import { queryAll, queryOne } from '../db/database.js';
 import { cellText } from './form-template-search-scope.js';
 import { inferFormTemplateModule } from '../config/form-template-catalog.js';
 import { normalizeCategory } from '../config/material-categories.js';
+import { resolveFormTemplateReportTitle } from './form-template-import.js';
 
 const DEFAULT_HITS_PER_TEMPLATE = 30;
 const DEFAULT_MAX_TEMPLATES = 50;
@@ -162,7 +163,7 @@ export function searchFormTemplates(keyword, options = {}) {
       return {
         id,
         reportCode: template.report_code,
-        reportTitle: template.report_title || '',
+        reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title),
         versionLabel: template.version_label,
         sheetName: template.sheet_name,
         moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
@@ -210,7 +211,7 @@ export function searchFormTemplates(keyword, options = {}) {
     items.push({
       id,
       reportCode: template.report_code,
-      reportTitle: template.report_title || '',
+      reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title),
       versionLabel: template.version_label,
       sheetName: template.sheet_name,
       moduleCode: template.module_code || inferFormTemplateModule(template.report_code),

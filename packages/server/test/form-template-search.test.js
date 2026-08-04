@@ -17,6 +17,7 @@ import { buildApp, getApiToken } from '../src/index.js';
 import { importFormTemplate, listFormTemplates } from '../src/services/form-template-import.js';
 
 import { countCellsForTemplate } from '../src/services/form-template-cells.js';
+import XLSX from 'xlsx';
 
 import {
 
@@ -31,6 +32,15 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SAMPLE = path.resolve(__dirname, '../../../参考/汇总指标案例/G0100-logic_231.xls');
+
+function renameSampleSheet(buffer, newName) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const oldName = wb.SheetNames[0];
+  wb.SheetNames[0] = newName;
+  wb.Sheets[newName] = wb.Sheets[oldName];
+  delete wb.Sheets[oldName];
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
 
 
 
@@ -56,7 +66,7 @@ describe('form-template-search', () => {
 
     tmpDir = await setupTestDb();
 
-    const imported = importFormTemplate(fs.readFileSync(SAMPLE), {
+    const imported = importFormTemplate(renameSampleSheet(fs.readFileSync(SAMPLE), 'G0100_231'), {
       fileName: 'G0100-logic_231.xls',
       moduleCode: '1104',
     });
@@ -124,7 +134,7 @@ describe('form-template-search', () => {
 
 
   it('searchFormTemplates 可按表样名称命中', () => {
-    const result = searchFormTemplates('资产负债项目统计表');
+    const result = searchFormTemplates('G0100');
     assert.ok(result.totalTemplates >= 1);
     assert.ok(result.items.some((x) => x.reportCode === 'G0100'));
   });
@@ -143,7 +153,7 @@ describe('form-template-search', () => {
   });
 
   it('getFormTemplateSearchHits 表样名称命中返回 meta 项', () => {
-    const hits = getFormTemplateSearchHits(g0100Id, '资产负债项目统计表');
+    const hits = getFormTemplateSearchHits(g0100Id, 'G0100');
     assert.ok(hits.hitCount >= 1);
     assert.ok(hits.hits.some((h) => h.cellKind === 'template_title'));
   });
@@ -178,10 +188,9 @@ describe('form-template-search', () => {
 
   it('搜索分表标题', () => {
 
-    const buffer = fs.readFileSync(
-
-      path.resolve(__dirname, '../../../参考/汇总指标案例/G0200-logic_241.xls')
-
+    const buffer = renameSampleSheet(
+      fs.readFileSync(path.resolve(__dirname, '../../../参考/汇总指标案例/G0200-logic_241.xls')),
+      'G0200_241'
     );
 
     importFormTemplate(buffer, { fileName: 'G0200-logic_241.xls', moduleCode: '1104' });
