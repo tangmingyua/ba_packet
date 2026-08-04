@@ -66,8 +66,6 @@ export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
   return FORM_TEMPLATE_LATEST_VERSION;
 }
 
-/** Sheet 名以字母开头即可作为表样 Sheet */
-const FORM_TEMPLATE_SHEET_LETTER_START_RE = /^[A-Za-z]/;
 /** 表号段：字母开头 + 字母数字，如 G0100、S2400、NR0100 */
 const FORM_TEMPLATE_REPORT_CODE_RE = '([A-Za-z][A-Za-z0-9]*)';
 
@@ -80,50 +78,50 @@ function isExcludedTemplateSheet(name) {
   return EXCLUDED_TEMPLATE_SHEET_NAMES.has(t) || EXCLUDED_TEMPLATE_SHEET_RE.test(t);
 }
 
-/**
- * 从 Sheet 名解析表号与版本
- * 例：G0100_231、G0101a_231、NR0100_231、ABC01_100
- * 若 Sheet 名以中文开头，可传入 fileMeta 从文件名回退表号
- * @returns {null | { reportCode: string, versionLabel: string | null }}
- */
-export function parseFormTemplateSheetMeta(sheetName, fileMeta = null) {
-  let t = String(sheetName || '').trim();
+function parseReportCodeFromCodePart(codePart) {
+  let t = String(codePart || '').trim();
   if (!t) return null;
-  const startsWithLetter = FORM_TEMPLATE_SHEET_LETTER_START_RE.test(t);
+  t = t.replace(/（[^）]*）$/g, '').trim();
 
-  if (startsWithLetter) {
-    t = t.replace(/（[^）]*）$/g, '').trim();
-
-    const dash = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}-(\\d+)$`, 'i'));
-    if (dash) {
-      return { reportCode: dash[1].toUpperCase(), versionLabel: dash[2] };
-    }
-
-    const under = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}_(\\d+)$`, 'i'));
-    if (under) {
-      return { reportCode: under[1].toUpperCase(), versionLabel: under[2] };
-    }
-
-    const codeOnly = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}$`, 'i'));
-    if (codeOnly) {
-      return { reportCode: codeOnly[1].toUpperCase(), versionLabel: null };
-    }
-
-    const legacyPrefix = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}`, 'i'));
-    if (legacyPrefix) {
-      return { reportCode: legacyPrefix[1].toUpperCase(), versionLabel: null };
-    }
+  const codeOnly = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}$`, 'i'));
+  if (codeOnly) {
+    return codeOnly[1].toUpperCase();
   }
 
-  // Sheet 名以中文开头等场景：从文件名回退表号与版本
-  if (fileMeta?.reportCode) {
-    return {
-      reportCode: fileMeta.reportCode,
-      versionLabel: fileMeta.versionLabel || null,
-    };
+  const legacyPrefix = t.match(new RegExp(`^${FORM_TEMPLATE_REPORT_CODE_RE}`, 'i'));
+  if (legacyPrefix) {
+    return legacyPrefix[1].toUpperCase();
   }
 
   return null;
+}
+
+/**
+ * 从 Sheet 名解析表号与版本
+ * 规则：Sheet 名必须含「_」，最后一个「_」后的字符串为版本；为空时默认 LASTEST
+ * 例：G0100_231、G0101a_231、NR0100_、ABC01_100
+ * 若「_」前的代号部分无法解析表号，可传入 fileMeta 从文件名回退表号
+ * @returns {null | { reportCode: string, versionLabel: string }}
+ */
+export function parseFormTemplateSheetMeta(sheetName, fileMeta = null) {
+  const t = String(sheetName || '').trim();
+  if (!t || !t.includes('_')) return null;
+
+  const lastUnderscore = t.lastIndexOf('_');
+  const codePart = t.slice(0, lastUnderscore).trim();
+  const versionPart = t.slice(lastUnderscore + 1).trim();
+
+  if (!codePart || isExcludedTemplateSheet(codePart) || isExcludedTemplateSheet(t)) return null;
+
+  let reportCode = parseReportCodeFromCodePart(codePart);
+  if (!reportCode && fileMeta?.reportCode) {
+    reportCode = fileMeta.reportCode;
+  }
+  if (!reportCode) return null;
+
+  const versionLabel = versionPart || FORM_TEMPLATE_LATEST_VERSION;
+
+  return { reportCode, versionLabel };
 }
 
 /** 从 Sheet 名取表号（完整代号，如 G0101a、G4A00X2） */
@@ -131,29 +129,13 @@ export function parseFormTemplateReportCodeFromSheetName(name, fileMeta) {
   return parseFormTemplateSheetMeta(name, fileMeta)?.reportCode || null;
 }
 
-/** Sheet 名是否为表样 Sheet（字母开头可解析表号，或文件名含表号且非排除项） */
+/** Sheet 名是否为表样 Sheet（必须含「_」且可解析出表号，或为排除项） */
 export function isFormTemplateReportCode(name, fileMeta = null) {
   return Boolean(parseFormTemplateSheetMeta(name, fileMeta));
 }
 
 function resolveImportSheetNames(workbook, fileMeta) {
-  // 优先取能直接解析表号的 Sheet（如 G0100_231）
-  const directSheets = workbook.SheetNames.filter((n) => Boolean(parseFormTemplateSheetMeta(n)));
-  if (directSheets.length > 0) {
-    return directSheets;
-  }
-
-  // 无直接解析表号时，若文件名含表号，则取非排除项 Sheet（支持中文 Sheet 名）
-  if (fileMeta?.reportCode) {
-    const candidates = workbook.SheetNames.filter((n) => !isExcludedTemplateSheet(n));
-    const matched = candidates.find((n) => {
-      const meta = parseFormTemplateSheetMeta(n, fileMeta);
-      return meta?.reportCode === fileMeta.reportCode;
-    });
-    if (matched) return [matched];
-  }
-
-  return [];
+  return workbook.SheetNames.filter((n) => Boolean(parseFormTemplateSheetMeta(n, fileMeta)));
 }
 
 function normalizeCellValue(value) {
