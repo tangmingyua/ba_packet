@@ -317,9 +317,13 @@ function buildFieldMappingsByVersion(versionIds) {
     fieldMappingDefaultDisplayByVersion[key] = mappings
       .filter((m) => m.defaultDisplay)
       .map((m) => m.originalColumn);
-    fieldMappingDefaultFilterByVersion[key] = mappings
+    const configuredFilters = mappings
       .filter((m) => m.defaultFilter)
       .map((m) => m.originalColumn);
+    // 版本列必须作为默认筛选（按版本映射后的 Excel 列名，未映射时回退「版本」）
+    const versionCol = fieldMappingsByVersion[key]['version'] || '版本';
+    const filters = new Set([versionCol, ...configuredFilters]);
+    fieldMappingDefaultFilterByVersion[key] = [...filters];
     fieldMappingAggregateDisplayByVersion[key] = mappings
       .filter((m) => m.aggregateDisplay)
       .map((m) => m.originalColumn);
