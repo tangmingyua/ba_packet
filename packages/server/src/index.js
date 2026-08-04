@@ -458,17 +458,26 @@ app.post('/api/form-template/import', async (request, reply) => {
   }
 });
 
-app.get('/api/form-templates', async () => ({ items: listFormTemplates() }));
+app.get('/api/form-templates', async (request) => {
+  const { moduleCode, subtypeCode } = request.query || {};
+  return {
+    items: listFormTemplates({
+      moduleCode: moduleCode ? String(moduleCode) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
+    }),
+  };
+});
 
 app.get('/api/form-templates/search', async (request, reply) => {
   try {
-    const { q, hitsPerTemplate, maxTemplates, moduleCode, reportQuery } = request.query || {};
+    const { q, hitsPerTemplate, maxTemplates, moduleCode, reportQuery, subtypeCode } = request.query || {};
     if (!String(q ?? '').trim()) {
       return reply.code(400).send({ message: '请提供搜索关键词 q' });
     }
     return searchFormTemplates(q, {
       maxTemplates: maxTemplates ? Number(maxTemplates) : undefined,
       moduleCode: moduleCode ? String(moduleCode) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
       reportQuery: reportQuery ? String(reportQuery) : undefined,
     });
   } catch (error) {

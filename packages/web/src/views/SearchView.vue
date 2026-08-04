@@ -177,6 +177,7 @@
           v-else-if="selectedStorageKind === 'form_template'"
           :keyword="lastKeyword"
           :module-code="moduleCode"
+          :subtype-code="selectedSubtypeCode"
           :empty-text="emptyText"
         />
 

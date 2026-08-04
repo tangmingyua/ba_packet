@@ -269,8 +269,12 @@ export async function importFormTemplateExcel(file, { moduleCode, subtypeCode } 
   return response.json();
 }
 
-export function listFormTemplates() {
-  return request('/api/form-templates');
+export function listFormTemplates({ moduleCode, subtypeCode } = {}) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  const qs = query.toString();
+  return request(`/api/form-templates${qs ? `?${qs}` : ''}`);
 }
 
 export function getFormTemplate(id) {
@@ -281,10 +285,11 @@ export function deleteFormTemplate(id) {
   return request(`/api/form-templates/${id}`, { method: 'DELETE' });
 }
 
-export function searchFormTemplateCells(q, { maxTemplates, moduleCode, reportQuery } = {}) {
+export function searchFormTemplateCells(q, { maxTemplates, moduleCode, reportQuery, subtypeCode } = {}) {
   const query = new URLSearchParams({ q: String(q) });
   if (maxTemplates != null) query.set('maxTemplates', String(maxTemplates));
   if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
   if (reportQuery) query.set('reportQuery', String(reportQuery));
   return request(`/api/form-templates/search?${query}`);
 }

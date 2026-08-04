@@ -466,12 +466,27 @@ function mapFormTemplateRow(row) {
   };
 }
 
-export function listFormTemplates() {
+export function listFormTemplates({ moduleCode, subtypeCode } = {}) {
+  const conditions = [];
+  const params = [];
+  const mod = String(moduleCode ?? '').trim();
+  const st = String(subtypeCode ?? '').trim();
+  if (mod) {
+    conditions.push('module_code = ?');
+    params.push(mod);
+  }
+  if (st) {
+    conditions.push('subtype_code = ?');
+    params.push(st);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = queryAll(
     `SELECT id, report_code, report_title, version_label, module_code, sheet_name,
             source_file_name, file_hash, row_count, col_count, imported_at
      FROM form_templates
-     ORDER BY report_code, version_label`
+     ${where}
+     ORDER BY report_code, version_label`,
+    params
   );
   return rows.map(mapFormTemplateRow);
 }

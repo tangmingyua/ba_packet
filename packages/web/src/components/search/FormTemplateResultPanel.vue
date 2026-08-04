@@ -120,6 +120,7 @@ import { resolveIndicatorKeyAtCell } from '../../utils/formTemplateIndicator.js'
 const props = defineProps({
   keyword: { type: String, default: '' },
   moduleCode: { type: String, default: '' },
+  subtypeCode: { type: String, default: '' },
   emptyText: { type: String, default: '未找到匹配表样' },
 });
 
@@ -195,8 +196,11 @@ async function loadBrowseList() {
   loadError.value = '';
   searched.value = true;
   try {
-    const res = await listFormTemplates();
-    listItems.value = filterByModule(res.items || []);
+    const res = await listFormTemplates({
+      moduleCode: props.moduleCode.trim() || undefined,
+      subtypeCode: props.subtypeCode.trim() || undefined,
+    });
+    listItems.value = res.items || [];
     searchResult.value = null;
     if (listItems.value.length) {
       await selectTemplate(listItems.value[0]);
@@ -227,6 +231,7 @@ async function loadSearchList() {
   try {
     searchResult.value = await searchFormTemplateCells(props.keyword.trim(), {
       moduleCode: props.moduleCode.trim() || undefined,
+      subtypeCode: props.subtypeCode.trim() || undefined,
     });
     listItems.value = searchResult.value.items || [];
     if (listItems.value.length) {
@@ -343,7 +348,7 @@ async function onIndicatorCellClick({ row, col }) {
 }
 
 watch(
-  () => [props.keyword, props.moduleCode],
+  () => [props.keyword, props.moduleCode, props.subtypeCode],
   () => {
     reload();
   },
