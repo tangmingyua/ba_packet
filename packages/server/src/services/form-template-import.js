@@ -397,6 +397,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     reportTitle,
     versionLabel,
     sheetName,
+    sheetIndex: options.sheetIndex ?? 0,
     fileName: options.fileName || '',
     fileNameMatched: Boolean(options.fileNameMatched),
     module: options.moduleCode || options.module || '1104',
@@ -432,16 +433,17 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
   const sheets = [];
   const skipped = [];
 
-  for (const sheetName of sheetNames) {
+  sheetNames.forEach((sheetName, sheetIndex) => {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) {
       skipped.push({ sheetName, reason: 'Sheet 不存在' });
-      continue;
+      return;
     }
 
     const sheetMeta = parseFormTemplateSheetMeta(sheetName, fileMeta);
     const parsed = parseFormTemplateFromSheet(sheet, {
       sheetName,
+      sheetIndex,
       fileName,
       reportCode: sheetMeta?.reportCode || fileMeta.reportCode || null,
       fileMeta,
@@ -451,11 +453,11 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
 
     if (parsed.rowCount === 0 && parsed.colCount === 0) {
       skipped.push({ sheetName, reason: '空 Sheet' });
-      continue;
+      return;
     }
 
     sheets.push(parsed);
-  }
+  });
 
   if (!sheets.length) {
     const detail = skipped.map((s) => `${s.sheetName}（${s.reason}）`).join('、');
@@ -488,6 +490,7 @@ function mapFormTemplateRow(row) {
     reportTitle: resolveFormTemplateReportTitle(row.sheet_name, row.report_title, row.module_code),
     versionLabel: row.version_label,
     moduleCode: row.module_code || '1104',
+    sheetIndex: Number(row.sheet_index ?? 0),
     subtypeCode: row.subtype_code || '',
     sheetName: row.sheet_name,
     sourceFileName: row.source_file_name || '',
@@ -514,10 +517,10 @@ export function listFormTemplates({ moduleCode, subtypeCode } = {}) {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = queryAll(
     `SELECT id, report_code, report_title, version_label, module_code, subtype_code, sheet_name,
-            source_file_name, file_hash, row_count, col_count, imported_at
+            source_file_name, file_hash, row_count, col_count, imported_at, sheet_index
      FROM form_templates
      ${where}
-     ORDER BY report_code, version_label`,
+     ORDER BY imported_at, sheet_index`,
     params
   );
   return rows.map(mapFormTemplateRow);
@@ -622,8 +625,8 @@ function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
   run(
     `INSERT INTO form_templates (
        report_code, report_title, version_label, subtype_code, module_code, sheet_name, source_file_name, file_hash,
-       matrix_json, merges_json, layout_json, col_widths_json, row_heights_json, row_count, col_count
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       matrix_json, merges_json, layout_json, col_widths_json, row_heights_json, row_count, col_count, sheet_index
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       parsed.reportCode,
       parsed.reportTitle,
@@ -640,6 +643,7 @@ function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
       rowHeightsJson,
       parsed.rowCount,
       parsed.colCount,
+      parsed.sheetIndex ?? 0,
     ]
   );
   const inserted = queryOne('SELECT last_insert_rowid() AS id');

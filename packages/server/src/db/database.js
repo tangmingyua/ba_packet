@@ -350,6 +350,15 @@ function ensureFormTemplateDimensionColumns() {
   }
 }
 
+/** form_templates：Sheet 在工作簿中的原始顺序 */
+function ensureFormTemplateSheetIndexColumn() {
+  const cols = queryAll('PRAGMA table_info(form_templates)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'sheet_index')) {
+    run(`ALTER TABLE form_templates ADD COLUMN sheet_index INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+
 /** form_templates：导入时选择的模块 */
 function ensureFormTemplateModuleColumn() {
   const cols = queryAll('PRAGMA table_info(form_templates)');
@@ -514,6 +523,7 @@ function ensureDatasetModelSchema() {
   ensureFormTemplateLayoutColumn();
   ensureFormTemplateDimensionColumns();
   ensureFormTemplateModuleColumn();
+  ensureFormTemplateSheetIndexColumn();
   ensureWordImportSchema();
   db.run(schema);
 
@@ -527,6 +537,7 @@ function ensureDatasetModelSchema() {
   ensureFormTemplateLayoutColumn();
   ensureFormTemplateDimensionColumns();
   ensureFormTemplateModuleColumn();
+  ensureFormTemplateSheetIndexColumn();
   ensureWordImportSchema();
   backfillFormTemplateCells();
   backfillFormTemplateLayouts({ queryAll, run, saveDb });

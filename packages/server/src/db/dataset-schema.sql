@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS form_templates (
   row_heights_json TEXT NOT NULL DEFAULT '[]',
   row_count INTEGER NOT NULL DEFAULT 0,
   col_count INTEGER NOT NULL DEFAULT 0,
+  sheet_index INTEGER NOT NULL DEFAULT 0,
   imported_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (report_code, version_label)
 );

@@ -441,6 +441,21 @@ describe('form-template-import', () => {
     );
   });
 
+  it('多 Sheet 导入后表样列表按 Sheet 顺序排列', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['G05表']]), 'G0500_');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['G06表']]), 'G0600_');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
+    const items = listFormTemplates().filter(
+      (x) => x.reportCode === 'G0500' || x.reportCode === 'G0600'
+    );
+    assert.deepEqual(
+      items.map((x) => x.sheetName),
+      ['G0500_', 'G0600_']
+    );
+  });
+
   it('多 Sheet：Sheet 名带版本仍全部导入', () => {
     const buffer = buildMultiSheetWorkbookWithVersionNames();
     const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'logic_999.xlsx' });
