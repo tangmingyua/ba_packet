@@ -27,7 +27,7 @@
         <ul v-else class="template-items">
           <li v-for="item in items" :key="item.id">
             <router-link
-              :to="{ name: 'formTemplateDetail', params: { id: item.id } }"
+              :to="{ name: 'formTemplateDetail', params: { id: item.id }, query: route.query }"
               class="template-item"
               :class="{ active: activeId === item.id }"
             >
@@ -181,7 +181,7 @@ async function refreshList() {
     });
     items.value = res.items || [];
     if (!activeId.value && items.value.length) {
-      router.replace({ name: 'formTemplateDetail', params: { id: items.value[0].id } });
+      router.replace({ name: 'formTemplateDetail', params: { id: items.value[0].id }, query: route.query });
     }
   } catch (e) {
     loadError.value = e.message || '加载表样列表失败';
@@ -280,7 +280,7 @@ async function removeActiveTemplate() {
     clearInstruction();
     await refreshList();
     if (!items.value.length) {
-      router.replace({ name: 'formTemplates' });
+      router.replace({ name: 'formTemplates', query: route.query });
     }
   } catch (e) {
     loadError.value = e.message || '删除表样失败';
@@ -299,7 +299,7 @@ watch(
 
 watch(items, (list) => {
   if (activeId.value && !list.some((x) => x.id === activeId.value) && list.length) {
-    router.replace({ name: 'formTemplateDetail', params: { id: list[0].id } });
+    router.replace({ name: 'formTemplateDetail', params: { id: list[0].id }, query: route.query });
   }
 });
 
