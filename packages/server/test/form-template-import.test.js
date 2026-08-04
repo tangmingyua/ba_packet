@@ -566,6 +566,7 @@ describe('form-template-import', () => {
     assert.equal(listRes.statusCode, 200);
     const { items } = listRes.json();
     assert.ok(items.length >= 2);
+    assert.ok(items.every((item) => item.subtypeCode));
 
     const detailRes = await app.inject({
       method: 'GET',
@@ -576,6 +577,18 @@ describe('form-template-import', () => {
     const detail = detailRes.json();
     assert.ok(detail.matrix.length > 0);
     assert.ok(Array.isArray(detail.merges));
+  });
+
+  it('GET /api/form-templates 可按 subtypeCode 筛选', async () => {
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/form-templates?subtypeCode=1104_FORM_TEMPLATE',
+      headers: authHeaders(),
+    });
+    assert.equal(listRes.statusCode, 200);
+    const { items } = listRes.json();
+    assert.ok(items.length >= 1);
+    assert.ok(items.every((item) => item.subtypeCode === '1104_FORM_TEMPLATE'));
   });
 
   it('deleteFormTemplate 删除表样与 cells', () => {

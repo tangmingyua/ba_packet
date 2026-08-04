@@ -477,6 +477,7 @@ function mapFormTemplateRow(row) {
     reportTitle: row.report_title || '',
     versionLabel: row.version_label,
     moduleCode: row.module_code || '1104',
+    subtypeCode: row.subtype_code || '',
     sheetName: row.sheet_name,
     sourceFileName: row.source_file_name || '',
     fileHash: row.file_hash || '',
@@ -501,7 +502,7 @@ export function listFormTemplates({ moduleCode, subtypeCode } = {}) {
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = queryAll(
-    `SELECT id, report_code, report_title, version_label, module_code, sheet_name,
+    `SELECT id, report_code, report_title, version_label, module_code, subtype_code, sheet_name,
             source_file_name, file_hash, row_count, col_count, imported_at
      FROM form_templates
      ${where}

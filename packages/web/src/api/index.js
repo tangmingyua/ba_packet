@@ -118,6 +118,10 @@ export function deleteStandardField(code) {
   });
 }
 
+export function listSubtypes() {
+  return request('/api/dataset/subtypes');
+}
+
 export function updateSubtype(code, body) {
   return request(`/api/dataset/subtypes/${encodeURIComponent(code)}`, {
     method: 'PUT',

@@ -8,6 +8,17 @@
           <h3>表样</h3>
           <router-link to="/import?tab=import&subtype=1104_FORM_TEMPLATE" class="btn-link">去导入</router-link>
         </div>
+        <div class="list-filter">
+          <label>
+            <span>子类</span>
+            <select v-model="selectedSubtypeCode">
+              <option value="">全部</option>
+              <option v-for="st in formTemplateSubtypes" :key="st.code" :value="st.code">
+                {{ st.moduleCode }} · {{ st.name }}
+              </option>
+            </select>
+          </label>
+        </div>
         <p v-if="loadingList" class="muted">加载中…</p>
         <p v-else-if="!items.length" class="muted empty-hint">
           暂无表样。
@@ -113,6 +124,7 @@ import { useRoute, useRouter } from 'vue-router';
 import {
   getFormTemplate,
   listFormTemplates,
+  listSubtypes,
   deleteFormTemplate,
   getDocumentByReport,
   getDocumentIndicator,
@@ -129,6 +141,12 @@ const loadingList = ref(false);
 const loadingDetail = ref(false);
 const deleting = ref(false);
 const loadError = ref('');
+const subtypes = ref([]);
+const selectedSubtypeCode = ref(route.query.subtype || '');
+
+const formTemplateSubtypes = computed(() =>
+  subtypes.value.filter((s) => s.storageKind === 'form_template').sort((a, b) => a.sortOrder - b.sortOrder)
+);
 
 const selectedCell = ref(null);
 const instruction = ref(null);
@@ -158,7 +176,9 @@ async function refreshList() {
   loadingList.value = true;
   loadError.value = '';
   try {
-    const res = await listFormTemplates();
+    const res = await listFormTemplates({
+      subtypeCode: selectedSubtypeCode.value || undefined,
+    });
     items.value = res.items || [];
     if (!activeId.value && items.value.length) {
       router.replace({ name: 'formTemplateDetail', params: { id: items.value[0].id } });
@@ -167,6 +187,15 @@ async function refreshList() {
     loadError.value = e.message || '加载表样列表失败';
   } finally {
     loadingList.value = false;
+  }
+}
+
+async function loadSubtypes() {
+  try {
+    const res = await listSubtypes();
+    subtypes.value = res.items || [];
+  } catch (e) {
+    loadError.value = e.message || '加载子类失败';
   }
 }
 
@@ -274,6 +303,21 @@ watch(items, (list) => {
   }
 });
 
+watch(selectedSubtypeCode, (val, oldVal) => {
+  if (val === oldVal) return;
+  const query = val ? { subtype: val } : {};
+  router.replace({ name: 'formTemplates', query });
+});
+
+watch(
+  () => route.query.subtype,
+  (val) => {
+    selectedSubtypeCode.value = val || '';
+    refreshList();
+  }
+);
+
+loadSubtypes();
 refreshList();
 </script>
 
@@ -316,6 +360,29 @@ refreshList();
 .list-header h3 {
   font-size: 14px;
   font-weight: 600;
+}
+
+.list-filter {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.list-filter label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.list-filter select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text);
 }
 
 .template-items {
