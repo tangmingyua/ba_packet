@@ -68,8 +68,12 @@ export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
 
 /**
  * 表样显示名称：Sheet 名中最后一个「_」前的全部字符串；无下划线时回退到已存储标题或 Sheet 名
+ * 一表通特殊处理：Sheet 名即为表名，不分割
  */
-export function resolveFormTemplateReportTitle(sheetName, reportTitle) {
+export function resolveFormTemplateReportTitle(sheetName, reportTitle, moduleCode) {
+  if (moduleCode === 'YBT') {
+    return String(sheetName || '').trim();
+  }
   const t = String(sheetName || '').trim();
   if (t.includes('_')) {
     return t.slice(0, t.lastIndexOf('_')).trim();
@@ -116,13 +120,26 @@ function parseReportCodeFromCodePart(codePart) {
  */
 export function parseFormTemplateSheetMeta(sheetName, fileMeta = null) {
   const t = String(sheetName || '').trim();
-  if (!t || !t.includes('_')) return null;
+  if (!t || isExcludedTemplateSheet(t)) return null;
+
+  const isYbt = fileMeta?.moduleCode === 'YBT';
+
+  // 一表通：所有非排除 Sheet 都导入，Sheet 名即为表名，版本从文件名或 LASTEST
+  if (isYbt) {
+    const reportCode = parseReportCodeFromCodePart(t) || fileMeta?.reportCode || t;
+    return {
+      reportCode,
+      versionLabel: fileMeta?.versionLabel || FORM_TEMPLATE_LATEST_VERSION,
+    };
+  }
+
+  if (!t.includes('_')) return null;
 
   const lastUnderscore = t.lastIndexOf('_');
   const codePart = t.slice(0, lastUnderscore).trim();
   const versionPart = t.slice(lastUnderscore + 1).trim();
 
-  if (!codePart || isExcludedTemplateSheet(codePart) || isExcludedTemplateSheet(t)) return null;
+  if (!codePart || isExcludedTemplateSheet(codePart)) return null;
 
   let reportCode = parseReportCodeFromCodePart(codePart);
   if (!reportCode && fileMeta?.reportCode) {
@@ -364,7 +381,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
   } = trimMatrixPadding(cleaned, merges, { colWidths, rowHeights });
   const sheetMeta = parseFormTemplateSheetMeta(sheetName, options.fileMeta);
   const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();
-  const reportTitle = resolveFormTemplateReportTitle(sheetName);
+  const reportTitle = resolveFormTemplateReportTitle(sheetName, '', options.module);
   const versionLabel =
     options.versionLabel !== undefined
       ? options.versionLabel
@@ -407,7 +424,8 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
     throw new Error('工作簿无 Sheet');
   }
 
-  const fileMeta = parseFileNameMeta(fileName) || { reportCode: null, versionLabel: '' };
+  const parsedFileMeta = parseFileNameMeta(fileName) || { reportCode: null, versionLabel: '' };
+  const fileMeta = { ...parsedFileMeta, moduleCode };
   const nameMatch = matchFormTemplateFileName(fileName);
   const sheetNames = resolveImportSheetNames(workbook, fileMeta);
 
@@ -467,7 +485,7 @@ function mapFormTemplateRow(row) {
   return {
     id: Number(row.id),
     reportCode: row.report_code,
-    reportTitle: resolveFormTemplateReportTitle(row.sheet_name, row.report_title),
+    reportTitle: resolveFormTemplateReportTitle(row.sheet_name, row.report_title, row.module_code),
     versionLabel: row.version_label,
     moduleCode: row.module_code || '1104',
     subtypeCode: row.subtype_code || '',

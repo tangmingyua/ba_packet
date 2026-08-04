@@ -236,8 +236,10 @@
 
       <div v-if="importStorageKind === 'form_template'" class="import-kind-panel">
       <p class="hint">
-        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。仅导入 Sheet 名含「_」的 Sheet（如 G0100_231、S2400_201、NR0100_231）；
-        最后一个「_」后的字符串为版本，若该部分为空则默认版本为 LASTEST。若「_」前无法解析表号，但文件名含表号（如 G0100-logic_231.xlsx），可从文件名回退表号。
+        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。
+        非一表通模块仅导入 Sheet 名含「_」的 Sheet（如 G0100_231、S2400_201、NR0100_231），最后一个「_」后的字符串为版本，为空则默认 LASTEST；
+        一表通模块不强制 Sheet 名含「_」，所有非排除 Sheet 均导入，Sheet 名即为表名，版本从文件名或默认 LASTEST。
+        若 Sheet 名无法解析表号，但文件名含表号（如 G0100-logic_231.xlsx），可从文件名回退表号。
         逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
       </p>
       <fieldset class="form-section">

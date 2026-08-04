@@ -96,6 +96,7 @@ function authHeaders(extra = {}) {
 
 const IMPORT_1104 = { moduleCode: '1104' };
 const IMPORT_NR = { moduleCode: 'IMAS' };
+const IMPORT_YBT = { moduleCode: 'YBT' };
 
 describe('form-template-import', () => {
   let tmpDir;
@@ -506,6 +507,30 @@ describe('form-template-import', () => {
     const items = listFormTemplates().filter((x) => x.reportCode === 'NR0100');
     assert.equal(items.length, 1);
     assert.equal(getFormTemplate(items[0].id).matrix[0][0], 'NR表 v2');
+  });
+
+  it('一表通模块不强制 Sheet 名含「_」，Sheet 名即为表名', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['表一'], ['1. 项目']]),
+      'JGXX(1.1机构信息)'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['表二'], ['2. 项目']]),
+      'ZHGL(1.2账户管理)'
+    );
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'ybt.xlsx', ...IMPORT_YBT });
+    assert.equal(parsed.sheets.length, 2);
+    const bySheet = Object.fromEntries(parsed.sheets.map((s) => [s.sheetName, s]));
+    assert.equal(bySheet['JGXX(1.1机构信息)'].reportCode, 'JGXX');
+    assert.equal(bySheet['JGXX(1.1机构信息)'].reportTitle, 'JGXX(1.1机构信息)');
+    assert.equal(bySheet['JGXX(1.1机构信息)'].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+    assert.equal(bySheet['ZHGL(1.2账户管理)'].reportCode, 'ZHGL');
+    assert.equal(bySheet['ZHGL(1.2账户管理)'].reportTitle, 'ZHGL(1.2账户管理)');
   });
 
   it('POST /api/form-template/import 须传 moduleCode', async () => {

@@ -160,13 +160,14 @@ export function searchFormTemplates(keyword, options = {}) {
     const items = templates.slice(0, maxTemplates).map((template) => {
       const id = Number(template.id);
       const cellHits = cellHitMap.get(id) || 0;
+      const moduleCode = template.module_code || inferFormTemplateModule(template.report_code);
       return {
         id,
         reportCode: template.report_code,
-        reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title),
+        reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title, moduleCode),
         versionLabel: template.version_label,
         sheetName: template.sheet_name,
-        moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
+        moduleCode,
         subtypeCode: template.subtype_code || '',
         hitCount: cellHits || 1,
       };
@@ -208,13 +209,14 @@ export function searchFormTemplates(keyword, options = {}) {
     if (!hitCount) continue;
 
     totalHits += hitCount;
+    const moduleCode = template.module_code || inferFormTemplateModule(template.report_code);
     items.push({
       id,
       reportCode: template.report_code,
-      reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title),
+      reportTitle: resolveFormTemplateReportTitle(template.sheet_name, template.report_title, moduleCode),
       versionLabel: template.version_label,
       sheetName: template.sheet_name,
-      moduleCode: template.module_code || inferFormTemplateModule(template.report_code),
+      moduleCode,
       subtypeCode: template.subtype_code || '',
       hitCount,
     });
