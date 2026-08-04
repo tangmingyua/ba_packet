@@ -68,6 +68,17 @@ function buildMultiSheetWorkbookWithSuffixNames() {
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
+/** Sheet 名以中文开头，文件名含表号 */
+function buildChineseSheetWorkbook() {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([['G01资产负债项目统计表'], ['1. 现金']]),
+    '表样'
+  );
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
 function authHeaders(extra = {}) {
   return { authorization: `Bearer ${getApiToken()}`, ...extra };
 }
@@ -438,6 +449,14 @@ describe('form-template-import', () => {
     const byCode = Object.fromEntries(parsed.sheets.map((s) => [s.reportCode, s.versionLabel]));
     assert.equal(byCode.G0100, '777');
     assert.equal(byCode.G0200, FORM_TEMPLATE_LATEST_VERSION);
+  });
+
+  it('Sheet 名以中文开头且文件名含表号时可导入', () => {
+    const buffer = buildChineseSheetWorkbook();
+    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'G0100-logic_231.xlsx' });
+    assert.equal(parsed.sheets.length, 1);
+    assert.equal(parsed.sheets[0].reportCode, 'G0100');
+    assert.equal(parsed.sheets[0].versionLabel, '231');
   });
 
   it('NR 表无 _ 版本时导入为 LASTEST 且再次导入覆盖', () => {

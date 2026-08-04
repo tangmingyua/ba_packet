@@ -236,8 +236,9 @@
 
       <div v-if="importStorageKind === 'form_template'" class="import-kind-panel">
       <p class="hint">
-        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。仅导入 Sheet 名以字母开头且可解析表号的
-        Sheet（如 G0100_231、S2400_201、NR0100_231）；Sheet 名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
+        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。优先导入 Sheet 名以字母开头且可解析表号的
+        Sheet（如 G0100_231、S2400_201、NR0100_231）；若 Sheet 名以中文开头，但文件名含表号（如 G0100-logic_231.xlsx），也可从文件名回退表号。
+        Sheet 名带 _版本 则写入版本，否则版本留空。逻辑公式自动清空；同表号+版本+模块已存在时需先删除再导入。
       </p>
       <fieldset class="form-section">
         <legend>上传表样 Excel</legend>
