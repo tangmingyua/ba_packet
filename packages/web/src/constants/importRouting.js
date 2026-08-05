@@ -23,3 +23,12 @@ export function resolveImportTabFromRoute(query = {}) {
 export function isExcelStorageKind(kind) {
   return !kind || kind === 'excel';
 }
+
+/** 配置类 + 表样 Excel / Word 等需在子类下维护版本号 */
+export function supportsSubtypeVersions(kind) {
+  return isExcelStorageKind(kind) || kind === 'form_template' || kind === 'document';
+}
+
+export function isRestoreVersionedKind(kind) {
+  return kind === 'form_template' || kind === 'document';
+}

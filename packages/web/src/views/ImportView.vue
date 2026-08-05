@@ -1,7 +1,7 @@
 <template>
   <section class="import-page">
     <p class="hint page-intro">
-        选择资料子类后上传对应文件。配置类须先在「子类配置」中完成版本与字段映射；表样 Excel / Word / SQL / 码值等还原类子类选定解析方式后可直接导入。
+        选择资料子类后上传对应文件。配置类须先在「子类配置」中完成版本与字段映射；表样 Excel / 填报说明 Word 须在子类下新建版本并在导入时填写版本号；SQL / 码值等可直接导入。
       </p>
 
     <nav class="qa-module-tabs" role="tablist">
@@ -71,6 +71,9 @@
           形态 {{ selectedImportSubtype.storageKindLabel || selectedImportSubtype.storageKind }}
           <template v-if="importStorageKind === 'excel'">
             · 须在子类配置中启用并完成字段映射
+          </template>
+          <template v-else-if="restoreImportNeedsVersion">
+            · 须先在子类配置中新建版本，导入时填写版本号
           </template>
         </p>
         <p v-if="selectedImportSubtype && !selectedImportSubtype.enabled" class="feedback error">
@@ -236,7 +239,7 @@
 
       <div v-if="importStorageKind === 'form_template'" class="import-kind-panel">
       <p class="hint">
-        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致）。
+        上传汇总指标表样 Excel。导入前须选择模块（与子类配置中的主类一致），并填写<strong>导入版本号</strong>（整批 Sheet 写入该版本；若留空则仍按 Sheet 名 / 文件名解析版本）。
         非一表通模块仅导入 Sheet 名含「_」的 Sheet（如 G0100_231、S2400_201、NR0100_231），最后一个「_」后的字符串为版本，为空则默认 LASTEST；
         一表通模块不强制 Sheet 名含「_」，所有非排除 Sheet 均导入，Sheet 名即为表名，版本从文件名或默认 LASTEST。
         若 Sheet 名无法解析表号，但文件名含表号（如 G0100-logic_231.xlsx），可从文件名回退表号。
@@ -252,6 +255,22 @@
                 {{ mod.name }}
               </option>
             </select>
+          </label>
+          <label v-if="restoreImportNeedsVersion" class="field">
+            <span class="label">导入版本号 <span class="required">*</span></span>
+            <input
+              v-model="restoreImportVersionLabel"
+              type="text"
+              list="restore-import-version-list-ft"
+              placeholder="如 231、v202601；可下拉选择已有版本"
+            />
+            <datalist id="restore-import-version-list-ft">
+              <option
+                v-for="v in selectedImportSubtypeVersions"
+                :key="v.id"
+                :value="v.versionLabel"
+              />
+            </datalist>
           </label>
           <div class="field span-2">
             <span class="label">Excel 文件</span>
@@ -283,7 +302,12 @@
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="!formTemplateFile || !formTemplateModuleCode || formTemplateImporting"
+            :disabled="
+              !formTemplateFile ||
+              !formTemplateModuleCode ||
+              formTemplateImporting ||
+              (restoreImportNeedsVersion && !restoreImportVersionOk)
+            "
             @click="doFormTemplateImport"
           >
             {{ formTemplateImporting ? '导入中...' : '导入表样' }}
@@ -442,13 +466,30 @@
 
       <div v-if="importStorageKind === 'document'" class="import-kind-panel">
       <p class="hint">
-        上传填报说明 Word（.docx）。系统自动识别合并填报说明或 IMAS 采集规范等格式，按表号拆分为多条记录；
+        上传填报说明 Word（<strong>.docx</strong>，Office 2007+ 格式）。不支持旧版 <strong>.doc</strong>，请先在 Word/WPS 中「另存为 docx」。须填写<strong>导入版本号</strong>，同 doc_code + 版本再次导入将覆盖。
+        系统自动识别合并填报说明或 IMAS 采集规范等格式，按表号拆分为多条记录；
         无法识别切分锚点时将整本导入为 1 条。Word 内表格不解析，显示「表样见 xx Excel 导入」。同 doc_code
         再次导入将覆盖。
       </p>
       <fieldset class="form-section">
         <legend>上传填报说明 Word</legend>
         <div class="form-grid">
+          <label v-if="restoreImportNeedsVersion" class="field span-2">
+            <span class="label">导入版本号 <span class="required">*</span></span>
+            <input
+              v-model="restoreImportVersionLabel"
+              type="text"
+              list="restore-import-version-list-doc"
+              placeholder="如 231、v202601；可下拉选择已有版本"
+            />
+            <datalist id="restore-import-version-list-doc">
+              <option
+                v-for="v in selectedImportSubtypeVersions"
+                :key="v.id"
+                :value="v.versionLabel"
+              />
+            </datalist>
+          </label>
           <div class="field span-2">
             <span class="label">Word 文件</span>
             <div
@@ -459,7 +500,7 @@
               @drop.prevent="onFillInstructionDrop"
             >
               <p v-if="!fillInstructionFile">
-                拖拽 .docx 到此处，或
+                拖拽 .docx 到此处（不支持 .doc），或
                 <label class="file-link"
                   >选择文件<input
                     type="file"
@@ -479,7 +520,11 @@
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="!fillInstructionFile || fillInstructionImporting"
+            :disabled="
+              !fillInstructionFile ||
+              fillInstructionImporting ||
+              (restoreImportNeedsVersion && !restoreImportVersionOk)
+            "
             @click="doFillInstructionImport"
           >
             {{ fillInstructionImporting ? '导入中...' : '导入填报说明' }}
@@ -528,8 +573,8 @@
               <td>{{ item.importedAt }}</td>
               <td>{{ item.sourceFileName }}</td>
               <td>
-                <router-link :to="{ path: '/', query: { q: item.docCode || '' } }" class="btn-link">
-                  查看
+                <router-link :to="{ path: `/documents/${item.id}` }" class="btn-link">
+                  查看填报说明
                 </router-link>
                 <button type="button" class="btn-link danger" @click="removeFillInstruction(item)">删除</button>
               </td>
@@ -658,7 +703,7 @@
               <button type="button" class="btn btn-primary" :disabled="saving" @click="addSubtype">
                 添加子类
               </button>
-              <p class="muted">code 创建后不可改；解析方式创建后不可改。配置类须配置版本与字段映射，还原类可直接导入。</p>
+              <p class="muted">code 创建后不可改；解析方式创建后不可改。配置类须配置版本与字段映射；表样 / Word 须配置版本后再导入。</p>
             </div>
           </div>
 
@@ -714,14 +759,14 @@
       </section>
 
       <section
-        v-if="activeSubtype && !isExcelStorageKind(activeSubtype.storageKind)"
+        v-if="activeSubtype && isRestoreVersionedKind(activeSubtype.storageKind)"
         class="config-card"
       >
         <header class="config-card-head">
-          <span class="card-step">还原类</span>
+          <span class="card-step">表样 / Word</span>
           <div>
             <h3>{{ activeSubtype.name }} · {{ activeSubtype.storageKindLabel }}</h3>
-            <p>还原类无需版本与字段映射。保存启用后，在「资料导入」选择该子类上传文件。</p>
+            <p>还原类也须在子类下维护版本号；导入时在资料导入页填写同一版本号，整批写入该版本。</p>
           </div>
         </header>
         <div class="config-card-body work-context">
@@ -763,6 +808,104 @@
           <button type="button" class="btn btn-primary" @click="setTab('import', { subtype: activeSubtype.code })">
             去资料导入
           </button>
+
+          <div class="restore-version-block">
+            <h4>版本列表</h4>
+            <p v-if="step2Message" class="feedback step-feedback" :class="step2MessageType">
+              {{ step2Message }}
+            </p>
+            <table v-if="activeSubtypeVersions.length" class="simple-table">
+              <thead>
+                <tr>
+                  <th>版本</th>
+                  <th>日期</th>
+                  <th>资料数</th>
+                  <th>默认</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="v in activeSubtypeVersions" :key="v.id">
+                  <td>{{ v.versionLabel }}</td>
+                  <td>{{ v.versionDate || '—' }}</td>
+                  <td>{{ v.recordCount ?? 0 }}</td>
+                  <td>{{ v.isDefault ? '是' : '' }}</td>
+                  <td>
+                    <button type="button" class="btn-link danger" @click.stop="removeVersion(v)">
+                      删除
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted">尚无版本，请在下方新建后再导入资料。</p>
+
+            <h4 class="panel-subhead">新建版本</h4>
+            <div class="form-grid-2">
+              <label class="field">
+                <span class="label">版本号</span>
+                <input v-model="newVersion.versionLabel" placeholder="如 231 / v202601" />
+              </label>
+              <label class="field">
+                <span class="label">版本日期</span>
+                <input v-model="newVersion.versionDate" type="date" />
+              </label>
+              <label class="check-item enable-check">
+                <input v-model="newVersion.isDefault" type="checkbox" />
+                设为默认版本
+              </label>
+            </div>
+            <button type="button" class="btn btn-primary" @click="addRestoreVersion">新建版本</button>
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="activeSubtype && !supportsSubtypeVersions(activeSubtype.storageKind)"
+        class="config-card"
+      >
+        <header class="config-card-head">
+          <span class="card-step">还原类</span>
+          <div>
+            <h3>{{ activeSubtype.name }} · {{ activeSubtype.storageKindLabel }}</h3>
+            <p>该形态无需子类版本。保存启用后，在「资料导入」选择该子类上传文件。</p>
+          </div>
+        </header>
+        <div class="config-card-body work-context">
+          <label class="field">
+            <span class="label">子类名称</span>
+            <input v-model="subtypeNameEdit" type="text" />
+          </label>
+          <label class="field">
+            <span class="label">所属主类</span>
+            <select v-model="subtypeModuleEdit">
+              <option v-for="m in catalog.modules" :key="m.code" :value="m.code">
+                {{ m.name }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">类型标签</span>
+            <select v-model="subtypeCategoryEdit">
+              <option v-for="cat in categoryOptions" :key="cat.code" :value="cat.code">
+                {{ cat.label }}
+              </option>
+            </select>
+          </label>
+          <label class="check-item enable-check">
+            <input
+              type="checkbox"
+              :checked="activeSubtype.enabled"
+              @change="toggleSubtypeEnabled($event.target.checked)"
+            />
+            启用该子类
+          </label>
+          <button type="button" class="btn" :disabled="saving" @click="saveSubtypeInfo">
+            保存子类信息
+          </button>
+          <button type="button" class="btn btn-primary" @click="setTab('import', { subtype: activeSubtype.code })">
+            去资料导入
+          </button>
         </div>
       </section>
 
@@ -772,7 +915,7 @@
           <span class="card-step">步骤 2</span>
           <div>
             <h3>版本总览</h3>
-            <p>查看各<strong>配置类</strong>子类版本状态；点击「配置 / 去新建」进入步骤 3。</p>
+            <p>查看各需维护版本的子类状态；配置类点击「配置」进入步骤 3，表样 / Word 在上方卡片中新建版本。</p>
           </div>
         </header>
 
@@ -785,7 +928,7 @@
               <span class="label">筛选子类</span>
               <select v-model="filterSubtypeCode">
                 <option value="">全部子类</option>
-                <option v-for="st in excelSubtypes" :key="st.code" :value="st.code">
+                <option v-for="st in versionedSubtypes" :key="st.code" :value="st.code">
                   {{ st.name }}
                 </option>
               </select>
@@ -809,7 +952,7 @@
             <button type="button" class="btn" @click="resetFilters">重置</button>
           </div>
           <p class="overview-summary">
-            共 {{ excelSubtypes.length }} 个 Excel 子类 · {{ totalVersionCount }} 个版本 ·
+            共 {{ versionedSubtypes.length }} 个需版本子类 · {{ totalVersionCount }} 个版本 ·
             显示 <strong>{{ filteredOverviewRows.length }}</strong> 条
           </p>
           <table class="simple-table overview-table">
@@ -845,7 +988,7 @@
                 <td>{{ row.versionLabel }}</td>
                 <td>{{ row.versionDate || '—' }}</td>
                 <td>{{ row.sheetName }}</td>
-                <td>{{ row.mappingCount }}</td>
+                <td>{{ row.mappingCount ?? '—' }}</td>
                 <td>{{ row.recordCount }}</td>
                 <td>{{ row.isDefault ? '是' : '' }}</td>
                 <td>
@@ -878,6 +1021,12 @@
           </p>
           <p v-if="!catalog.subtypes.length" class="empty-panel">
             请先完成步骤 1，添加至少一个子类。
+          </p>
+          <p
+            v-else-if="activeSubtype && isRestoreVersionedKind(activeSubtype.storageKind)"
+            class="empty-panel"
+          >
+            当前选中的是「{{ activeSubtype.name }}」，请在上方表样 / Word 卡片中维护版本；步骤 3 仅用于配置类 Excel。
           </p>
           <p
             v-else-if="activeSubtype && !isExcelStorageKind(activeSubtype.storageKind)"
@@ -1122,6 +1271,8 @@ import {
   IMPORT_TABS,
   resolveImportTabFromRoute,
   isExcelStorageKind,
+  supportsSubtypeVersions,
+  isRestoreVersionedKind,
 } from '../constants/importRouting.js';
 import {
   clearVersionRecords,
@@ -1224,6 +1375,8 @@ const fillInstructionMessageType = ref('');
 const fillInstructionImportItems = ref([]);
 const fillInstructions = ref([]);
 
+const restoreImportVersionLabel = ref('');
+
 const conversionScriptFile = ref(null);
 const conversionScriptModuleCode = ref('YBT');
 const conversionScriptDragging = ref(false);
@@ -1280,6 +1433,23 @@ const excelSubtypes = computed(() =>
   catalog.value.subtypes.filter((st) => isExcelStorageKind(st.storageKind))
 );
 
+const versionedSubtypes = computed(() =>
+  catalog.value.subtypes.filter((st) => supportsSubtypeVersions(st.storageKind))
+);
+
+const restoreImportNeedsVersion = computed(
+  () =>
+    importStorageKind.value === 'form_template' || importStorageKind.value === 'document'
+);
+
+const selectedImportSubtypeVersions = computed(
+  () => selectedImportSubtype.value?.versions || []
+);
+
+const restoreImportVersionOk = computed(
+  () => !restoreImportNeedsVersion.value || String(restoreImportVersionLabel.value || '').trim()
+);
+
 const importableSubtypes = computed(() => catalog.value.subtypes);
 
 const importSubtypeGroups = computed(() => {
@@ -1313,7 +1483,7 @@ const activeSubtype = computed(() =>
 const activeSubtypeVersions = computed(() => activeSubtype.value?.versions || []);
 
 const totalVersionCount = computed(() =>
-  catalog.value.subtypes.reduce((n, st) => n + (st.versions?.length || 0), 0)
+  versionedSubtypes.value.reduce((n, st) => n + (st.versions?.length || 0), 0)
 );
 
 const hasReadyVersion = computed(() =>
@@ -1324,8 +1494,9 @@ const hasReadyVersion = computed(() =>
 
 const allOverviewRows = computed(() => {
   const rows = [];
-  for (const st of excelSubtypes.value) {
+  for (const st of versionedSubtypes.value) {
     const versions = st.versions || [];
+    const isExcel = isExcelStorageKind(st.storageKind);
     if (!versions.length) {
       rows.push({
         rowKey: `${st.code}__empty`,
@@ -1341,6 +1512,7 @@ const allOverviewRows = computed(() => {
         isDefault: false,
         statusText: st.enabled ? '缺版本' : '未启用',
         statusClass: st.enabled ? 'warn' : 'muted',
+        isExcel,
       });
       continue;
     }
@@ -1350,7 +1522,7 @@ const allOverviewRows = computed(() => {
       if (!st.enabled) {
         statusText = '子类未启用';
         statusClass = 'muted';
-      } else if (v.mappingCount === 0) {
+      } else if (isExcel && v.mappingCount === 0) {
         statusText = '缺映射';
         statusClass = 'warn';
       }
@@ -1363,11 +1535,12 @@ const allOverviewRows = computed(() => {
         versionLabel: v.versionLabel,
         versionDate: v.versionDate || '',
         sheetName: v.sheetName,
-        mappingCount: v.mappingCount,
+        mappingCount: isExcel ? v.mappingCount : null,
         recordCount: v.recordCount,
         isDefault: v.isDefault,
         statusText,
         statusClass,
+        isExcel,
       });
     }
   }
@@ -1392,7 +1565,12 @@ const filteredOverviewRows = computed(() => {
     rows = rows.filter((r) => r.enabled);
   }
   if (filterReadyOnly.value) {
-    rows = rows.filter((r) => r.versionId && r.mappingCount > 0 && r.enabled);
+    rows = rows.filter(
+      (r) =>
+        r.versionId &&
+        r.enabled &&
+        (r.isExcel ? r.mappingCount > 0 : true)
+    );
   }
   return rows;
 });
@@ -1587,6 +1765,15 @@ watch(selectedImportSubtype, (st) => {
   }
   if (st.storageKind === 'script') {
     conversionScriptModuleCode.value = st.moduleCode;
+    refreshConversionScripts();
+  } else {
+    conversionScripts.value = [];
+  }
+  if (isRestoreVersionedKind(st.storageKind)) {
+    const def = st.versions?.find((v) => v.isDefault) || st.versions?.[0];
+    restoreImportVersionLabel.value = def?.versionLabel || restoreImportVersionLabel.value || '';
+  } else {
+    restoreImportVersionLabel.value = '';
   }
 });
 
@@ -1747,7 +1934,9 @@ async function addSubtype() {
     activeSubtypeCode.value = code;
     const successMsg = isExcelStorageKind(storageKind)
       ? `子类「${name}」已添加，请继续新建版本并保存映射`
-      : `子类「${name}」已添加，启用后即可在「资料导入」上传文件`;
+      : supportsSubtypeVersions(storageKind)
+        ? `子类「${name}」已添加，请新建版本后再导入资料`
+        : `子类「${name}」已添加，启用后即可在「资料导入」上传文件`;
     setStepMessage(1, 'success', successMsg);
   } catch (e) {
     setStepMessage(1, 'error', e.message || '添加失败');
@@ -1759,15 +1948,21 @@ async function addSubtype() {
 async function removeSubtype(st) {
   const versionCount = st.versions?.length || 0;
   const isExcel = isExcelStorageKind(st.storageKind);
+  const hasVersions = supportsSubtypeVersions(st.storageKind) && versionCount > 0;
+  const linkedCount = (st.versions || []).reduce((sum, v) => sum + (v.recordCount || 0), 0);
   let warn = `确认删除子类「${st.name}」？`;
   if (isExcel && versionCount > 0) {
-    warn = `子类「${st.name}」含 ${versionCount} 个版本及关联数据，删除后不可恢复，确认？`;
-  } else if (!isExcel) {
+    warn = `子类「${st.name}」含 ${versionCount} 个版本、约 ${linkedCount} 条数据行，删除后不可恢复，确认？`;
+  } else if (hasVersions) {
+    warn = `子类「${st.name}」含 ${versionCount} 个版本、${linkedCount} 条资料，删除后不可恢复，确认？`;
+  } else if (!supportsSubtypeVersions(st.storageKind)) {
     warn = `确认删除还原类子类「${st.name}」？若仍有资料需先在资料导入中删除。`;
   }
   if (!confirm(warn)) return;
   saving.value = true;
   clearStepMessage(1);
+  clearStepMessage(3);
+  setStepMessage(3, 'info', `正在删除子类「${st.name}」…`);
   try {
     await deleteSubtype(st.code);
     if (activeSubtypeCode.value === st.code) {
@@ -1779,8 +1974,11 @@ async function removeSubtype(st) {
     await refreshCatalog();
     await refreshDatasets();
     setStepMessage(1, 'success', `已删除子类：${st.code}`);
+    setStepMessage(3, 'success', `已删除子类：${st.code}`);
   } catch (e) {
-    setStepMessage(1, 'error', e.message || '删除失败');
+    const msg = e.message || '删除失败';
+    setStepMessage(1, 'error', msg);
+    setStepMessage(3, 'error', msg);
   } finally {
     saving.value = false;
   }
@@ -1823,6 +2021,22 @@ async function toggleSubtypeEnabled(enabled) {
   }
 }
 
+async function addRestoreVersion() {
+  newVersion.sheetName = '';
+  clearStepMessage(2);
+  try {
+    await createSubtypeVersion(activeSubtypeCode.value, { ...newVersion, sheetName: '' });
+    newVersion.versionLabel = '';
+    newVersion.sheetName = '';
+    newVersion.versionDate = '';
+    newVersion.isDefault = false;
+    await refreshCatalog();
+    setStepMessage(2, 'success', '版本已创建');
+  } catch (e) {
+    setStepMessage(2, 'error', e.message || '创建失败');
+  }
+}
+
 async function addVersion() {
   try {
     const hadPrevious = (activeSubtype.value?.versions?.length || 0) > 0;
@@ -1858,12 +2072,20 @@ async function openOverviewRow(row) {
   filterSubtypeCode.value = row.subtypeCode;
   clearStepMessage(2);
   if (row.versionId) {
-    await selectVersion(row.versionId);
+    if (row.isExcel) {
+      await selectVersion(row.versionId);
+    } else {
+      activeVersionId.value = null;
+      versionDetail.value = null;
+    }
   } else {
     activeVersionId.value = null;
     versionDetail.value = null;
     mappingRows.value = [];
-    setStepMessage(2, 'warn', `子类「${row.subtypeName}」尚无版本，请在下方新建版本并保存映射。`);
+    const hint = row.isExcel
+      ? `子类「${row.subtypeName}」尚无版本，请在下方新建版本并保存映射。`
+      : `子类「${row.subtypeName}」尚无版本，请在上方表样 / Word 卡片中新建版本。`;
+    setStepMessage(2, 'warn', hint);
   }
 }
 
@@ -2017,6 +2239,7 @@ async function doFormTemplateImport() {
     const result = await importFormTemplateExcel(formTemplateFile.value, {
       moduleCode: formTemplateModuleCode.value,
       subtypeCode: selectedImportSubtype.value?.code,
+      versionLabel: String(restoreImportVersionLabel.value || '').trim(),
     });
     formTemplateMessageType.value = 'success';
     formTemplateMessage.value = result.message || '导入成功';
@@ -2077,6 +2300,7 @@ async function doFillInstructionImport() {
     const result = await importFillInstructionDocument(fillInstructionFile.value, {
       moduleCode: selectedImportSubtype.value?.moduleCode,
       subtypeCode: selectedImportSubtype.value?.code,
+      versionLabel: String(restoreImportVersionLabel.value || '').trim(),
     });
     fillInstructionMessageType.value = 'success';
     fillInstructionMessage.value = result.message || '导入成功';
@@ -2119,7 +2343,15 @@ function onConversionScriptDrop(e) {
 async function refreshConversionScripts() {
   conversionScriptLoading.value = true;
   try {
-    const { items } = await listConversionScripts();
+    const st = selectedImportSubtype.value;
+    const params = {};
+    if (conversionScriptModuleCode.value) {
+      params.moduleCode = conversionScriptModuleCode.value;
+    }
+    if (st?.storageKind === 'script' && st.code) {
+      params.subtypeCode = st.code;
+    }
+    const { items } = await listConversionScripts(params);
     conversionScripts.value = items || [];
   } catch (e) {
     conversionScriptMessageType.value = 'error';

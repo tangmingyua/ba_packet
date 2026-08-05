@@ -13,6 +13,7 @@ import {
   TABLE_NAME_PAYLOAD_KEYS,
 } from '../utils/fieldLabels.js';
 import { getCategoryLabel } from '../constants/materialCategories.js';
+import { sortFlattenEntriesByVersionDesc } from '../utils/versionSort.js';
 
 export { getRowValueForExcelColumn } from '../utils/fieldLabels.js';
 
@@ -218,28 +219,32 @@ export function itemToDisplayRow(item, report, block, mode) {
 }
 /** 扁平化 reports → 行数组 */
 export function flattenReports(reports, { reportCode, mode = 'norm' } = {}) {
-  const rows = [];
+  const entries = [];
   const list = reportCode ? reports.filter((r) => r.code === reportCode) : reports;
   for (const report of list) {
     for (const block of report.blocks || []) {
       for (const item of block.items || []) {
-        rows.push(itemToDisplayRow(item, report, block, mode));
+        entries.push({ item, report, block });
       }
     }
   }
-  return rows;
+  return sortFlattenEntriesByVersionDesc(entries).map(({ item, report, block }) =>
+    itemToDisplayRow(item, report, block, mode)
+  );
 }
 
 /** 扁平化单个 report（qa/aggregate 子类 Tab） */
 export function flattenReport(report, mode = 'qa') {
-  const rows = [];
-  if (!report) return rows;
+  const entries = [];
+  if (!report) return [];
   for (const block of report.blocks || []) {
     for (const item of block.items || []) {
-      rows.push(itemToDisplayRow(item, report, block, mode));
+      entries.push({ item, report, block });
     }
   }
-  return rows;
+  return sortFlattenEntriesByVersionDesc(entries).map(({ item, report, block }) =>
+    itemToDisplayRow(item, report, block, mode)
+  );
 }
 
 function collectColumnKeys(rows) {

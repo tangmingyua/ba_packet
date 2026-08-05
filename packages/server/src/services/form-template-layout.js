@@ -262,11 +262,21 @@ export function parseFormTemplateLayoutJson(raw, matrix, merges, dimensions = {}
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (parsed?.v === LAYOUT_VERSION && Array.isArray(parsed.kinds) && parsed.kinds.length) {
-      // 存量 layout_json 没有原生尺寸，用传入的 dimensions 补全
-      if (!parsed.rowHeights?.length && dimensions.rowHeights?.length) {
+      // row_heights_json 为权威来源：长度与矩阵一致时始终覆盖 layout 内缓存
+      if (
+        dimensions.rowHeights?.length &&
+        dimensions.rowHeights.length === matrix.length
+      ) {
+        parsed.rowHeights = dimensions.rowHeights;
+      } else if (!parsed.rowHeights?.length && dimensions.rowHeights?.length) {
         parsed.rowHeights = dimensions.rowHeights;
       }
-      if (!parsed.colWidths?.length && dimensions.colWidths?.length) {
+      if (
+        dimensions.colWidths?.length &&
+        dimensions.colWidths.length === (matrix[0]?.length || 0)
+      ) {
+        parsed.colWidths = dimensions.colWidths;
+      } else if (!parsed.colWidths?.length && dimensions.colWidths?.length) {
         parsed.colWidths = dimensions.colWidths;
       }
       return parsed;

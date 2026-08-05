@@ -239,6 +239,9 @@ describe('dataset import model', () => {
     const created = getDatasetCatalog().subtypes.find((s) => s.code === 'EAST_FORM_TPL');
     assert.ok(created);
     assert.equal(created.storageKind, 'form_template');
+    const version = createSubtypeVersion('EAST_FORM_TPL', { versionLabel: '231' });
+    assert.equal(version.versionLabel, '231');
+    assert.equal(version.sheetName, '-');
     deleteSubtype('EAST_FORM_TPL');
     assert.ok(!getDatasetCatalog().subtypes.some((s) => s.code === 'EAST_FORM_TPL'));
   });
@@ -440,6 +443,46 @@ describe('dataset import model', () => {
     assert.equal(result.summary.bulkAborted, true);
     assert.equal(result.summary.success, 0);
     assert.equal(countRecordsForVersion(bulkVersion.id), 1, '失败导入不应覆盖已有数据');
+  });
+
+  it('全量导入：目录固定第 1 行表头，业务 Sheet 可用不同 headerRow', () => {
+    const bulkVersion = createSubtypeVersion('TO_EAST_FAQ', {
+      versionLabel: 'js-style',
+      sheetName: '全量导入',
+      headerRow: 2,
+      dataStartRow: 3,
+      bizKeyFields: [],
+    });
+    saveFieldMappings(bulkVersion.id, [
+      { originalColumn: '报送字段', standardField: 'data_item', isRequired: true },
+      { originalColumn: '报表', standardField: 'collection_scope', isRequired: false },
+    ]);
+
+    const buffer = buildExcel([
+      {
+        name: '目录',
+        rows: [
+          ['序号', '报表'],
+          [1, '表A'],
+        ],
+      },
+      {
+        name: '表A',
+        rows: [
+          ['报送范围', '范围说明'],
+          ['报送字段', '长度'],
+          ['F1', '10'],
+        ],
+      },
+    ]);
+
+    const result = importDatasetExcel(buffer, {
+      fileName: 'js-bulk.xlsx',
+      versionIds: [bulkVersion.id],
+    });
+    assert.equal(result.mode, 'bulk');
+    assert.equal(result.summary.success, 1);
+    assert.equal(countRecordsForVersion(bulkVersion.id), 1);
   });
 
   it('全量导入：目录报表重复整本失败', () => {

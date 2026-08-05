@@ -97,6 +97,7 @@
               :highlight-cells="highlightCells"
               :focus-cell="focusCell"
               :selected-cell="selectedCell"
+              :enable-cell-full-text="moduleCode !== '1104'"
               enable-indicator-click
               @cell-click="onIndicatorCellClick"
             />
@@ -268,7 +269,11 @@ async function loadHits(id) {
   if (!lastKeyword.value) return;
   loadingHits.value = true;
   try {
-    const res = await getFormTemplateSearchHits(id, lastKeyword.value);
+    const item = result.value?.items?.find((x) => x.id === id);
+    const hitsLimit = item?.hitCount
+      ? Math.min(Math.max(Number(item.hitCount), 30), 2000)
+      : 500;
+    const res = await getFormTemplateSearchHits(id, lastKeyword.value, { hitsLimit });
     hitsForSelected.value = res.hits || [];
     hitsTruncated.value = Boolean(res.hitsTruncated);
   } catch (e) {

@@ -421,6 +421,7 @@ app.post('/api/form-template/import', async (request, reply) => {
   let fileName = '';
   let moduleCode = '';
   let subtypeCode = '';
+  let versionLabel = '';
 
   try {
     for await (const part of request.parts()) {
@@ -433,6 +434,8 @@ app.post('/api/form-template/import', async (request, reply) => {
         moduleCode = part.value || moduleCode;
       } else if (part.fieldname === 'subtypeCode') {
         subtypeCode = part.value || subtypeCode;
+      } else if (part.fieldname === 'versionLabel') {
+        versionLabel = part.value || versionLabel;
       }
     }
   } catch (error) {
@@ -448,10 +451,11 @@ app.post('/api/form-template/import', async (request, reply) => {
   }
 
   try {
-    return importFormTemplate(buffer, {
+    return await importFormTemplate(buffer, {
       fileName,
       moduleCode,
       subtypeCode: subtypeCode || undefined,
+      versionLabel: versionLabel || undefined,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
@@ -526,6 +530,7 @@ app.post('/api/document/import', async (request, reply) => {
   let profileId = '';
   let moduleCode = '';
   let subtypeCode = '';
+  let versionLabel = '';
 
   try {
     for await (const part of request.parts()) {
@@ -540,6 +545,8 @@ app.post('/api/document/import', async (request, reply) => {
         moduleCode = part.value || moduleCode;
       } else if (part.fieldname === 'subtypeCode') {
         subtypeCode = part.value || subtypeCode;
+      } else if (part.fieldname === 'versionLabel') {
+        versionLabel = part.value || versionLabel;
       }
     }
   } catch (error) {
@@ -556,6 +563,7 @@ app.post('/api/document/import', async (request, reply) => {
       profileId: profileId || undefined,
       moduleCode: moduleCode || undefined,
       subtypeCode: subtypeCode || undefined,
+      versionLabel: versionLabel || undefined,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
@@ -693,11 +701,12 @@ app.post('/api/conversion-script/import', async (request, reply) => {
 });
 
 app.get('/api/conversion-scripts', async (request) => {
-  const { moduleCode, reportCode } = request.query || {};
+  const { moduleCode, reportCode, subtypeCode } = request.query || {};
   return {
     items: listConversionScripts({
       moduleCode: moduleCode ? String(moduleCode) : undefined,
       reportCode: reportCode ? String(reportCode) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
     }),
   };
 });

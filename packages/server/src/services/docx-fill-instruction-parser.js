@@ -5,6 +5,7 @@
  * - 其余 part 为叶子：后续段落并入 part.text
  * - 指标支持罗马前缀（Ⅲ_4）及多序号拆分
  */
+import { summarizeTableRows } from './word-structure-extractor.js';
 
 /** 罗马数字（保留原文，如 GF01_Ⅱ、Ⅲ_4） */
 const ROMAN_CHARS = 'ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹⅺⅻ';
@@ -237,134 +238,185 @@ function appendToLeafPart(part, extraText) {
   part.text = part.text ? `${part.text}\n${extraText}` : extraText;
 }
 
+function createDocumentParseState(meta, titleParagraph) {
+  const root = createNode('doc_title', meta.docTitle || titleParagraph || '', {
+    docCode: meta.docCode || parseDocCode(titleParagraph || ''),
+  });
+  return {
+    root,
+    currentPart: null,
+    currentSection: null,
+    currentIndicator: null,
+    mergeTarget: null,
+    ctx: { inDetailPart: false },
+  };
+}
+
+function addTableNodeToParseState(state, rows) {
+  state.mergeTarget = null;
+  const matrix = rows || [];
+  const node = createNode('table', summarizeTableRows(matrix), { tableRows: matrix });
+
+  if (state.ctx.inDetailPart) {
+    if (state.currentSection) state.currentSection.children.push(node);
+    else if (state.currentPart) state.currentPart.children.push(node);
+    else state.root.children.push(node);
+    return;
+  }
+  if (state.currentPart) {
+    state.currentPart.children.push(node);
+    return;
+  }
+  state.root.children.push(node);
+}
+
+function processParagraphLine(state, text) {
+  const { root, ctx } = state;
+
+  function stopMerge() {
+    state.mergeTarget = null;
+  }
+  function setMergeTarget(node) {
+    state.mergeTarget = node;
+  }
+  function addToDetailContainer(node) {
+    if (state.currentSection) state.currentSection.children.push(node);
+    else if (state.currentPart) state.currentPart.children.push(node);
+    else root.children.push(node);
+  }
+  function startPart(partText) {
+    stopMerge();
+    state.currentPart = createNode('part', partText);
+    root.children.push(state.currentPart);
+    state.currentSection = null;
+    state.currentIndicator = null;
+    ctx.inDetailPart = isDetailPartTitle(partText);
+  }
+
+  if (isDocTitle(text)) {
+    return 'break';
+  }
+
+  if (isOutlinePartTitle(text)) {
+    if (
+      CHECK_SUBPART_RE.test(text) &&
+      state.currentPart &&
+      !ctx.inDetailPart &&
+      isCheckRelationPart((state.currentPart.text || '').split('\n')[0] || '')
+    ) {
+      appendToLeafPart(state.currentPart, text);
+      return 'continue';
+    }
+    if (!CHECK_SUBPART_RE.test(text)) {
+      startPart(text);
+      return 'continue';
+    }
+    if (state.currentPart && !ctx.inDetailPart) {
+      appendToLeafPart(state.currentPart, text);
+      return 'continue';
+    }
+  }
+
+  if (ctx.inDetailPart && isIndicator(text)) {
+    stopMerge();
+    const expanded = expandIndicators(text);
+    let lastMerge = null;
+    for (const entry of expanded) {
+      state.currentIndicator = createNode('indicator', entry.titleText, {
+        indicatorKey: entry.indicatorKey,
+        indicatorNo: entry.indicatorNo,
+        indicatorName: entry.indicatorName,
+      });
+      addToDetailContainer(state.currentIndicator);
+      if (entry.inlineBody) {
+        const body = createNode('body', entry.inlineBody);
+        state.currentIndicator.children.push(body);
+        lastMerge = body;
+      } else {
+        lastMerge = state.currentIndicator;
+      }
+    }
+    setMergeTarget(lastMerge);
+    return 'continue';
+  }
+
+  if (ctx.inDetailPart && isSectionTitle(text, ctx)) {
+    stopMerge();
+    state.currentSection = createNode('section', text);
+    if (state.currentPart) state.currentPart.children.push(state.currentSection);
+    else root.children.push(state.currentSection);
+    state.currentIndicator = null;
+    return 'continue';
+  }
+
+  if (ctx.inDetailPart && state.currentIndicator) {
+    const body = createNode('body', text);
+    state.currentIndicator.children.push(body);
+    setMergeTarget(body);
+    return 'continue';
+  }
+
+  if (ctx.inDetailPart && state.mergeTarget && state.mergeTarget.nodeKind === 'body') {
+    state.mergeTarget.text = `${state.mergeTarget.text}${text}`;
+    return 'continue';
+  }
+
+  if (ctx.inDetailPart) {
+    stopMerge();
+    const looseBody = createNode('body', text);
+    addToDetailContainer(looseBody);
+    setMergeTarget(looseBody);
+    return 'continue';
+  }
+
+  if (state.currentPart) {
+    appendToLeafPart(state.currentPart, text);
+    return 'continue';
+  }
+
+  root.children.push(createNode('body', text));
+  return 'continue';
+}
+
 /**
  * 将段落序列解析为一棵 document 节点树
  */
 export function parseDocumentParagraphs(paragraphs, meta = {}) {
-  const root = createNode('doc_title', meta.docTitle || paragraphs[0] || '', {
-    docCode: meta.docCode || parseDocCode(paragraphs[0] || ''),
-  });
-
-  let currentPart = null;
-  let currentSection = null;
-  let currentIndicator = null;
-  let mergeTarget = null;
-  const ctx = { inDetailPart: false };
-
-  function stopMerge() {
-    mergeTarget = null;
-  }
-
-  function setMergeTarget(node) {
-    mergeTarget = node;
-  }
-
-  function addToDetailContainer(node) {
-    if (currentSection) currentSection.children.push(node);
-    else if (currentPart) currentPart.children.push(node);
-    else root.children.push(node);
-  }
-
-  function startPart(text) {
-    stopMerge();
-    currentPart = createNode('part', text);
-    root.children.push(currentPart);
-    currentSection = null;
-    currentIndicator = null;
-    ctx.inDetailPart = isDetailPartTitle(text);
-  }
+  const state = createDocumentParseState(meta, paragraphs[0] || '');
 
   for (const text of paragraphs.slice(1)) {
-    if (isDocTitle(text)) break;
-
-    // 大纲 part（短标题）；核对关系下的「基础数据」等假大纲不当 part
-    if (isOutlinePartTitle(text)) {
-      if (
-        CHECK_SUBPART_RE.test(text) &&
-        currentPart &&
-        !ctx.inDetailPart &&
-        isCheckRelationPart((currentPart.text || '').split('\n')[0] || '')
-      ) {
-        appendToLeafPart(currentPart, text);
-        continue;
-      }
-      if (!CHECK_SUBPART_RE.test(text)) {
-        startPart(text);
-        continue;
-      }
-      // 孤立的「第×部分：基础数据」等：并入当前叶子或忽略为正文
-      if (currentPart && !ctx.inDetailPart) {
-        appendToLeafPart(currentPart, text);
-        continue;
-      }
-    }
-
-    // —— 具体说明子树 ——
-    if (ctx.inDetailPart && isIndicator(text)) {
-      stopMerge();
-      const expanded = expandIndicators(text);
-      let lastMerge = null;
-      for (const entry of expanded) {
-        currentIndicator = createNode('indicator', entry.titleText, {
-          indicatorKey: entry.indicatorKey,
-          indicatorNo: entry.indicatorNo,
-          indicatorName: entry.indicatorName,
-        });
-        addToDetailContainer(currentIndicator);
-        if (entry.inlineBody) {
-          const body = createNode('body', entry.inlineBody);
-          currentIndicator.children.push(body);
-          lastMerge = body;
-        } else {
-          lastMerge = currentIndicator;
-        }
-      }
-      setMergeTarget(lastMerge);
-      continue;
-    }
-
-    if (ctx.inDetailPart && isSectionTitle(text, ctx)) {
-      stopMerge();
-      currentSection = createNode('section', text);
-      if (currentPart) currentPart.children.push(currentSection);
-      else root.children.push(currentSection);
-      currentIndicator = null;
-      continue;
-    }
-
-    if (ctx.inDetailPart && currentIndicator) {
-      const body = createNode('body', text);
-      currentIndicator.children.push(body);
-      setMergeTarget(body);
-      continue;
-    }
-
-    if (ctx.inDetailPart && mergeTarget && mergeTarget.nodeKind === 'body') {
-      mergeTarget.text = `${mergeTarget.text}${text}`;
-      continue;
-    }
-
-    if (ctx.inDetailPart) {
-      stopMerge();
-      const looseBody = createNode('body', text);
-      addToDetailContainer(looseBody);
-      setMergeTarget(looseBody);
-      continue;
-    }
-
-    // —— 叶子 part：正文并入 text ——
-    if (currentPart) {
-      appendToLeafPart(currentPart, text);
-      continue;
-    }
-
-    // 尚无 part 的游离段落
-    const loose = createNode('body', text);
-    root.children.push(loose);
+    if (processParagraphLine(state, text) === 'break') break;
   }
 
-  assignLevelsAndPaths(root);
-  return root;
+  assignLevelsAndPaths(state.root);
+  return state.root;
+}
+
+/**
+ * 按 Word 块顺序解析（含表格节点）
+ * @param {Array<{ blockKind: string, text?: string, meta?: { rows?: string[][] } }>} blocks
+ */
+export function parseDocumentBlocks(blocks, meta = {}) {
+  const firstText = blocks.find((b) => b.blockKind !== 'table')?.text || '';
+  const state = createDocumentParseState(meta, meta.docTitle || firstText);
+  let skippedTitle = false;
+
+  for (const block of blocks) {
+    if (block.blockKind === 'table') {
+      addTableNodeToParseState(state, block.meta?.rows || []);
+      continue;
+    }
+    const text = block.text;
+    if (!text) continue;
+    if (!skippedTitle && isDocTitle(text)) {
+      skippedTitle = true;
+      continue;
+    }
+    if (processParagraphLine(state, text) === 'break') break;
+  }
+
+  assignLevelsAndPaths(state.root);
+  return state.root;
 }
 
 function assignLevelsAndPaths(node, parentPath = '', level = 0, counters = {}) {

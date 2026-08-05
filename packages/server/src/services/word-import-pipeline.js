@@ -11,17 +11,19 @@ import {
   parseDocumentParagraphs,
   splitMergedDocuments,
   extractParagraphTexts,
+  parseDocumentBlocks,
 } from './docx-fill-instruction-parser.js';
 import {
   blocksToParagraphs,
   extractWordBlocks,
   placeholderText,
   sampleTextFromBlocks,
+  summarizeTableRows,
 } from './word-structure-extractor.js';
 
 /**
  * @typedef {object} WordBlock
- * @property {'heading'|'paragraph'|'placeholder'} blockKind
+ * @property {'heading'|'paragraph'|'placeholder'|'table'} blockKind
  * @property {number} level
  * @property {number} sortOrder
  * @property {string} text
@@ -150,6 +152,17 @@ export function buildStructureDocumentTree(blocks, meta = {}) {
       continue;
     }
 
+    if (block.blockKind === 'table') {
+      const rows = block.meta?.rows || [];
+      stack[stack.length - 1].node.children.push({
+        nodeKind: 'table',
+        text: block.text || summarizeTableRows(rows),
+        tableRows: rows,
+        children: [],
+      });
+      continue;
+    }
+
     const nodeKind = block.blockKind === 'placeholder' ? 'placeholder' : 'paragraph';
     stack[stack.length - 1].node.children.push({
       nodeKind,
@@ -208,10 +221,52 @@ function paragraphsToBlocks(paragraphs) {
   }));
 }
 
-function buildFrom1104Paragraphs(paragraphs, profile, options) {
+function findBlockIndexByText(blocks, text, fromIndex = 0) {
+  const t = String(text || '').trim();
+  if (!t) return -1;
+  for (let i = fromIndex; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    if (block.blockKind === 'table') continue;
+    if (block.text === t) return i;
+  }
+  return -1;
+}
+
+function resolveDocBlockSegment(blocks, doc, nextDoc) {
+  const title = doc.paragraphs[0];
+  const start = findBlockIndexByText(blocks, title);
+  if (start < 0) {
+    return {
+      segment: paragraphsToBlocks(doc.paragraphs),
+      blockStart: null,
+      blockEnd: null,
+    };
+  }
+
+  let end = blocks.length;
+  if (nextDoc) {
+    const nextStart = findBlockIndexByText(blocks, nextDoc.paragraphs[0], start + 1);
+    if (nextStart > start) end = nextStart;
+  }
+
+  if (end <= start) {
+    return {
+      segment: paragraphsToBlocks(doc.paragraphs),
+      blockStart: start,
+      blockEnd: end,
+    };
+  }
+
+  return {
+    segment: blocks.slice(start, end),
+    blockStart: start,
+    blockEnd: end,
+  };
+}
+
+function buildFrom1104Paragraphs(paragraphs, blocks, profile, options) {
   const splitDocs = splitMergedDocuments(paragraphs);
   const useMulti = splitDocs.length >= (profile.minAnchors ?? 2);
-  const blocks = paragraphsToBlocks(paragraphs);
 
   /** @type {LogicalWordDocument[]} */
   let documents;
@@ -221,21 +276,18 @@ function buildFrom1104Paragraphs(paragraphs, profile, options) {
   if (useMulti) {
     splitMode = 'multi';
     fallback = false;
-    let searchFrom = 0;
-    documents = splitDocs.map((doc) => {
-      const start = paragraphs.findIndex((p, i) => i >= searchFrom && p === doc.paragraphs[0]);
-      const end = start >= 0 ? start + doc.paragraphs.length : searchFrom + doc.paragraphs.length;
-      if (start >= 0) searchFrom = end;
-      const segment = start >= 0 ? blocks.slice(start, end) : paragraphsToBlocks(doc.paragraphs);
+    documents = splitDocs.map((doc, idx) => {
+      const next = splitDocs[idx + 1];
+      const { segment, blockStart, blockEnd } = resolveDocBlockSegment(blocks, doc, next);
       applyPlaceholderReportCodes(segment, doc.docCode);
       return {
         docCode: doc.docCode,
         docTitle: doc.docTitle,
-        blockStart: start >= 0 ? start : 0,
-        blockEnd: start >= 0 ? end : doc.paragraphs.length,
+        blockStart: blockStart ?? 0,
+        blockEnd: blockEnd ?? segment.length,
         blocks: segment,
         splitMode: 'multi',
-        tree: parseDocumentParagraphs(doc.paragraphs, {
+        tree: parseDocumentBlocks(segment, {
           docCode: doc.docCode,
           docTitle: doc.docTitle,
         }),
@@ -246,7 +298,7 @@ function buildFrom1104Paragraphs(paragraphs, profile, options) {
     fallback = true;
     const fallbackDoc = buildFallbackDocument(blocks, options.fileName);
     applyPlaceholderReportCodes(fallbackDoc.blocks, fallbackDoc.docCode);
-    fallbackDoc.tree = buildDocumentTree(fallbackDoc.blocks, profile, {
+    fallbackDoc.tree = parseDocumentBlocks(fallbackDoc.blocks, {
       docCode: fallbackDoc.docCode,
       docTitle: fallbackDoc.docTitle,
     });
@@ -269,7 +321,8 @@ export function parseWordImportDocument(documentXml, options = {}) {
   });
 
   if (profile.treeMode === '1104-semantic') {
-    return buildFrom1104Paragraphs(paragraphs, profile, options);
+    const blocks = extractWordBlocks(documentXml);
+    return buildFrom1104Paragraphs(paragraphs, blocks, profile, options);
   }
 
   const blocks = extractWordBlocks(documentXml);

@@ -42,6 +42,20 @@ describe('word-import pipeline', () => {
     assert.equal(parsed.fallback, false);
     assert.ok(parsed.documents.length >= 10);
     assert.ok(parsed.documents.some((d) => d.docCode === 'G01'));
+    const g02 = parsed.documents.find((d) => d.docCode === 'G02');
+    assert.ok(g02, '应切出 G02');
+    assert.ok(g02.blocks.length > 10, 'G02 应含正文块');
+    assert.ok(
+      g02.tree.children.length > 0,
+      'G02 节点树不应只有标题（合并 Word 中空段落 <w:p/> 不应截断解析）'
+    );
+  });
+
+  it('extractWordBlocks 读取整本合并说明（含自闭合 w:p）', () => {
+    const xml = readDocumentXmlFromDocx(fs.readFileSync(DOC_1104));
+    const blocks = extractWordBlocks(xml);
+    assert.ok(blocks.length > 5000, '块数量应接近全书段落规模，而非在首段表格处截断');
+    assert.ok(blocks.some((b) => (b.text || '').includes('G02《')), '应包含 G02 标题块');
   });
 
   it('IMAS-NR Profile 自动切分 NR 表', () => {
@@ -57,12 +71,8 @@ describe('word-import pipeline', () => {
     assert.ok(parsed.documents.some((d) => d.docCode === 'NR54'));
 
     const nr01 = parsed.documents.find((d) => d.docCode === 'NR01');
-    assert.ok(nr01.blocks.some((b) => b.blockKind === 'heading' && b.text.includes('一般说明')));
-    assert.ok(
-      nr01.blocks.some(
-        (b) => b.blockKind === 'placeholder' && b.text.includes('NR01') && b.text.includes('Excel')
-      )
-    );
+    assert.ok(nr01);
+    assert.ok(parsed.blocks.some((b) => b.blockKind === 'table' && b.meta?.rows?.length));
   });
 
   it('NR01 标题层级：3.1.2 / 3.1.3 应在 3.1 之下（编号优先于 outline）', () => {

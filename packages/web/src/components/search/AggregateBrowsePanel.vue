@@ -80,9 +80,11 @@ function displayCell(row, label) {
 }
 
 .aggregate-browse-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 
 .aggregate-browse-table th,
@@ -99,6 +101,10 @@ function displayCell(row, label) {
   position: sticky;
   top: 0;
   z-index: 1;
+  white-space: nowrap;
+  word-break: keep-all;
+  min-width: max-content;
+  vertical-align: bottom;
 }
 
 .col-link {

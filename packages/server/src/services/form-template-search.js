@@ -2,12 +2,13 @@
  * 1104 表样搜索（两阶段：cells 索引表 + 表样名称/表号，不解析 matrix_json）
  */
 import { queryAll, queryOne } from '../db/database.js';
+import { sortByVersionLabelDesc } from '../utils/version-sort.js';
 import { cellText } from './form-template-search-scope.js';
 import { inferFormTemplateModule } from '../config/form-template-catalog.js';
 import { normalizeCategory } from '../config/material-categories.js';
 import { resolveFormTemplateReportTitle } from './form-template-import.js';
 
-const DEFAULT_HITS_PER_TEMPLATE = 30;
+const DEFAULT_HITS_PER_TEMPLATE = 500;
 const DEFAULT_MAX_TEMPLATES = 50;
 
 function matchesKeywordSql(keyword) {
@@ -180,8 +181,8 @@ export function searchFormTemplates(keyword, options = {}) {
       reportQuery: normalizeFilterText(options.reportQuery) || null,
       totalTemplates: items.length,
       totalHits,
-      items,
-      searchScope: 'header_indicator_and_template_name',
+      items: sortByVersionLabelDesc(items, (item) => item.versionLabel),
+      searchScope: 'all_cells_and_template_name',
     };
   }
 
@@ -230,9 +231,9 @@ export function searchFormTemplates(keyword, options = {}) {
     reportQuery: normalizeFilterText(options.reportQuery) || null,
     totalTemplates: items.length,
     totalHits,
-    items,
+    items: sortByVersionLabelDesc(items, (item) => item.versionLabel),
     truncated: items.length >= maxTemplates,
-    searchScope: 'header_indicator_and_template_name',
+    searchScope: 'all_cells_and_template_name',
   };
 }
 

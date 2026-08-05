@@ -4,12 +4,23 @@
 import crypto from 'crypto';
 import path from 'path';
 import XLSX from 'xlsx';
+import {
+  isXlsxBuffer,
+  loadExcelJsWorkbook,
+  readExcelJsSheetRowHeightsPx,
+  readExcelJsSheetColWidthsPx,
+} from './form-template-excel-row-heights.js';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { matchFormTemplateFileName, normalizeFormTemplateModuleCode } from '../config/form-template-catalog.js';
 import { resolveSubtypeCode } from '../config/system-subtypes.js';
-import { resolveImportSubtypeCode } from './dataset-config.js';
+import { resolveImportSubtypeCode, ensureSubtypeVersionForImport } from './dataset-config.js';
 import { replaceCellsForTemplate } from './form-template-cells.js';
-import { buildFormTemplateLayout, parseFormTemplateLayoutJson } from './form-template-layout.js';
+import {
+  buildFormTemplateLayout,
+  buildMergeRenderMap,
+  parseFormTemplateLayoutJson,
+} from './form-template-layout.js';
+import { cellText } from './form-template-search-scope.js';
 
 /** Sheet/文件名均无「_数字」版本时使用的默认版本（表示最新，再次导入同表号会覆盖） */
 export const FORM_TEMPLATE_LATEST_VERSION = 'LASTEST';
@@ -187,16 +198,32 @@ function rowHeightToPixels(row) {
   return 0;
 }
 
-function readSheetDimensions(sheet, colCount, rowCount) {
+function readSheetDimensions(
+  sheet,
+  colCount,
+  rowCount,
+  rangeStartRow = 0,
+  rangeStartCol = 0,
+  excelRowHeights = null,
+  excelColWidths = null
+) {
   const cols = sheet['!cols'] || [];
   const rows = sheet['!rows'] || [];
-  const colWidths = Array.from({ length: colCount }, (_, c) => {
-    const w = colWidthToPixels(cols[c]);
-    return w > 0 ? w : 72; // 默认列宽
+  const colWidths = Array.from({ length: colCount }, (_, i) => {
+    const absC = rangeStartCol + i;
+    const w = colWidthToPixels(cols[absC]);
+    if (w > 0) return w;
+    const fromExcel = excelColWidths?.[i];
+    if (fromExcel > 0) return fromExcel;
+    return 72; // 默认列宽
   });
-  const rowHeights = Array.from({ length: rowCount }, (_, r) => {
-    const h = rowHeightToPixels(rows[r]);
-    return h > 0 ? h : 24; // 默认行高
+  const rowHeights = Array.from({ length: rowCount }, (_, i) => {
+    const absR = rangeStartRow + i;
+    const h = rowHeightToPixels(rows[absR]);
+    if (h > 0) return h;
+    const fromExcel = excelRowHeights?.[i];
+    if (fromExcel > 0) return fromExcel;
+    return 0;
   });
   return { colWidths, rowHeights };
 }
@@ -204,7 +231,7 @@ function readSheetDimensions(sheet, colCount, rowCount) {
 /**
  * 将 sheet 转为从 (0,0) 起的完整矩阵、相对 merges、原生列宽/行高
  */
-export function sheetToMatrix(sheet) {
+export function sheetToMatrix(sheet, options = {}) {
   const ref = sheet['!ref'];
   if (!ref) {
     return { matrix: [], merges: [], colWidths: [], rowHeights: [], rowCount: 0, colCount: 0 };
@@ -230,7 +257,15 @@ export function sheetToMatrix(sheet) {
     e: { r: m.e.r - range.s.r, c: m.e.c - range.s.c },
   }));
 
-  const { colWidths, rowHeights } = readSheetDimensions(sheet, colCount, rowCount);
+  const { colWidths, rowHeights } = readSheetDimensions(
+    sheet,
+    colCount,
+    rowCount,
+    range.s.r,
+    range.s.c,
+    options.excelRowHeights,
+    options.excelColWidths
+  );
 
   return { matrix, merges, colWidths, rowHeights, rowCount, colCount };
 }
@@ -369,7 +404,10 @@ export function trimMatrixPadding(matrix, merges = [], dimensions = null) {
  */
 export function parseFormTemplateFromSheet(sheet, options = {}) {
   const sheetName = options.sheetName || 'Sheet1';
-  const { matrix: rawMatrix, merges, colWidths, rowHeights } = sheetToMatrix(sheet);
+  const { matrix: rawMatrix, merges, colWidths, rowHeights } = sheetToMatrix(sheet, {
+    excelRowHeights: options.excelRowHeights,
+    excelColWidths: options.excelColWidths,
+  });
   const cleaned = cleanMatrix(rawMatrix);
   const {
     matrix,
@@ -379,6 +417,20 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     colWidths: trimmedColWidths,
     rowHeights: trimmedRowHeights,
   } = trimMatrixPadding(cleaned, merges, { colWidths, rowHeights });
+
+  // 先按临时布局得到单元格类型，再估算 xlsx 未提供固定行高的行
+  const tempLayout = buildFormTemplateLayout(matrix, trimmedMerges, {
+    colWidths: trimmedColWidths,
+    rowHeights: [],
+  });
+  const finalRowHeights = computeAutoRowHeights(
+    matrix,
+    trimmedMerges,
+    trimmedColWidths,
+    tempLayout.kinds,
+    trimmedRowHeights
+  );
+
   const sheetMeta = parseFormTemplateSheetMeta(sheetName, options.fileMeta);
   const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();
   const reportTitle = resolveFormTemplateReportTitle(sheetName, '', options.module);
@@ -389,7 +441,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
 
   const layout = buildFormTemplateLayout(matrix, trimmedMerges, {
     colWidths: trimmedColWidths,
-    rowHeights: trimmedRowHeights,
+    rowHeights: finalRowHeights,
   });
 
   return {
@@ -406,9 +458,115 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
     matrix,
     merges: trimmedMerges,
     colWidths: trimmedColWidths,
-    rowHeights: trimmedRowHeights,
+    rowHeights: finalRowHeights,
     layout,
   };
+}
+
+function fontSizeForCellKind(kind) {
+  switch (kind) {
+    case 'title':
+      return 16;
+    case 'section':
+      return 14;
+    case 'header':
+      return 12;
+    default:
+      return 13;
+  }
+}
+
+function estimateCellLines(text, cellWidth, fontSize) {
+  if (!cellWidth || cellWidth <= 0) return 1;
+  const charWidth = fontSize * 0.6;
+  const charsPerLine = Math.max(1, Math.floor(cellWidth / charWidth));
+  let lines = 0;
+  for (const seg of String(text).split('\n')) {
+    if (seg === '') {
+      lines += 1;
+    } else {
+      lines += Math.max(1, Math.ceil(seg.length / charsPerLine));
+    }
+  }
+  return lines;
+}
+
+/**
+ * 对 xlsx 未给出固定行高的行，按内容长度、列宽、单元格类型估算 Excel 自动行高。
+ * 行高 = 行内最高单元格所需行数 × 字体行高 + 4px padding（2+2）。
+ */
+function computeAutoRowHeights(matrix, merges, colWidths, kinds, existingHeights) {
+  if (!matrix.length) return existingHeights;
+  const rowCount = matrix.length;
+  const renderMap = buildMergeRenderMap(merges);
+  const required = Array.from({ length: rowCount }, () => 0);
+
+  for (let r = 0; r < rowCount; r += 1) {
+    const row = matrix[r] || [];
+    let rowMax = 0;
+    for (let c = 0; c < row.length; c += 1) {
+      if (renderMap.covered.has(`${r},${c}`)) continue;
+      const text = cellText(row[c]);
+      if (!text) continue;
+      const span = renderMap.spanAt.get(`${r},${c}`) || { rowspan: 1, colspan: 1 };
+      let cellWidth = 0;
+      for (let i = 0; i < span.colspan; i += 1) {
+        cellWidth += colWidths[c + i] || 0;
+      }
+      const kind = kinds[r]?.[c] || 'text';
+      const fontSize = fontSizeForCellKind(kind);
+      const lineHeight = Math.round(fontSize * 1.35);
+      const lines = estimateCellLines(text, cellWidth, fontSize);
+      const cellHeight = lines * lineHeight + 4;
+      if (span.rowspan === 1) {
+        rowMax = Math.max(rowMax, cellHeight);
+      } else {
+        // 跨行合并：把总高度均分到所占行
+        rowMax = Math.max(rowMax, cellHeight / span.rowspan);
+      }
+    }
+    required[r] = rowMax;
+  }
+
+  // 处理跨行合并单元格：若总需求高度大于估算之和，把差额加到自动行高行
+  for (const merge of merges || []) {
+    const { r, c } = merge.s;
+    const span = {
+      rowspan: merge.e.r - merge.s.r + 1,
+      colspan: merge.e.c - merge.s.c + 1,
+    };
+    const text = cellText(matrix[r]?.[c]);
+    if (!text) continue;
+    let cellWidth = 0;
+    for (let i = 0; i < span.colspan; i += 1) {
+      cellWidth += colWidths[c + i] || 0;
+    }
+    const kind = kinds[r]?.[c] || 'text';
+    const fontSize = fontSizeForCellKind(kind);
+    const lineHeight = Math.round(fontSize * 1.35);
+    const cellHeight = estimateCellLines(text, cellWidth, fontSize) * lineHeight + 4;
+    const sumRequired = required.slice(r, r + span.rowspan).reduce((a, b) => a + b, 0);
+    if (cellHeight > sumRequired) {
+      const extra = cellHeight - sumRequired;
+      const autoIndexes = [];
+      for (let i = 0; i < span.rowspan; i += 1) {
+        if (!existingHeights[r + i] || existingHeights[r + i] <= 0) {
+          autoIndexes.push(r + i);
+        }
+      }
+      if (autoIndexes.length) {
+        const extraPerRow = extra / autoIndexes.length;
+        for (const idx of autoIndexes) {
+          required[idx] += extraPerRow;
+        }
+      }
+    }
+  }
+
+  return existingHeights.map((h, r) => {
+    if (h > 0) return h;
+    return Math.max(24, Math.round(required[r] || 24));
+  });
 }
 
 /**
@@ -417,7 +575,7 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
  * @param {object} [options]
  * @param {string} [options.fileName]
  */
-export function parseFormTemplateWorkbook(buffer, options = {}) {
+export async function parseFormTemplateWorkbook(buffer, options = {}) {
   const fileName = options.fileName || 'upload.xls';
   const moduleCode = normalizeFormTemplateModuleCode(options.moduleCode || options.module);
   const workbook = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
@@ -425,10 +583,23 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
     throw new Error('工作簿无 Sheet');
   }
 
+  let excelWorkbook = null;
+  if (isXlsxBuffer(buffer, fileName)) {
+    try {
+      excelWorkbook = await loadExcelJsWorkbook(buffer);
+    } catch {
+      excelWorkbook = null;
+    }
+  }
+
   const parsedFileMeta = parseFileNameMeta(fileName) || { reportCode: null, versionLabel: '' };
   const fileMeta = { ...parsedFileMeta, moduleCode };
   const nameMatch = matchFormTemplateFileName(fileName);
   const sheetNames = resolveImportSheetNames(workbook, fileMeta);
+  const batchVersionLabel =
+    options.versionLabel !== undefined && options.versionLabel !== null
+      ? String(options.versionLabel).trim()
+      : null;
 
   const sheets = [];
   const skipped = [];
@@ -440,6 +611,26 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
       return;
     }
 
+    let excelRowHeights = null;
+    let excelColWidths = null;
+    if (excelWorkbook && sheet['!ref']) {
+      const range = XLSX.utils.decode_range(sheet['!ref']);
+      const rowCount = range.e.r - range.s.r + 1;
+      const colCount = range.e.c - range.s.c + 1;
+      excelRowHeights = readExcelJsSheetRowHeightsPx(
+        excelWorkbook,
+        sheetName,
+        range.s.r,
+        rowCount
+      );
+      excelColWidths = readExcelJsSheetColWidthsPx(
+        excelWorkbook,
+        sheetName,
+        range.s.c,
+        colCount
+      );
+    }
+
     const sheetMeta = parseFormTemplateSheetMeta(sheetName, fileMeta);
     const parsed = parseFormTemplateFromSheet(sheet, {
       sheetName,
@@ -449,6 +640,10 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
       fileMeta,
       fileNameMatched: nameMatch.matched,
       module: moduleCode,
+      moduleCode,
+      versionLabel: batchVersionLabel !== null ? batchVersionLabel : undefined,
+      excelRowHeights,
+      excelColWidths,
     });
 
     if (parsed.rowCount === 0 && parsed.colCount === 0) {
@@ -479,8 +674,9 @@ export function parseFormTemplateWorkbook(buffer, options = {}) {
  * @param {object} [options]
  * @param {string} [options.fileName]
  */
-export function parseFormTemplate(buffer, options = {}) {
-  return parseFormTemplateWorkbook(buffer, options).sheets[0];
+export async function parseFormTemplate(buffer, options = {}) {
+  const result = await parseFormTemplateWorkbook(buffer, options);
+  return result.sheets[0];
 }
 
 function mapFormTemplateRow(row) {
@@ -672,7 +868,7 @@ function importParsedFormTemplate(parsed, fileHash, subtypeCode) {
 /**
  * 导入表样并入库（同 report_code + version_label 已存在则覆盖）
  */
-export function importFormTemplate(buffer, options = {}) {
+export async function importFormTemplate(buffer, options = {}) {
   const moduleCode = normalizeFormTemplateModuleCode(options.moduleCode || options.module);
   if (!moduleCode) {
     throw new Error('请选择模块');
@@ -680,8 +876,16 @@ export function importFormTemplate(buffer, options = {}) {
   const subtypeCode = options.subtypeCode
     ? resolveImportSubtypeCode(options.subtypeCode, 'form_template', { moduleCode })
     : resolveSubtypeCode('form_template', moduleCode);
+  const importVersion = String(options.versionLabel ?? '').trim();
+  if (importVersion) {
+    ensureSubtypeVersionForImport(subtypeCode, importVersion);
+  }
   const fileHash = hashBuffer(buffer);
-  const { sheets, skipped } = parseFormTemplateWorkbook(buffer, { ...options, moduleCode });
+  const { sheets, skipped } = await parseFormTemplateWorkbook(buffer, {
+    ...options,
+    moduleCode,
+    versionLabel: importVersion || undefined,
+  });
 
   const items = sheets.map((parsed) => importParsedFormTemplate(parsed, fileHash, subtypeCode));
   saveDb();

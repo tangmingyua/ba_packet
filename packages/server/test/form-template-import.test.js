@@ -187,7 +187,7 @@ describe('form-template-import', () => {
     assert.equal(result.colCount, 3);
   });
 
-  it('sheetToMatrix 读取 Excel 原生列宽与行高', () => {
+  it('sheetToMatrix 读取 Excel 原生列宽与行高', async () => {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
       ['标题', 'A列'],
@@ -197,7 +197,7 @@ describe('form-template-import', () => {
     ws['!rows'] = [{ hpt: 20 }, { hpt: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, 'G0100_231');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const parsed = parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
+    const parsed = await parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
 
     assert.equal(parsed.colWidths.length, 2);
     assert.equal(parsed.rowHeights.length, 2);
@@ -210,9 +210,9 @@ describe('form-template-import', () => {
     assert.deepEqual(layout.rowHeights, parsed.rowHeights);
   });
 
-  it('parseFormTemplate G0100 元数据与 merges', () => {
+  it('parseFormTemplate G0100 元数据与 merges', async () => {
     const buffer = renameSampleSheet(readSample('G0100-logic_231.xls'), 'G0100_231');
-    const parsed = parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' });
+    const parsed = await parseFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' });
 
     assert.equal(parsed.reportCode, 'G0100');
     assert.equal(parsed.versionLabel, '231');
@@ -229,9 +229,9 @@ describe('form-template-import', () => {
     assert.ok(parsed.matrix.some((row) => String(row[1] || '').includes('Ⅰ. 资产')));
   });
 
-  it('parseFormTemplate G0200 分表标题保留', () => {
+  it('parseFormTemplate G0200 分表标题保留', async () => {
     const buffer = renameSampleSheet(readSample('G0200-logic_241.xls'), 'G0200_241');
-    const parsed = parseFormTemplate(buffer, { fileName: 'G0200-logic_241.xls' });
+    const parsed = await parseFormTemplate(buffer, { fileName: 'G0200-logic_241.xls' });
 
     assert.equal(parsed.reportCode, 'G0200');
     assert.equal(parsed.versionLabel, '241');
@@ -315,17 +315,19 @@ describe('form-template-import', () => {
     assert.equal(resolveFormTemplateReportTitle('', ''), '');
   });
 
-  it('importFormTemplate 未选模块时报错', () => {
+  it('importFormTemplate 未选模块时报错', async () => {
     const buffer = renameSampleSheet(readSample('G0100-logic_231.xls'), 'G0100_231');
-    assert.throws(
-      () => importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' }),
+    await assert.rejects(
+      async () => {
+        await importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls' });
+      },
       /请选择模块/
     );
   });
 
-  it('importFormTemplate 同版本再次导入会覆盖', () => {
+  it('importFormTemplate 同版本再次导入会覆盖', async () => {
     const buffer = renameSampleSheet(readSample('G0100-logic_231.xls'), 'G0100_231');
-    const first = importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
+    const first = await importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
     assert.ok(first.id > 0);
     assert.equal(first.importAction, 'created');
     assert.equal(first.moduleCode, '1104');
@@ -336,7 +338,7 @@ describe('form-template-import', () => {
     assert.equal(g0100Items.length, 1);
     assert.equal(g0100Items[0].moduleCode, '1104');
 
-    const second = importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
+    const second = await importFormTemplate(buffer, { fileName: 'G0100-logic_231.xls', ...IMPORT_1104 });
     assert.equal(second.importAction, 'replaced');
     assert.equal(
       listFormTemplates().filter((x) => x.reportCode === 'G0100' && x.versionLabel === '231').length,
@@ -356,9 +358,9 @@ describe('form-template-import', () => {
     assert.equal(getFormTemplate(first.id), null);
   });
 
-  it('parseFormTemplateWorkbook 多 Sheet 按表号导入', () => {
+  it('parseFormTemplateWorkbook 多 Sheet 按表号导入', async () => {
     const buffer = buildMultiSheetWorkbook();
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'logic_888.xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'logic_888.xlsx' });
 
     assert.equal(parsed.sheets.length, 2);
     assert.deepEqual(
@@ -370,7 +372,16 @@ describe('form-template-import', () => {
     assert.equal(parsed.skipped.length, 0);
   });
 
-  it('parseFormTemplateWorkbook 多 Sheet 含 NR 表一并导入', () => {
+  it('parseFormTemplateWorkbook 传入 versionLabel 时整批使用该版本', async () => {
+    const buffer = buildMultiSheetWorkbook();
+    const parsed = await parseFormTemplateWorkbook(buffer, {
+      fileName: 'logic_888.xlsx',
+      versionLabel: '231',
+    });
+    assert.ok(parsed.sheets.every((s) => s.versionLabel === '231'));
+  });
+
+  it('parseFormTemplateWorkbook 多 Sheet 含 NR 表一并导入', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
@@ -384,7 +395,7 @@ describe('form-template-import', () => {
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'logic_231.xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'logic_231.xlsx' });
 
     assert.equal(parsed.sheets.length, 2);
     assert.deepEqual(
@@ -394,7 +405,7 @@ describe('form-template-import', () => {
     assert.ok(parsed.sheets.every((s) => s.versionLabel === '231'));
   });
 
-  it('parseFormTemplateWorkbook 字母开头 Sheet 可导入', () => {
+  it('parseFormTemplateWorkbook 字母开头 Sheet 可导入', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
@@ -403,15 +414,15 @@ describe('form-template-import', () => {
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明页');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'custom.xlsx', ...IMPORT_1104 });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'custom.xlsx', ...IMPORT_1104 });
     assert.equal(parsed.sheets.length, 1);
     assert.equal(parsed.sheets[0].reportCode, 'ABC01');
     assert.equal(parsed.sheets[0].versionLabel, '100');
   });
 
-  it('importFormTemplate 多 Sheet 一次入库', () => {
+  it('importFormTemplate 多 Sheet 一次入库', async () => {
     const buffer = buildMultiSheetWorkbook();
-    const result = importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
+    const result = await importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
 
     assert.equal(result.sheetCount, 2);
     assert.equal(result.imported, 2);
@@ -427,7 +438,7 @@ describe('form-template-import', () => {
       )
     );
 
-    const second = importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
+    const second = await importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
     assert.equal(second.imported, 2);
     assert.equal(second.replacedCount, 2);
     assert.equal(second.createdCount, 0);
@@ -441,12 +452,12 @@ describe('form-template-import', () => {
     );
   });
 
-  it('多 Sheet 导入后表样列表按 Sheet 顺序排列', () => {
+  it('多 Sheet 导入后表样列表按 Sheet 顺序排列', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['G05表']]), 'G0500_');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['G06表']]), 'G0600_');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
+    await importFormTemplate(buffer, { fileName: 'logic_888.xlsx', ...IMPORT_1104 });
     const items = listFormTemplates().filter(
       (x) => x.reportCode === 'G0500' || x.reportCode === 'G0600'
     );
@@ -456,9 +467,9 @@ describe('form-template-import', () => {
     );
   });
 
-  it('多 Sheet：Sheet 名带版本仍全部导入', () => {
+  it('多 Sheet：Sheet 名带版本仍全部导入', async () => {
     const buffer = buildMultiSheetWorkbookWithVersionNames();
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'logic_999.xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'logic_999.xlsx' });
     assert.equal(parsed.sheets.length, 2);
     assert.deepEqual(
       parsed.sheets.map((s) => s.reportCode).sort(),
@@ -469,13 +480,13 @@ describe('form-template-import', () => {
       ['999', '999']
     );
 
-    const result = importFormTemplate(buffer, { fileName: 'logic_999.xlsx', ...IMPORT_1104 });
+    const result = await importFormTemplate(buffer, { fileName: 'logic_999.xlsx', ...IMPORT_1104 });
     assert.equal(result.imported, 2);
   });
 
-  it('多 Sheet：文件名是单表格式时仍解析全部表号 Sheet，空版本默认 LASTEST', () => {
+  it('多 Sheet：文件名是单表格式时仍解析全部表号 Sheet，空版本默认 LASTEST', async () => {
     const buffer = buildMultiSheetWorkbook();
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'G0100-logic_777.xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'G0100-logic_777.xlsx' });
     assert.equal(parsed.sheets.length, 2, '不应因文件名只导 G0100');
     assert.deepEqual(
       parsed.sheets.map((s) => s.reportCode).sort(),
@@ -486,15 +497,15 @@ describe('form-template-import', () => {
     assert.equal(byCode.G0200, FORM_TEMPLATE_LATEST_VERSION);
   });
 
-  it('Sheet 名以中文开头且文件名含表号时可导入', () => {
+  it('Sheet 名以中文开头且文件名含表号时可导入', async () => {
     const buffer = buildChineseSheetWorkbook();
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'G0100-logic_231.xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'G0100-logic_231.xlsx' });
     assert.equal(parsed.sheets.length, 1);
     assert.equal(parsed.sheets[0].reportCode, 'G0100');
     assert.equal(parsed.sheets[0].versionLabel, '231');
   });
 
-  it('NR 表「_」后版本为空时导入为 LASTEST 且再次导入覆盖', () => {
+  it('NR 表「_」后版本为空时导入为 LASTEST 且再次导入覆盖', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
@@ -502,7 +513,7 @@ describe('form-template-import', () => {
       'NR0100_'
     );
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const first = importFormTemplate(buffer, { fileName: 'nr.xlsx', ...IMPORT_NR });
+    const first = await importFormTemplate(buffer, { fileName: 'nr.xlsx', ...IMPORT_NR });
     assert.equal(first.reportCode, 'NR0100');
     assert.equal(first.versionLabel, FORM_TEMPLATE_LATEST_VERSION);
     assert.equal(first.moduleCode, 'IMAS');
@@ -515,7 +526,7 @@ describe('form-template-import', () => {
       'NR0100_'
     );
     const buffer2 = XLSX.write(wb2, { type: 'buffer', bookType: 'xlsx' });
-    const second = importFormTemplate(buffer2, { fileName: 'nr.xlsx', ...IMPORT_NR });
+    const second = await importFormTemplate(buffer2, { fileName: 'nr.xlsx', ...IMPORT_NR });
     assert.equal(second.importAction, 'replaced');
     assert.equal(second.versionLabel, FORM_TEMPLATE_LATEST_VERSION);
 
@@ -524,7 +535,7 @@ describe('form-template-import', () => {
     assert.equal(getFormTemplate(items[0].id).matrix[0][0], 'NR表 v2');
   });
 
-  it('一表通模块不强制 Sheet 名含「_」，Sheet 名即为表名', () => {
+  it('一表通模块不强制 Sheet 名含「_」，Sheet 名即为表名', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
@@ -538,7 +549,7 @@ describe('form-template-import', () => {
     );
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明');
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const parsed = parseFormTemplateWorkbook(buffer, { fileName: 'ybt.xlsx', ...IMPORT_YBT });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'ybt.xlsx', ...IMPORT_YBT });
     assert.equal(parsed.sheets.length, 2);
     const bySheet = Object.fromEntries(parsed.sheets.map((s) => [s.sheetName, s]));
     assert.equal(bySheet['JGXX(1.1机构信息)'].reportCode, 'JGXX');

@@ -66,7 +66,7 @@ describe('form-template-search', () => {
 
     tmpDir = await setupTestDb();
 
-    const imported = importFormTemplate(renameSampleSheet(fs.readFileSync(SAMPLE), 'G0100_231'), {
+    const imported = await importFormTemplate(renameSampleSheet(fs.readFileSync(SAMPLE), 'G0100_231'), {
       fileName: 'G0100-logic_231.xls',
       moduleCode: '1104',
     });
@@ -186,14 +186,14 @@ describe('form-template-search', () => {
 
 
 
-  it('搜索分表标题', () => {
+  it('搜索分表标题', async () => {
 
     const buffer = renameSampleSheet(
       fs.readFileSync(path.resolve(__dirname, '../../../参考/汇总指标案例/G0200-logic_241.xls')),
       'G0200_241'
     );
 
-    importFormTemplate(buffer, { fileName: 'G0200-logic_241.xls', moduleCode: '1104' });
+    await importFormTemplate(buffer, { fileName: 'G0200-logic_241.xls', moduleCode: '1104' });
 
     const result = searchFormTemplates('表一');
 

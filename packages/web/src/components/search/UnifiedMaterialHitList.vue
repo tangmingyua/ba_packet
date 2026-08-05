@@ -53,6 +53,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import CodeValueLookupModal from './CodeValueLookupModal.vue';
+import { compareVersionLabelsDesc, pickItemVersion } from '../../utils/versionSort.js';
 
 const props = defineProps({
   reports: { type: Array, default: () => [] },
@@ -77,11 +78,16 @@ const hits = computed(() => {
           entityKind: item.entityKind,
           entityId: item.entityId,
           dictName: item.payload?.dict_name || block.tableName || '',
+          versionLabel: pickItemVersion(item, block),
         });
       }
     }
   }
-  return rows;
+  return rows.sort((a, b) => {
+    const vcmp = compareVersionLabelsDesc(a.versionLabel, b.versionLabel);
+    if (vcmp !== 0) return vcmp;
+    return (a.dataItemName || '').localeCompare(b.dataItemName || '', 'zh-CN');
+  });
 });
 
 function isViewLink(path) {

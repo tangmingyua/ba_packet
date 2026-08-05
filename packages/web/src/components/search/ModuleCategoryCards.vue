@@ -1,6 +1,6 @@
 <template>
   <div class="module-category-cards">
-    <div class="cards-row" role="group" aria-label="资料类型标签">
+    <div class="cards-row" :role="single ? 'radiogroup' : 'group'" aria-label="资料类型标签">
       <button
         v-for="cat in options"
         :key="cat.code"
@@ -11,7 +11,9 @@
           disabled: isDisabled(cat),
         }"
         :style="cardStyle(cat.code)"
-        :aria-pressed="isSelected(cat.code)"
+        :aria-pressed="!single && isSelected(cat.code)"
+        :aria-checked="single ? isSelected(cat.code) : undefined"
+        :role="single ? 'radio' : undefined"
         :disabled="isDisabled(cat)"
         :title="isDisabled(cat) ? '当前主类下暂无该类型子类' : cat.label"
         @click="toggle(cat.code)"
@@ -22,7 +24,7 @@
         <span class="card-count">{{ cat.count ?? 0 }}</span>
       </button>
     </div>
-    <div v-if="options.length" class="cards-actions">
+    <div v-if="options.length && !single" class="cards-actions">
       <button v-if="!allSelected" type="button" class="cards-action" @click="selectAll">
         全选
       </button>
@@ -40,6 +42,8 @@ import { getCategoryCardTheme } from '../../constants/categoryCardThemes.js';
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   options: { type: Array, default: () => [] },
+  /** 为 true 时仅允许选中一个标签（再次点击已选标签不会取消） */
+  single: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:modelValue', 'change']);
@@ -66,6 +70,13 @@ function isSelected(code) {
 function toggle(code) {
   const cat = props.options.find((o) => o.code === code);
   if (cat && isDisabled(cat)) return;
+  if (props.single) {
+    if (props.modelValue.includes(code)) return;
+    const next = [code];
+    emit('update:modelValue', next);
+    emit('change', next);
+    return;
+  }
   const next = props.modelValue.includes(code)
     ? props.modelValue.filter((c) => c !== code)
     : [...props.modelValue, code];

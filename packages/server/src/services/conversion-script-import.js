@@ -7,6 +7,7 @@ import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { listModules } from './dataset-config.js';
 import { resolveSubtypeCode } from '../config/system-subtypes.js';
 import { resolveImportSubtypeCode } from './dataset-config.js';
+import { sortByVersionLabelDesc } from '../utils/version-sort.js';
 
 /** 文件名无 _版本 时的默认版本（与表样一致） */
 export const CONVERSION_SCRIPT_LATEST_VERSION = 'LASTEST';
@@ -71,7 +72,7 @@ function mapConversionScriptRow(row) {
   };
 }
 
-export function listConversionScripts({ moduleCode, reportCode } = {}) {
+export function listConversionScripts({ moduleCode, reportCode, subtypeCode } = {}) {
   let sql = `SELECT id, module_code, report_code, version_label, source_file_name, imported_at
              FROM conversion_scripts WHERE 1=1`;
   const params = [];
@@ -81,14 +82,20 @@ export function listConversionScripts({ moduleCode, reportCode } = {}) {
     params.push(String(moduleCode).trim());
   }
 
+  const sub = String(subtypeCode ?? '').trim();
+  if (sub) {
+    sql += ' AND subtype_code = ?';
+    params.push(sub);
+  }
+
   const code = String(reportCode ?? '').trim().toUpperCase();
   if (code) {
     sql += ' AND UPPER(report_code) LIKE ?';
     params.push(`%${code}%`);
   }
 
-  sql += ' ORDER BY report_code, version_label, imported_at DESC';
-  return queryAll(sql, params).map(mapConversionScriptRow);
+  sql += ' ORDER BY report_code, version_label DESC, imported_at DESC';
+  return sortByVersionLabelDesc(queryAll(sql, params).map(mapConversionScriptRow));
 }
 
 export function getConversionScript(id) {
@@ -122,20 +129,20 @@ export function importConversionScript(buffer, options = {}) {
   }
 
   const fileHash = hashBuffer(buffer);
+  const subtypeCode = options.subtypeCode
+    ? resolveImportSubtypeCode(options.subtypeCode, 'script', { moduleCode })
+    : resolveSubtypeCode('script', moduleCode);
+
   const existing = queryOne(
     `SELECT id FROM conversion_scripts
-     WHERE module_code = ? AND report_code = ? AND version_label = ?`,
-    [moduleCode, meta.reportCode, meta.versionLabel]
+     WHERE module_code = ? AND report_code = ? AND version_label = ? AND subtype_code = ?`,
+    [moduleCode, meta.reportCode, meta.versionLabel, subtypeCode]
   );
   const importAction = existing ? 'replaced' : 'created';
 
   if (existing) {
     run('DELETE FROM conversion_scripts WHERE id = ?', [existing.id]);
   }
-
-  const subtypeCode = options.subtypeCode
-    ? resolveImportSubtypeCode(options.subtypeCode, 'script', { moduleCode })
-    : resolveSubtypeCode('script', moduleCode);
 
   run(
     `INSERT INTO conversion_scripts (

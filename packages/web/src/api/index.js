@@ -253,7 +253,7 @@ export async function importDatasetExcel(file, { versionIds = [], description = 
   return response.json();
 }
 
-export async function importFormTemplateExcel(file, { moduleCode, subtypeCode } = {}) {
+export async function importFormTemplateExcel(file, { moduleCode, subtypeCode, versionLabel } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (!moduleCode) {
@@ -261,6 +261,7 @@ export async function importFormTemplateExcel(file, { moduleCode, subtypeCode } 
   }
   form.append('moduleCode', moduleCode);
   if (subtypeCode) form.append('subtypeCode', subtypeCode);
+  if (versionLabel) form.append('versionLabel', String(versionLabel).trim());
   const response = await fetch(`${getApiBase()}/api/form-template/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -304,11 +305,12 @@ export function getFormTemplateSearchHits(id, q, { hitsLimit } = {}) {
   return request(`/api/form-templates/${id}/search-hits?${query}`);
 }
 
-export async function importFillInstructionDocument(file, { moduleCode, subtypeCode } = {}) {
+export async function importFillInstructionDocument(file, { moduleCode, subtypeCode, versionLabel } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (moduleCode) form.append('moduleCode', moduleCode);
   if (subtypeCode) form.append('subtypeCode', subtypeCode);
+  if (versionLabel) form.append('versionLabel', String(versionLabel).trim());
   const response = await fetch(`${getApiBase()}/api/document/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -389,10 +391,11 @@ export async function importConversionScriptFile(file, { moduleCode, subtypeCode
   return response.json();
 }
 
-export function listConversionScripts({ moduleCode, reportCode } = {}) {
+export function listConversionScripts({ moduleCode, reportCode, subtypeCode } = {}) {
   const query = new URLSearchParams();
   if (moduleCode) query.set('moduleCode', String(moduleCode));
   if (reportCode) query.set('reportCode', String(reportCode));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
   const qs = query.toString();
   return request(`/api/conversion-scripts${qs ? `?${qs}` : ''}`);
 }

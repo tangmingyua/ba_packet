@@ -62,6 +62,15 @@ export const SEED_SUBTYPES = [
     sortOrder: 210,
   },
   {
+    code: 'ybt_mapping_sample',
+    name: '一表通 MAPPING SAMPLE',
+    moduleCode: 'YBT',
+    category: 'norm',
+    storageKind: 'form_template',
+    importEnabled: true,
+    sortOrder: 205,
+  },
+  {
     code: 'EAST_CODE_VALUE',
     name: 'EAST码值',
     moduleCode: 'EAST',

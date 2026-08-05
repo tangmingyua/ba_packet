@@ -12,6 +12,7 @@ import {
   listConversionScripts,
   parseConversionScriptFileName,
 } from '../src/services/conversion-script-import.js';
+import { upsertSubtype } from '../src/services/dataset-config.js';
 
 function authHeaders(extra = {}) {
   return { authorization: `Bearer ${getApiToken()}`, ...extra };
@@ -85,6 +86,47 @@ describe('conversion-script-import', () => {
       listConversionScripts({ moduleCode: 'YBT', reportCode: 'G0200' }).length,
       1
     );
+  });
+
+  it('importConversionScript 按 subtype_code 隔离同名表号', () => {
+    upsertSubtype({
+      code: 'YBT_TO_1104_TEST',
+      name: '转1104 测试子类',
+      moduleCode: 'YBT',
+      category: 'composite',
+      storageKind: 'script',
+      enabled: true,
+      sortOrder: 999,
+    });
+
+    const a = importConversionScript(Buffer.from('SELECT 1;', 'utf8'), {
+      fileName: 'G0999.sql',
+      moduleCode: 'YBT',
+      subtypeCode: 'CONVERSION_SCRIPT',
+    });
+    const b = importConversionScript(Buffer.from('SELECT 2;', 'utf8'), {
+      fileName: 'G0999.sql',
+      moduleCode: 'YBT',
+      subtypeCode: 'YBT_TO_1104_TEST',
+    });
+    assert.notEqual(a.id, b.id);
+    assert.equal(
+      listConversionScripts({
+        moduleCode: 'YBT',
+        subtypeCode: 'CONVERSION_SCRIPT',
+        reportCode: 'G0999',
+      }).length,
+      1
+    );
+    assert.equal(
+      listConversionScripts({
+        moduleCode: 'YBT',
+        subtypeCode: 'YBT_TO_1104_TEST',
+        reportCode: 'G0999',
+      }).length,
+      1
+    );
+    assert.equal(getConversionScript(b.id).scriptText, 'SELECT 2;');
   });
 
   it('importConversionScript 未选模块时报错', () => {

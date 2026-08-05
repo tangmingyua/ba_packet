@@ -16,6 +16,7 @@ import {
   parseCategoryFilter,
   expandCategoriesForStorage,
 } from '../config/material-categories.js';
+import { compareVersionLabelsDesc } from '../utils/version-sort.js';
 
 function parsePayload(raw) {
   try {
@@ -250,7 +251,9 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories, mod
   }
 
   const reports = [...bySubtype.values()].map((report) => {
-    const blocks = [...report.blockMap.entries()].map(([blockKey, items]) => ({
+    const blocks = [...report.blockMap.entries()]
+      .sort(([ka], [kb]) => compareVersionLabelsDesc(ka, kb))
+      .map(([blockKey, items]) => ({
       blockKey,
       tableName: blockKey,
       versionLabel: blockKey,

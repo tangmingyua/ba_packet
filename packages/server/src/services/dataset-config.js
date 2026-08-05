@@ -21,6 +21,32 @@ function parseJsonArray(value, fallback = []) {
   }
 }
 
+export function isExcelConfigStorageKind(kind) {
+  return !kind || kind === 'excel';
+}
+
+/** 删除子类时先按版本级联清空并移除版本记录 */
+export function cascadesSubtypeVersionsOnDelete(storageKind) {
+  return (
+    isExcelConfigStorageKind(storageKind) ||
+    storageKind === 'form_template' ||
+    storageKind === 'document'
+  );
+}
+
+/** 删除子类时先按版本级联清空关联资料 */
+export function cascadesSubtypeDeleteByVersions(storageKind) {
+  return (
+    isExcelConfigStorageKind(storageKind) ||
+    storageKind === 'form_template' ||
+    storageKind === 'document'
+  );
+}
+
+export function supportsSubtypeVersions(kind) {
+  return isExcelConfigStorageKind(kind) || kind === 'form_template' || kind === 'document';
+}
+
 function rowToVersion(row) {
   return {
     id: row.id,
@@ -186,6 +212,34 @@ function countRestorationRecords(subtypeCode, storageKind) {
   return Number(
     queryOne(`SELECT COUNT(*) AS c FROM ${table} WHERE subtype_code = ?`, [subtypeCode])?.c || 0
   );
+}
+
+function purgeRestorationRecordsBySubtype(subtypeCode, storageKind) {
+  if (storageKind === 'form_template') {
+    run('DELETE FROM form_templates WHERE subtype_code = ?', [subtypeCode]);
+    saveDb();
+    return;
+  }
+  if (storageKind === 'document') {
+    const rows = queryAll('SELECT id FROM documents WHERE subtype_code = ?', [subtypeCode]);
+    for (const row of rows) {
+      const id = Number(row.id);
+      run('DELETE FROM report_doc_mapping WHERE document_id = ?', [id]);
+      run('DELETE FROM document_nodes WHERE document_id = ?', [id]);
+      run('DELETE FROM documents WHERE id = ?', [id]);
+    }
+    saveDb();
+    return;
+  }
+  if (storageKind === 'script') {
+    run('DELETE FROM conversion_scripts WHERE subtype_code = ?', [subtypeCode]);
+    saveDb();
+    return;
+  }
+  if (storageKind === 'code_value') {
+    run('DELETE FROM module_code_values WHERE subtype_code = ?', [subtypeCode]);
+    saveDb();
+  }
 }
 
 function resolveModuleCode(moduleCode, subtypeCode) {
@@ -359,15 +413,25 @@ export function deleteSubtype(code) {
   const existing = getSubtype(normalizedCode);
   if (!existing) throw new Error('子类不存在');
 
-  if (existing.storageKind === 'excel') {
+  if (cascadesSubtypeVersionsOnDelete(existing.storageKind)) {
     const versions = listSubtypeVersions(normalizedCode);
     for (const v of versions) {
       deleteSubtypeVersion(v.id);
     }
+    if (existing.storageKind === 'form_template' || existing.storageKind === 'document') {
+      const linked = countRestorationRecords(normalizedCode, existing.storageKind);
+      if (linked > 0) {
+        purgeRestorationRecordsBySubtype(normalizedCode, existing.storageKind);
+      }
+    }
   } else {
     const linked = countRestorationRecords(normalizedCode, existing.storageKind);
     if (linked > 0) {
-      throw new Error(`该子类下仍有 ${linked} 条资料，请先删除后再移除子类`);
+      if (existing.storageKind === 'script' || existing.storageKind === 'code_value') {
+        purgeRestorationRecordsBySubtype(normalizedCode, existing.storageKind);
+      } else {
+        throw new Error(`该子类下仍有 ${linked} 条资料，请先删除后再移除子类`);
+      }
     }
   }
 
@@ -404,13 +468,17 @@ export function findVersionBySheetName(sheetName) {
 export function createSubtypeVersion(subtypeCode, body) {
   const subtype = getSubtype(subtypeCode);
   if (!subtype) throw new Error('子类不存在');
-  if (subtype.storageKind !== 'excel') {
-    throw new Error('仅配置类子类需要版本与字段映射');
+  if (!supportsSubtypeVersions(subtype.storageKind)) {
+    throw new Error('该子类形态不支持版本配置');
   }
   const versionLabel = String(body.versionLabel || '').trim();
-  const sheetName = String(body.sheetName || '').trim();
+  let sheetName = String(body.sheetName || '').trim();
   if (!versionLabel) throw new Error('请填写版本号');
-  if (!sheetName) throw new Error('请填写 Sheet 名');
+  const isExcel = isExcelConfigStorageKind(subtype.storageKind);
+  if (!sheetName) {
+    if (isExcel) throw new Error('请填写 Sheet 名');
+    sheetName = '-';
+  }
 
   if (body.isDefault) {
     run(`UPDATE subtype_versions SET is_default = 0 WHERE subtype_code = ?`, [subtypeCode]);
@@ -445,7 +513,7 @@ export function createSubtypeVersion(subtypeCode, body) {
   );
   const created = rowToVersion(row);
 
-  if (previous?.id) {
+  if (isExcel && previous?.id) {
     const sourceMappings = listFieldMappings(Number(previous.id));
     if (sourceMappings.length) {
       saveFieldMappings(
@@ -465,23 +533,107 @@ export function createSubtypeVersion(subtypeCode, body) {
   return created;
 }
 
-export function countRecordsForVersion(versionId) {
-  return Number(
-    queryOne('SELECT COUNT(*) AS c FROM data_records WHERE subtype_version_id = ?', [versionId])
-      ?.c || 0
+/**
+ * 导入前确保 subtype_versions 中存在该版本（表样 / Word 等还原类）
+ */
+export function ensureSubtypeVersionForImport(subtypeCode, versionLabel) {
+  const subtype = getSubtype(subtypeCode);
+  if (!subtype) throw new Error('子类不存在');
+  if (!supportsSubtypeVersions(subtype.storageKind)) return null;
+  const label = String(versionLabel || '').trim();
+  if (!label) throw new Error('请填写导入版本号');
+  const existing = queryOne(
+    `SELECT id FROM subtype_versions WHERE subtype_code = ? AND version_label = ?`,
+    [subtypeCode, label]
   );
+  if (existing?.id) return getSubtypeVersion(Number(existing.id));
+  return createSubtypeVersion(subtypeCode, {
+    versionLabel: label,
+    sheetName: '-',
+    isDefault: false,
+  });
+}
+
+export function countRecordsForVersion(versionId) {
+  const version = getSubtypeVersion(versionId);
+  if (!version) return 0;
+  const subtype = getSubtype(version.subtypeCode);
+  const kind = subtype?.storageKind || 'excel';
+  if (isExcelConfigStorageKind(kind)) {
+    return Number(
+      queryOne('SELECT COUNT(*) AS c FROM data_records WHERE subtype_version_id = ?', [versionId])
+        ?.c || 0
+    );
+  }
+  if (kind === 'form_template') {
+    return Number(
+      queryOne(
+        `SELECT COUNT(*) AS c FROM form_templates
+         WHERE subtype_code = ? AND version_label = ?`,
+        [version.subtypeCode, version.versionLabel]
+      )?.c || 0
+    );
+  }
+  if (kind === 'document') {
+    return Number(
+      queryOne(
+        `SELECT COUNT(*) AS c FROM documents
+         WHERE subtype_code = ? AND version_label = ?`,
+        [version.subtypeCode, version.versionLabel]
+      )?.c || 0
+    );
+  }
+  return 0;
 }
 
 export function clearVersionRecords(versionId) {
   const version = getSubtypeVersion(versionId);
   if (!version) throw new Error('版本不存在');
-  const datasets = queryAll('SELECT id FROM datasets WHERE subtype_version_id = ?', [versionId]);
-  run('DELETE FROM data_records WHERE subtype_version_id = ?', [versionId]);
-  for (const ds of datasets) {
-    run('DELETE FROM datasets WHERE id = ?', [ds.id]);
+  const subtype = getSubtype(version.subtypeCode);
+  const kind = subtype?.storageKind || 'excel';
+
+  if (isExcelConfigStorageKind(kind)) {
+    const datasets = queryAll('SELECT id FROM datasets WHERE subtype_version_id = ?', [versionId]);
+    run('DELETE FROM data_records WHERE subtype_version_id = ?', [versionId]);
+    for (const ds of datasets) {
+      run('DELETE FROM datasets WHERE id = ?', [ds.id]);
+    }
+    saveDb();
+    return { clearedDatasets: datasets.length };
   }
+
+  if (kind === 'form_template') {
+    const cleared = Number(
+      queryOne(
+        `SELECT COUNT(*) AS c FROM form_templates WHERE subtype_code = ? AND version_label = ?`,
+        [version.subtypeCode, version.versionLabel]
+      )?.c || 0
+    );
+    run('DELETE FROM form_templates WHERE subtype_code = ? AND version_label = ?', [
+      version.subtypeCode,
+      version.versionLabel,
+    ]);
+    saveDb();
+    return { clearedDatasets: cleared };
+  }
+
+  if (kind === 'document') {
+    const rows = queryAll(
+      `SELECT id FROM documents WHERE subtype_code = ? AND version_label = ?`,
+      [version.subtypeCode, version.versionLabel]
+    );
+    for (const row of rows) {
+      const id = Number(row.id);
+      run('DELETE FROM report_doc_mapping WHERE document_id = ?', [id]);
+      run('DELETE FROM document_nodes WHERE document_id = ?', [id]);
+      run('DELETE FROM documents WHERE id = ?', [id]);
+    }
+    saveDb();
+    return { clearedDatasets: rows.length };
+  }
+
   saveDb();
-  return { clearedDatasets: datasets.length };
+  return { clearedDatasets: 0 };
 }
 
 export function updateSubtypeVersion(id, patch) {

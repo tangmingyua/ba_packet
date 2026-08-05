@@ -23,7 +23,22 @@
         <span class="leaf-part-title">{{ leafPartTitle }}</span>
         <span class="leaf-part-body">{{ leafPartBody }}</span>
       </span>
-      <span v-else class="doc-tree-text">{{ node.text }}</span>
+      <span v-else-if="node.nodeKind !== 'table'" class="doc-tree-text">{{ node.text }}</span>
+      <span v-else class="doc-tree-text doc-tree-table-title">{{ node.text }}</span>
+    </div>
+
+    <div
+      v-if="node.nodeKind === 'table' && tableRows.length && (collapsible ? expanded : true)"
+      class="doc-word-table-wrap"
+      :style="{ paddingLeft: `${indent + 24}px` }"
+    >
+      <table class="doc-word-table">
+        <tbody>
+          <tr v-for="(row, ri) in tableRows" :key="ri">
+            <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <ul v-if="collapsible ? expanded && hasChildren : hasChildren" class="doc-tree-children">
@@ -55,7 +70,7 @@ const props = defineProps({
   highlightNodeId: { type: Number, default: null },
 });
 
-const COLLAPSIBLE = new Set(['part', 'section', 'heading']);
+const COLLAPSIBLE = new Set(['part', 'section', 'heading', 'table']);
 const KIND_LABELS = {
   part: '部分',
   general_item: '条目',
@@ -65,6 +80,7 @@ const KIND_LABELS = {
   heading: '标题',
   paragraph: '段落',
   placeholder: '表样',
+  table: '表格',
 };
 
 const collapsible = computed(() => COLLAPSIBLE.has(props.node.nodeKind));
@@ -81,8 +97,14 @@ const leafPartBody = computed(() => leafPartSplit.value?.body || '');
 const indent = computed(() => Math.min(props.depth * 16, 96));
 const kindLabel = computed(() => KIND_LABELS[props.node.nodeKind] || props.node.nodeKind);
 const showKindBadge = computed(() =>
-  ['part', 'section', 'indicator', 'heading', 'placeholder'].includes(props.node.nodeKind)
+  ['part', 'section', 'indicator', 'heading', 'placeholder', 'table'].includes(props.node.nodeKind)
 );
+
+const tableRows = computed(() => {
+  const rows = props.node.tableRows;
+  if (!Array.isArray(rows) || !rows.length) return [];
+  return rows.map((row) => (Array.isArray(row) ? row : [String(row ?? '')]));
+});
 
 const nodeRef = ref(null);
 
@@ -130,6 +152,7 @@ function defaultExpanded(node) {
   if (node.nodeKind === 'part') return node.sortOrder === 1;
   if (node.nodeKind === 'section') return false;
   if (node.nodeKind === 'heading') return true;
+  if (node.nodeKind === 'table') return true;
   return true;
 }
 </script>
@@ -236,6 +259,39 @@ function defaultExpanded(node) {
 .kind-placeholder > .doc-tree-row .doc-tree-text {
   color: var(--text-muted);
   font-style: italic;
+}
+
+.doc-tree-table-title {
+  font-weight: 500;
+}
+
+.doc-word-table-wrap {
+  margin: 4px 8px 10px 0;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.doc-word-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: max-content;
+  max-width: 100%;
+  background: #fff;
+}
+
+.doc-word-table td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+  min-width: 48px;
+  max-width: 280px;
+}
+
+.kind-table > .doc-tree-row .doc-tree-text {
+  color: var(--text);
 }
 
 .kind-body > .doc-tree-row .doc-tree-text {

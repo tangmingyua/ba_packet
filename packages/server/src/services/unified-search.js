@@ -14,10 +14,11 @@ import { searchDocuments } from './document-search.js';
 import { sortByRelevance } from './relevance.js';
 import { listModules, getSubtype, listSubtypes } from './dataset-config.js';
 import { buildAggregateBrowseIndex } from './aggregate-browse.js';
+import { compareVersionLabelsDesc, sortByVersionLabelDesc } from '../utils/version-sort.js';
 
 const STORAGE_KIND_CATEGORIES = {
   form_template: ['norm'],
-  document: ['norm'],
+  document: ['norm', 'composite'],
   script: ['composite'],
   code_value: ['code_value'],
 };
@@ -107,7 +108,8 @@ function searchFormTemplateReports(keyword, { moduleCode, subtypeCode, categorie
 
   const reports = [];
   for (const [stCode, { st, items }] of bySubtype) {
-    const blocks = items.map((item) => ({
+    const sortedItems = sortByVersionLabelDesc(items, (item) => item.versionLabel);
+    const blocks = sortedItems.map((item) => ({
       blockKey: `${item.reportCode}_${item.versionLabel}`,
       tableName: `${item.reportCode} / ${item.versionLabel}`,
       versionLabel: item.versionLabel,
@@ -213,7 +215,7 @@ function searchScriptReports(keyword, { moduleCode, subtypeCode } = {}) {
   const like = likeKeyword(keyword);
   const params = [like, like, like];
   let sql = `
-    SELECT id, module_code, report_code, version_label, source_file_name
+    SELECT id, module_code, subtype_code, report_code, version_label, source_file_name
     FROM conversion_scripts
     WHERE (
       LOWER(script_text) LIKE ? OR LOWER(report_code) LIKE ? OR LOWER(source_file_name) LIKE ?
@@ -227,49 +229,61 @@ function searchScriptReports(keyword, { moduleCode, subtypeCode } = {}) {
     sql += ' AND subtype_code = ?';
     params.push(subtypeCode);
   }
-  sql += ' ORDER BY report_code, version_label LIMIT 40';
+  sql += ' ORDER BY subtype_code, report_code, version_label DESC LIMIT 80';
 
   const rows = queryAll(sql, params);
   if (!rows.length) return [];
 
-  const blocks = rows.map((row) => ({
-    blockKey: `${row.report_code}_${row.version_label}`,
-    tableName: `${row.report_code} / ${row.version_label}`,
-    versionLabel: row.version_label,
-    items: [
-      {
-        dataItemName: row.source_file_name,
-        snippet: `表号 ${row.report_code} · 版本 ${row.version_label}`,
-        moduleCode: row.module_code,
-        moduleName: moduleLabel(row.module_code),
-        category: 'composite',
-        categoryLabel: getCategoryLabel('composite'),
-        entityKind: 'script',
-        entityId: Number(row.id),
-        linkPath: `/conversion-scripts/${row.id}`,
-        payload: {
-          report_code: row.report_code,
-          version: row.version_label,
-        },
-        fields: [
-          { key: '表号', value: row.report_code },
-          { key: '文件名', value: row.source_file_name },
-        ],
-      },
-    ],
-  }));
+  const bySubtype = new Map();
+  for (const row of rows) {
+    const sub = String(row.subtype_code || '').trim() || 'CONVERSION_SCRIPT';
+    if (!bySubtype.has(sub)) bySubtype.set(sub, []);
+    bySubtype.get(sub).push(row);
+  }
 
-  const mod = moduleCode || rows[0]?.module_code || 'YBT';
-  return [
-    buildMaterialReport({
-      code: 'CONVERSION_SCRIPT',
-      name: '转1104 脚本',
-      moduleCode: mod,
-      category: 'composite',
-      layout: 'script',
-      blocks,
-    }),
-  ];
+  const reports = [];
+  for (const [subCode, subRows] of bySubtype) {
+    const st = getSubtype(subCode);
+    const blocks = subRows.map((row) => ({
+      blockKey: `${row.report_code}_${row.version_label}`,
+      tableName: `${row.report_code} / ${row.version_label}`,
+      versionLabel: row.version_label,
+      items: [
+        {
+          dataItemName: row.source_file_name,
+          snippet: `表号 ${row.report_code} · 版本 ${row.version_label}`,
+          moduleCode: row.module_code,
+          moduleName: moduleLabel(row.module_code),
+          category: st?.category || 'composite',
+          categoryLabel: getCategoryLabel(st?.category || 'composite'),
+          entityKind: 'script',
+          entityId: Number(row.id),
+          linkPath: `/conversion-scripts/${row.id}`,
+          payload: {
+            report_code: row.report_code,
+            version: row.version_label,
+          },
+          fields: [
+            { key: '表号', value: row.report_code },
+            { key: '文件名', value: row.source_file_name },
+          ],
+        },
+      ],
+    }));
+
+    const mod = moduleCode || subRows[0]?.module_code || 'YBT';
+    reports.push(
+      buildMaterialReport({
+        code: subCode,
+        name: st?.name || subCode,
+        moduleCode: mod,
+        category: st?.category || 'composite',
+        layout: 'script',
+        blocks,
+      })
+    );
+  }
+  return reports;
 }
 
 function searchCodeValueReports(keyword, { moduleCode, subtypeCode } = {}) {

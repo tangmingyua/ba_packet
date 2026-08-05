@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS conversion_scripts (
   file_hash TEXT,
   script_text TEXT NOT NULL,
   imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (module_code, report_code, version_label)
+  UNIQUE (subtype_code, module_code, report_code, version_label)
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversion_scripts_report ON conversion_scripts(report_code);

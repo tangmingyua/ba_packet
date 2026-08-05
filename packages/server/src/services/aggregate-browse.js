@@ -4,6 +4,7 @@
 import { queryOne } from '../db/database.js';
 import { getSubtype, listFieldMappings } from './dataset-config.js';
 import { resolveSearchMode, queryDatasetMatchingRows } from './dataset-search.js';
+import { compareVersionLabelsDesc } from '../utils/version-sort.js';
 
 function parsePayload(raw) {
   try {
@@ -84,9 +85,19 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
     bucket.get(key).count += 1;
   }
 
+  const versionCol = columnDefs.find((c) => c.code === 'version');
+
   const items = [...bucket.values()]
     .sort((a, b) => {
+      if (versionCol) {
+        const vcmp = compareVersionLabelsDesc(
+          a.values[versionCol.label],
+          b.values[versionCol.label]
+        );
+        if (vcmp !== 0) return vcmp;
+      }
       for (const { label } of columnDefs) {
+        if (versionCol && label === versionCol.label) continue;
         const cmp = (a.values[label] || '').localeCompare(b.values[label] || '', 'zh-CN');
         if (cmp !== 0) return cmp;
       }

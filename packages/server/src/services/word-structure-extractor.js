@@ -1,5 +1,5 @@
 /**
- * Word 结构层：heading / paragraph / placeholder（不解析表格内容）
+ * Word 结构层：heading / paragraph / table / placeholder
  */
 
 const HEADING_STYLE_LEVEL = {
@@ -54,10 +54,29 @@ function indexOfTagOpen(body, tagName, fromIndex = 0) {
   return -1;
 }
 
+function endOfOpeningTag(body, start) {
+  for (let i = start; i < body.length; i += 1) {
+    if (body[i] === '>') return i + 1;
+  }
+  return -1;
+}
+
+/** OOXML 常见空段落：<w:p w14:paraId="…"/> */
+function isSelfClosingOpenTag(body, start) {
+  for (let i = start; i < body.length; i += 1) {
+    if (body[i] === '>') return body[i - 1] === '/';
+  }
+  return false;
+}
+
 function findClosingTag(body, start, tagName) {
   const open = `<${tagName}`;
   const close = `</${tagName}>`;
   if (!isTagOpenAt(body, start, tagName)) return -1;
+
+  if (isSelfClosingOpenTag(body, start)) {
+    return endOfOpeningTag(body, start);
+  }
 
   let depth = 1;
   let pos = start + open.length;
@@ -174,6 +193,58 @@ function resolveHeadingLevel(text, meta) {
   return null;
 }
 
+export function parseTableXml(tblXml) {
+  const rows = [];
+  let pos = 0;
+  while (pos < tblXml.length) {
+    const trStart = indexOfTagOpen(tblXml, 'w:tr', pos);
+    if (trStart === -1) break;
+    const trEnd = findClosingTag(tblXml, trStart, 'w:tr');
+    if (trEnd === -1) break;
+    const trXml = tblXml.slice(trStart, trEnd);
+    const cells = [];
+    let cpos = 0;
+    while (cpos < trXml.length) {
+      const tcStart = indexOfTagOpen(trXml, 'w:tc', cpos);
+      if (tcStart === -1) break;
+      const tcEnd = findClosingTag(trXml, tcStart, 'w:tc');
+      if (tcEnd === -1) break;
+      cells.push(cellText(trXml.slice(tcStart, tcEnd)));
+      cpos = tcEnd;
+    }
+    if (cells.length) rows.push(cells);
+    pos = trEnd;
+  }
+  return rows;
+}
+
+function cellText(tcXml) {
+  const parts = [];
+  let pos = 0;
+  while (pos < tcXml.length) {
+    const pStart = indexOfTagOpen(tcXml, 'w:p', pos);
+    if (pStart === -1) break;
+    const pEnd = findClosingTag(tcXml, pStart, 'w:p');
+    if (pEnd === -1) break;
+    const t = paragraphText(tcXml.slice(pStart, pEnd));
+    if (t) parts.push(t);
+    pos = pEnd;
+  }
+  return parts.join('\n').trim();
+}
+
+export function summarizeTableRows(rows) {
+  const matrix = rows || [];
+  if (!matrix.length) return '表格';
+  const rowCount = matrix.length;
+  const colCount = Math.max(...matrix.map((r) => r.length), 0);
+  const first = matrix.flat().find((c) => String(c || '').trim());
+  if (!first) return `表格（${rowCount}×${colCount}）`;
+  const preview = String(first).trim();
+  const short = preview.length > 36 ? `${preview.slice(0, 36)}…` : preview;
+  return `${short}（${rowCount}×${colCount}）`;
+}
+
 export function placeholderText(reportCode) {
   const code = String(reportCode || '').trim();
   return code ? `表样见 ${code} Excel 导入` : '请查看表样';
@@ -191,13 +262,24 @@ export function extractWordBlocks(documentXml) {
 
   for (const el of elements) {
     if (el.tag === 'tbl') {
-      blocks.push({
-        blockKind: 'placeholder',
-        level: 0,
-        sortOrder: sortOrder++,
-        text: placeholderText(''),
-        meta: { source: 'word_tbl', placeholderKind: 'form_template' },
-      });
+      const rows = parseTableXml(el.xml);
+      if (rows.length) {
+        blocks.push({
+          blockKind: 'table',
+          level: 0,
+          sortOrder: sortOrder++,
+          text: summarizeTableRows(rows),
+          meta: { source: 'word_tbl', rows },
+        });
+      } else {
+        blocks.push({
+          blockKind: 'placeholder',
+          level: 0,
+          sortOrder: sortOrder++,
+          text: placeholderText(''),
+          meta: { source: 'word_tbl', placeholderKind: 'form_template', rows: [] },
+        });
+      }
       continue;
     }
 

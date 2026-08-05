@@ -8,7 +8,7 @@ import { stripRomanIndicatorPrefix } from './docx-fill-instruction-parser.js';
 import { readDocumentXmlFromDocx } from './docx-file.js';
 import { parseWordImportDocument, countTreeNodes } from './word-import-pipeline.js';
 import { resolveSubtypeCode } from '../config/system-subtypes.js';
-import { resolveImportSubtypeCode } from './dataset-config.js';
+import { resolveImportSubtypeCode, ensureSubtypeVersionForImport } from './dataset-config.js';
 
 const EMPTY_VERSION = '';
 
@@ -35,6 +35,15 @@ function mapDocumentRow(row) {
 }
 
 function mapNodeRow(row) {
+  let tableRows = null;
+  if (row.meta_json) {
+    try {
+      const parsed = JSON.parse(row.meta_json);
+      if (Array.isArray(parsed?.tableRows)) tableRows = parsed.tableRows;
+    } catch {
+      tableRows = null;
+    }
+  }
   return {
     id: Number(row.id),
     documentId: Number(row.document_id),
@@ -46,14 +55,22 @@ function mapNodeRow(row) {
     path: row.path || '',
     indicatorNo: row.indicator_no == null ? null : Number(row.indicator_no),
     indicatorKey: row.indicator_key || null,
+    tableRows,
   };
+}
+
+function nodeMetaJson(node) {
+  if (node.tableRows?.length) {
+    return JSON.stringify({ tableRows: node.tableRows });
+  }
+  return null;
 }
 
 function insertNodeTree(documentId, node, parentId = null) {
   run(
     `INSERT INTO document_nodes (
-       document_id, parent_id, node_kind, level, sort_order, text, path, indicator_no, indicator_key
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       document_id, parent_id, node_kind, level, sort_order, text, path, indicator_no, indicator_key, meta_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       documentId,
       parentId,
@@ -64,6 +81,7 @@ function insertNodeTree(documentId, node, parentId = null) {
       node.path || '',
       node.indicatorNo ?? null,
       node.indicatorKey ?? null,
+      nodeMetaJson(node),
     ]
   );
   const inserted = queryOne('SELECT last_insert_rowid() AS id');
@@ -74,17 +92,18 @@ function insertNodeTree(documentId, node, parentId = null) {
   }
 }
 
-function getMappedReportCode(documentId) {
+function getMappedReportCode(documentId, versionLabel = EMPTY_VERSION) {
+  const vl = versionLabel ?? EMPTY_VERSION;
   const row = queryOne(
     `SELECT report_code FROM report_doc_mapping
      WHERE document_id = ? AND version_label = ?`,
-    [Number(documentId), EMPTY_VERSION]
+    [Number(documentId), vl]
   );
   return row?.report_code ? String(row.report_code) : null;
 }
 
 function mapDocumentWithReport(row) {
-  const mapped = getMappedReportCode(row.id);
+  const mapped = getMappedReportCode(row.id, row.version_label || EMPTY_VERSION);
   const suggested = defaultReportCodeForDocCode(row.doc_code);
   return {
     ...mapDocumentRow(row),
@@ -93,8 +112,9 @@ function mapDocumentWithReport(row) {
   };
 }
 
-function upsertReportMapping(documentId, docCode, { onImport = false } = {}) {
-  const existing = getMappedReportCode(documentId);
+function upsertReportMapping(documentId, docCode, { onImport = false, versionLabel = EMPTY_VERSION } = {}) {
+  const vl = versionLabel ?? EMPTY_VERSION;
+  const existing = getMappedReportCode(documentId, vl);
   if (onImport && existing) return;
 
   const auto = defaultReportCodeForDocCode(docCode);
@@ -108,7 +128,7 @@ function upsertReportMapping(documentId, docCode, { onImport = false } = {}) {
     run(
       `INSERT INTO report_doc_mapping (report_code, version_label, document_id, doc_code)
        VALUES (?, ?, ?, ?)`,
-      [auto, EMPTY_VERSION, documentId, docCode]
+      [auto, vl, documentId, docCode]
     );
   }
 }
@@ -168,7 +188,16 @@ function saveWordBlocks(sourceId, blocks) {
   }
 }
 
-function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta, existingId = null, subtypeCode = '') {
+function saveDocumentTree(
+  parsedDoc,
+  fileHash,
+  fileName,
+  moduleCode,
+  sourceMeta,
+  existingId = null,
+  subtypeCode = '',
+  versionLabel = EMPTY_VERSION
+) {
   const {
     sourceId = null,
     blockStart = null,
@@ -180,16 +209,19 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
   const resolvedSubtypeCode =
     subtypeCode || resolveSubtypeCode('document', resolvedModule);
 
+  const resolvedVersion = String(versionLabel ?? EMPTY_VERSION).trim();
+
   if (existingId) {
     run('DELETE FROM document_nodes WHERE document_id = ?', [existingId]);
     run(
       `UPDATE documents SET
-         doc_title = ?, source_file_name = ?, file_hash = ?, module_code = ?, subtype_code = ?,
+         doc_title = ?, version_label = ?, source_file_name = ?, file_hash = ?, module_code = ?, subtype_code = ?,
          source_id = ?, block_start = ?, block_end = ?, split_mode = ?,
          imported_at = datetime('now')
        WHERE id = ?`,
       [
         parsedDoc.docTitle,
+        resolvedVersion,
         fileName,
         fileHash,
         resolvedModule,
@@ -202,7 +234,7 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
       ]
     );
     insertNodeTree(existingId, parsedDoc.tree);
-    upsertReportMapping(existingId, parsedDoc.docCode, { onImport: true });
+    upsertReportMapping(existingId, parsedDoc.docCode, { onImport: true, versionLabel: resolvedVersion });
     return { id: Number(existingId), overwritten: true, importAction: 'replaced' };
   }
 
@@ -214,7 +246,7 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
     [
       parsedDoc.docCode,
       parsedDoc.docTitle,
-      EMPTY_VERSION,
+      resolvedVersion,
       resolvedSubtypeCode,
       resolvedModule,
       fileName,
@@ -228,7 +260,7 @@ function saveDocumentTree(parsedDoc, fileHash, fileName, moduleCode, sourceMeta,
   const inserted = queryOne('SELECT last_insert_rowid() AS id');
   const documentId = Number(inserted.id);
   insertNodeTree(documentId, parsedDoc.tree);
-  upsertReportMapping(documentId, parsedDoc.docCode, { onImport: true });
+  upsertReportMapping(documentId, parsedDoc.docCode, { onImport: true, versionLabel: resolvedVersion });
   return { id: documentId, overwritten: false, importAction: 'created' };
 }
 
@@ -280,6 +312,11 @@ export function importFillInstructionDocument(buffer, options = {}) {
     ? resolveImportSubtypeCode(options.subtypeCode, 'document', { moduleCode })
     : resolveSubtypeCode('document', moduleCode);
 
+  const importVersion = String(options.versionLabel ?? '').trim();
+  if (importVersion) {
+    ensureSubtypeVersionForImport(subtypeCode, importVersion);
+  }
+
   const sourceId = saveWordSource(
     fileName,
     fileHash,
@@ -296,7 +333,8 @@ export function importFillInstructionDocument(buffer, options = {}) {
   let replacedCount = 0;
 
   for (const doc of parsed.documents) {
-    const existing = findDocument(doc.docCode, EMPTY_VERSION);
+    const docVersion = importVersion || EMPTY_VERSION;
+    const existing = findDocument(doc.docCode, docVersion);
     const result = saveDocumentTree(
       doc,
       fileHash,
@@ -309,7 +347,8 @@ export function importFillInstructionDocument(buffer, options = {}) {
         splitMode: doc.splitMode || parsed.splitMode,
       },
       existing?.id,
-      subtypeCode
+      subtypeCode,
+      docVersion
     );
 
     if (result.overwritten) {
@@ -328,7 +367,7 @@ export function importFillInstructionDocument(buffer, options = {}) {
       importAction: result.importAction,
       docCode: doc.docCode,
       docTitle: doc.docTitle,
-      reportCode: getMappedReportCode(result.id),
+      reportCode: getMappedReportCode(result.id, docVersion),
       suggestedReportCode: defaultReportCodeForDocCode(doc.docCode),
       nodeCount: countTreeNodes(doc.tree),
       blockCount: doc.blocks.length,

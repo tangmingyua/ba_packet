@@ -20,10 +20,8 @@
             >
               <span class="code">{{ item.reportCode }}</span>
               <span class="title">{{ item.reportTitle || item.sheetName }}</span>
-              <span class="meta">
-                {{ item.moduleCode || moduleCode || '—' }} · 版本 {{ item.versionLabel }}
-                <template v-if="searchMode && item.hitCount"> · {{ item.hitCount }} 处命中</template>
-                <template v-else-if="item.rowCount"> · {{ item.rowCount }}×{{ item.colCount }}</template>
+              <span v-if="searchMode && item.hitCount" class="meta">
+                {{ item.hitCount }} 处命中
               </span>
             </button>
             <ul v-if="searchMode && selectedId === item.id && hitsForSelected.length" class="hit-rows">
@@ -65,6 +63,7 @@
               :highlight-cells="highlightCells"
               :focus-cell="focusCell"
               :selected-cell="selectedCell"
+              :enable-cell-full-text="props.moduleCode !== '1104'"
               enable-indicator-click
               @cell-click="onIndicatorCellClick"
             />
@@ -262,7 +261,11 @@ async function loadHits(id) {
   }
   loadingHits.value = true;
   try {
-    const res = await getFormTemplateSearchHits(id, props.keyword.trim());
+    const item = listItems.value.find((x) => x.id === id);
+    const hitsLimit = item?.hitCount
+      ? Math.min(Math.max(Number(item.hitCount), 30), 2000)
+      : 500;
+    const res = await getFormTemplateSearchHits(id, props.keyword.trim(), { hitsLimit });
     hitsForSelected.value = res.hits || [];
     hitsTruncated.value = Boolean(res.hitsTruncated);
   } catch (e) {

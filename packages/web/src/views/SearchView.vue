@@ -45,6 +45,7 @@
       <ModuleCategoryCards
         v-if="searched && isAggregateMode && moduleCode"
         v-model="selectedCategories"
+        single
         :options="visibleCategoryStats"
         @change="onCategoriesChange"
       />
@@ -73,6 +74,7 @@
             v-model="moduleCode"
             class="header-module-select"
             aria-label="主类"
+            @change="onModuleChange"
           >
             <option v-for="m in modules" :key="m.code" :value="m.code">{{ m.name }}</option>
           </select>
@@ -460,7 +462,8 @@ const ALL_SUBTYPE = '__all__';
 watch(
   () => route.query.categories,
   (raw) => {
-    selectedCategories.value = parseCategoryFilter(raw);
+    const parsed = parseCategoryFilter(raw);
+    selectedCategories.value = parsed.length ? [parsed[0]] : [];
   },
   { immediate: true }
 );
@@ -845,7 +848,7 @@ function buildSearchQuery() {
     moduleCode: moduleCode.value || undefined,
   };
   if (selectedCategories.value.length) {
-    query.categories = selectedCategories.value.join(',');
+    query.categories = selectedCategories.value[0];
   }
   if (selectedSubtypeCode.value) {
     query.subtypeCode = selectedSubtypeCode.value;
@@ -897,7 +900,7 @@ async function applyLandingDefaultsBeforeSearch() {
 
   if (mode === 'aggregate') {
     await refreshCategoryStats();
-    selectAllModuleCategories();
+    selectDefaultModuleCategory();
     await refreshSubtypeStats();
     ensureSubtypeSelection();
     return;
@@ -1014,22 +1017,61 @@ async function refreshCategoryStats() {
   }
 }
 
-function selectAllModuleCategories() {
-  selectedCategories.value = visibleCategoryStats.value
-    .filter((c) => c.hasSubtype)
-    .map((c) => c.code);
+function selectDefaultModuleCategory() {
+  const selectable = visibleCategoryStats.value.filter((c) => c.hasSubtype);
+  const norm = selectable.find((c) => c.code === 'norm');
+  if (norm) {
+    selectedCategories.value = ['norm'];
+    return;
+  }
+  selectedCategories.value = selectable[0] ? [selectable[0].code] : [];
+}
+
+function clearQueryConditions() {
+  keyword.value = '';
+  lastKeyword.value = '';
+  resetLocalFilters();
+  appliedTableFilter.value = '__all__';
+  appliedCustomFilters.value = [];
+  showSuggest.value = false;
+  filterShowSuggest.value = false;
+  suggestions.value = [];
+  selectedSubtypeCode.value = '';
+  reports.value = [];
+  aggregateBrowseData.value = null;
+  showAggregateBrowse.value = false;
+  detailFromAggregateBrowse.value = false;
+  activeReportCode.value = '';
+  applySearchFieldMappings({});
+}
+
+function clearQueryOnModuleChange() {
+  const mode = apiSearchMode();
+  if (!searched.value || mode === 'aggregate') {
+    clearQueryConditions();
+    return;
+  }
+  activeReportCode.value = '';
+  aggregateBrowseData.value = null;
+  showAggregateBrowse.value = false;
+  detailFromAggregateBrowse.value = false;
+  showSuggest.value = false;
+  filterShowSuggest.value = false;
+  suggestions.value = [];
 }
 
 function onModuleChange() {
+  clearQueryOnModuleChange();
   refreshCategoryStats()
     .then(() => {
       if (searched.value && apiSearchMode() === 'aggregate') {
-        selectAllModuleCategories();
+        selectDefaultModuleCategory();
       }
       return refreshSubtypeStats();
     })
     .then(() => {
       if (searched.value) {
+        void router.replace({ path: '/', query: buildSearchQuery() });
         doSearch();
       }
     });
@@ -1199,7 +1241,7 @@ async function doSearch() {
         await refreshCategoryStats();
       }
       if (visibleCategoryStats.value.length && !selectedCategories.value.length) {
-        selectAllModuleCategories();
+        selectDefaultModuleCategory();
       }
     }
     await router.replace({ path: '/', query: buildSearchQuery() });
@@ -1242,6 +1284,9 @@ onMounted(async () => {
   }
   await loadModules();
   await refreshCategoryStats();
+  if (apiSearchMode() === 'aggregate' && !selectedCategories.value.length) {
+    selectDefaultModuleCategory();
+  }
   await refreshSubtypeStats();
   if (route.query.q !== undefined) {
     keyword.value = String(route.query.q);

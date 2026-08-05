@@ -324,6 +324,9 @@ function ensureDocumentNodeIndicatorKeyColumn() {
   if (!cols.some((c) => c.name === 'indicator_key')) {
     run(`ALTER TABLE document_nodes ADD COLUMN indicator_key TEXT`);
   }
+  if (!cols.some((c) => c.name === 'meta_json')) {
+    run(`ALTER TABLE document_nodes ADD COLUMN meta_json TEXT`);
+  }
   run(
     `CREATE INDEX IF NOT EXISTS idx_document_nodes_indicator_key ON document_nodes(document_id, indicator_key)`
   );
@@ -396,8 +399,9 @@ function ensureStorageKindColumn() {
   run(`UPDATE subtypes SET storage_kind = 'excel' WHERE storage_kind IS NULL OR storage_kind = ''`);
 }
 
-/** 种子子类（示例子类，首次安装写入） */
-function ensureSeedSubtypes() {
+/** 种子子类（示例子类，仅全新空库首次初始化时写入） */
+function ensureSeedSubtypes(freshInstall = false) {
+  if (!freshInstall) return;
   for (const st of SEED_SUBTYPES) {
     run(
       `INSERT OR IGNORE INTO subtypes (code, name, enabled, sort_order, category, module_code, storage_kind)
@@ -451,11 +455,12 @@ function removeEastFormTemplateSubtypes() {
   }
 }
 
-/** 删除未挂到有效表样子类记录的 form_templates（子类已删或未启用） */
-function purgeOrphanFormTemplates() {
+/** 启动时仅记录「表样子类挂接异常」，不删除业务数据（避免重启误清 catalog） */
+function warnOrphanFormTemplates() {
   const orphans = queryAll(
     `
-    SELECT ft.id FROM form_templates ft
+    SELECT ft.id, ft.report_code, ft.version_label, ft.subtype_code, ft.module_code
+    FROM form_templates ft
     LEFT JOIN subtypes s ON s.code = ft.subtype_code
       AND s.enabled = 1
       AND s.storage_kind = 'form_template'
@@ -464,11 +469,15 @@ function purgeOrphanFormTemplates() {
     `
   );
   if (!orphans.length) return;
-  for (const { id } of orphans) {
-    run('DELETE FROM form_template_cells WHERE template_id = ?', [id]);
-    run('DELETE FROM form_templates WHERE id = ?', [id]);
-  }
-  console.log(`[db] 已清理无子类挂接的表样 ${orphans.length} 条`);
+  const sample = orphans
+    .slice(0, 5)
+    .map((r) => `${r.report_code}/${r.version_label}(subtype=${r.subtype_code})`)
+    .join(', ');
+  console.warn(
+    `[db] 发现 ${orphans.length} 条表样未挂到有效表样子类（不会自动删除）。` +
+      ` 示例: ${sample}${orphans.length > 5 ? '…' : ''}。` +
+      ` 请在「子类配置」补全/启用子类，或手动删除多余表样。`
+  );
 }
 
 /** 业务表挂接 subtype_code 并回填历史数据 */
@@ -514,6 +523,55 @@ function ensureSubtypeCodeColumns() {
   }
 }
 
+/** 脚本唯一键含 subtype_code，允许多个子类各存同表号版本 */
+function ensureConversionScriptsUniqueBySubtype() {
+  const tableRow = queryOne(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'conversion_scripts'`
+  );
+  const ddl = String(tableRow?.sql || '');
+  if (!ddl) return;
+  if (/UNIQUE\s*\(\s*subtype_code/i.test(ddl)) return;
+
+  run(
+    `CREATE TABLE conversion_scripts_migrated (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subtype_code TEXT NOT NULL DEFAULT '',
+      module_code TEXT NOT NULL,
+      report_code TEXT NOT NULL,
+      version_label TEXT NOT NULL,
+      source_file_name TEXT NOT NULL,
+      file_hash TEXT,
+      script_text TEXT NOT NULL,
+      imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (subtype_code, module_code, report_code, version_label)
+    )`
+  );
+  run(
+    `
+    INSERT INTO conversion_scripts_migrated (
+      id, subtype_code, module_code, report_code, version_label,
+      source_file_name, file_hash, script_text, imported_at
+    )
+    SELECT id,
+      COALESCE(NULLIF(TRIM(subtype_code), ''), 'CONVERSION_SCRIPT'),
+      module_code, report_code, version_label,
+      source_file_name, file_hash, script_text, imported_at
+    FROM conversion_scripts
+    `
+  );
+  run('DROP TABLE conversion_scripts');
+  run('ALTER TABLE conversion_scripts_migrated RENAME TO conversion_scripts');
+  run(
+    'CREATE INDEX IF NOT EXISTS idx_conversion_scripts_report ON conversion_scripts(report_code)'
+  );
+  run(
+    'CREATE INDEX IF NOT EXISTS idx_conversion_scripts_module ON conversion_scripts(module_code)'
+  );
+  run(
+    'CREATE INDEX IF NOT EXISTS idx_conversion_scripts_subtype ON conversion_scripts(subtype_code)'
+  );
+}
+
 /** 新模型：子类版本 / 映射 / datasets / data_records */
 function ensureDatasetModelSchema() {
   const schemaPath = resolveSchemaPath();
@@ -550,7 +608,8 @@ function ensureDatasetModelSchema() {
   }
 
   const subtypeCount = Number(queryOne('SELECT COUNT(*) AS c FROM subtypes')?.c || 0);
-  if (subtypeCount === 0) {
+  const freshInstall = subtypeCount === 0;
+  if (freshInstall) {
     MATERIAL_SUBTYPES.forEach((st, index) => {
       const category = st.categoryCode === 'FAQ' ? 'qa' : 'norm';
       const moduleCode = st.moduleCode || 'YBT';
@@ -560,11 +619,12 @@ function ensureDatasetModelSchema() {
       );
     });
   }
-  ensureSeedSubtypes();
+  ensureSeedSubtypes(freshInstall);
   backfillSubtypeCategories();
   removeEastFormTemplateSubtypes();
-  purgeOrphanFormTemplates();
+  warnOrphanFormTemplates();
   ensureSubtypeCodeColumns();
+  ensureConversionScriptsUniqueBySubtype();
   saveDb();
 }
 

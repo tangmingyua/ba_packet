@@ -26,31 +26,17 @@ function assertBrowseCategory(code) {
 
 function countCategoryRecords(mod, catCode) {
   const cat = normalizeCategory(catCode);
-  if (cat === 'composite') {
-    const scriptCount = Number(
-      queryOne('SELECT COUNT(*) AS c FROM conversion_scripts WHERE module_code = ?', [mod])?.c || 0
-    );
-    const storageCodes = expandCategoryStorageCodes('composite');
-    const placeholders = storageCodes.map(() => '?').join(',');
-    const excelCount = Number(
-      queryOne(
-        `
-        SELECT COUNT(*) AS c
-        FROM data_records r
-        JOIN subtype_versions sv ON sv.id = r.subtype_version_id
-        JOIN subtypes s ON s.code = sv.subtype_code
-        WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) IN (${placeholders})
-        `,
-        [mod, ...storageCodes]
-      )?.c || 0
-    );
-    return scriptCount + excelCount;
-  }
   if (cat === 'code_value') {
     return Number(
       queryOne('SELECT COUNT(*) AS c FROM module_code_values WHERE module_code = ?', [mod])?.c || 0
     );
   }
+
+  const categoryList =
+    cat === 'composite' ? expandCategoryStorageCodes('composite') : [cat];
+  const uniqueCats = [...new Set(categoryList.map((c) => normalizeCategory(c)))];
+  const placeholders = uniqueCats.map(() => '?').join(',');
+
   const excelCount = Number(
     queryOne(
       `
@@ -58,34 +44,49 @@ function countCategoryRecords(mod, catCode) {
       FROM data_records r
       JOIN subtype_versions sv ON sv.id = r.subtype_version_id
       JOIN subtypes s ON s.code = sv.subtype_code
-      WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) = ?
+      WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) IN (${placeholders})
       `,
-      [mod, cat]
+      [mod, ...uniqueCats]
     )?.c || 0
   );
+
   const formCount = Number(
     queryOne(
       `
       SELECT COUNT(*) AS c
       FROM form_templates ft
       JOIN subtypes s ON s.code = ft.subtype_code
-      WHERE ft.module_code = ? AND s.category = ?
+      WHERE ft.module_code = ? AND s.category IN (${placeholders})
       `,
-      [mod, cat]
+      [mod, ...uniqueCats]
     )?.c || 0
   );
+
   const docCount = Number(
     queryOne(
       `
       SELECT COUNT(*) AS c
       FROM documents d
       JOIN subtypes s ON s.code = d.subtype_code
-      WHERE d.module_code = ? AND s.category = ?
+      WHERE d.module_code = ? AND s.category IN (${placeholders})
       `,
-      [mod, cat]
+      [mod, ...uniqueCats]
     )?.c || 0
   );
-  return excelCount + formCount + docCount;
+
+  const scriptCount = Number(
+    queryOne(
+      `
+      SELECT COUNT(*) AS c
+      FROM conversion_scripts cs
+      JOIN subtypes s ON s.code = cs.subtype_code
+      WHERE cs.module_code = ? AND s.category IN (${placeholders})
+      `,
+      [mod, ...uniqueCats]
+    )?.c || 0
+  );
+
+  return excelCount + formCount + docCount + scriptCount;
 }
 
 /** 各标签在该模块下的记录数 + 是否有启用子类（查询页固定展示六类） */
@@ -163,12 +164,18 @@ function countSubtypeRecords(st, categoryList) {
   }
   if (st.storageKind === 'script') {
     return Number(
-      queryOne('SELECT COUNT(*) AS c FROM conversion_scripts WHERE module_code = ?', [st.moduleCode])?.c || 0
+      queryOne(
+        'SELECT COUNT(*) AS c FROM conversion_scripts WHERE subtype_code = ? AND module_code = ?',
+        [st.code, st.moduleCode]
+      )?.c || 0
     );
   }
   if (st.storageKind === 'code_value') {
     return Number(
-      queryOne('SELECT COUNT(*) AS c FROM module_code_values WHERE module_code = ?', [st.moduleCode])?.c || 0
+      queryOne(
+        'SELECT COUNT(*) AS c FROM module_code_values WHERE subtype_code = ? AND module_code = ?',
+        [st.code, st.moduleCode]
+      )?.c || 0
     );
   }
   return 0;
@@ -214,32 +221,39 @@ export function getModuleSubtypeStats(moduleCode, categories) {
     });
 }
 
-function browseConversionScripts({ moduleCode, keyword, limit, offset }) {
+function browseConversionScripts({ moduleCode, keyword, limit, offset, subtypeCode } = {}) {
   const mod = normalizeModuleCode(moduleCode);
   const normalizedLimit = Math.min(Math.max(Number(limit) || 20, 1), 200);
   const normalizedOffset = Math.max(Number(offset) || 0, 0);
   const q = String(keyword || '').trim();
 
-  const where = ['module_code = ?'];
+  const where = ['cs.module_code = ?'];
   const params = [mod];
+  const sub = String(subtypeCode || '').trim();
+  if (sub) {
+    where.push('cs.subtype_code = ?');
+    params.push(sub);
+  }
   if (q) {
-    where.push('(UPPER(report_code) LIKE ? OR LOWER(source_file_name) LIKE ? OR LOWER(script_text) LIKE ?)');
+    where.push(
+      '(UPPER(cs.report_code) LIKE ? OR LOWER(cs.source_file_name) LIKE ? OR LOWER(cs.script_text) LIKE ?)'
+    );
     const pattern = `%${q.toLowerCase()}%`;
     params.push(`%${q.toUpperCase()}%`, pattern, pattern);
   }
 
   const whereSql = where.join(' AND ');
   const total = Number(
-    queryOne(`SELECT COUNT(*) AS c FROM conversion_scripts WHERE ${whereSql}`, params)?.c || 0
+    queryOne(`SELECT COUNT(*) AS c FROM conversion_scripts cs WHERE ${whereSql}`, params)?.c || 0
   );
 
   const rows = queryAll(
     `
-    SELECT id, module_code, report_code, version_label, source_file_name, imported_at,
-           SUBSTR(script_text, 1, 800) AS script_preview
-    FROM conversion_scripts
+    SELECT cs.id, cs.module_code, cs.report_code, cs.version_label, cs.source_file_name, cs.imported_at,
+           SUBSTR(cs.script_text, 1, 800) AS script_preview
+    FROM conversion_scripts cs
     WHERE ${whereSql}
-    ORDER BY report_code, version_label, imported_at DESC
+    ORDER BY cs.report_code, cs.version_label, cs.imported_at DESC
     LIMIT ? OFFSET ?
     `,
     [...params, normalizedLimit, normalizedOffset]

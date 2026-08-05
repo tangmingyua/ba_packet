@@ -846,12 +846,26 @@ textarea {
 /* Enhanced data table (search results) */
 table.data-table.dt-enhanced {
   table-layout: auto;
+  width: max-content;
+  min-width: 100%;
 }
 
 table.data-table.dt-enhanced th {
   position: sticky;
   top: 0;
   z-index: 10;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow: visible;
+  text-overflow: clip;
+  min-width: max-content;
+  vertical-align: bottom;
+}
+
+table.data-table.dt-enhanced th > span {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: none;
 }
 
 table.data-table.dt-enhanced th.col-hidden,

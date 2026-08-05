@@ -19,6 +19,9 @@ import {
 export const BULK_IMPORT_VERSION_SHEET_NAME = '全量导入';
 export const BULK_CATALOG_SHEET_NAME = '目录';
 export const BULK_CATALOG_REPORT_COLUMN = '报表';
+/** 全量工作簿「目录」Sheet 表头/数据行（与业务 Sheet 的 headerRow 无关，规范文件目录均在第 1 行） */
+export const BULK_CATALOG_HEADER_ROW = 1;
+export const BULK_CATALOG_DATA_START_ROW = 2;
 
 export function isBulkImportVersion(version) {
   return version?.sheetName === BULK_IMPORT_VERSION_SHEET_NAME;
@@ -507,8 +510,8 @@ function importBulkWorkbook({ sheets, version, sourceFileName, fileHash, descrip
 
   const catalogParsed = parseBulkCatalogSheet(
     catalogSheet,
-    version.headerRow,
-    version.dataStartRow
+    BULK_CATALOG_HEADER_ROW,
+    BULK_CATALOG_DATA_START_ROW
   );
   if (!catalogParsed.ok) {
     throw new Error(catalogParsed.message);

@@ -1,10 +1,8 @@
 /**
- * 1104 表样搜索范围
- * - 表头行：所有非空单元格
- * - 数据行（A 列序号）：仅项目名/子项名列（B、C 列）
+ * 表样搜索范围：矩阵内所有非空单元格（各主类统一）
  */
 
-/** 0-based：序号列后的项目名、子项名 */
+/** 0-based：序号列后的项目名、子项名（仅前端表样矩阵点击范围等沿用） */
 export const INDICATOR_SEARCH_COLS = [1, 2];
 
 export function cellText(value) {
@@ -39,19 +37,11 @@ export function shouldSearchCell(matrix, rowIndex, colIndex) {
 export function forEachSearchableCell(matrix, visit) {
   for (let r = 0; r < matrix.length; r += 1) {
     const line = matrix[r] || [];
-    if (isIndicatorDataRow(matrix, r)) {
-      for (const c of INDICATOR_SEARCH_COLS) {
-        if (c >= line.length) continue;
-        const text = cellText(line[c]);
-        if (!text) continue;
-        visit({ row: r, col: c, text, cellKind: 'indicator' });
-      }
-      continue;
-    }
     for (let c = 0; c < line.length; c += 1) {
       const text = cellText(line[c]);
       if (!text) continue;
-      visit({ row: r, col: c, text, cellKind: 'header' });
+      const cellKind = isIndicatorDataRow(matrix, r) && isIndicatorSearchColumn(c) ? 'indicator' : 'header';
+      visit({ row: r, col: c, text, cellKind });
     }
   }
 }

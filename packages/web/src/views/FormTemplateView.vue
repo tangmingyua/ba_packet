@@ -68,6 +68,7 @@
               :merges="detail.merges"
               :layout="detail.layout"
               :selected-cell="selectedCell"
+              :enable-cell-full-text="detail?.moduleCode !== '1104'"
               enable-indicator-click
               @cell-click="onIndicatorCellClick"
             />

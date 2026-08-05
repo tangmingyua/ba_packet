@@ -4,8 +4,12 @@ import XLSX from 'xlsx';
 import { closeDb, run } from '../src/db/database.js';
 import { createSubtypeVersion, saveFieldMappings, updateSubtype } from '../src/services/dataset-config.js';
 import { importDatasetExcel } from '../src/services/dataset-import.js';
-import { importConversionScript } from '../src/services/conversion-script-import.js';
+import {
+  importConversionScript,
+  listConversionScripts,
+} from '../src/services/conversion-script-import.js';
 import { getModuleCategoryStats, browseModuleCategory, getModuleSubtypeStats } from '../src/services/module-browse.js';
+import { upsertSubtype } from '../src/services/dataset-config.js';
 import { setupTestDb } from './helpers/fixture.js';
 
 function buildExcel(sheets) {
@@ -66,6 +70,53 @@ describe('module-browse', () => {
     const result = browseModuleCategory({ moduleCode: 'YBT', category: 'qa', limit: 10 });
     assert.equal(result.layout, 'dataset');
     assert.ok(result.total >= 1);
+  });
+
+  it('getModuleSubtypeStats 脚本子类按 subtype_code 计数', () => {
+    upsertSubtype({
+      code: 'YBT_TO_1104_TEST',
+      name: '转1104 测试',
+      moduleCode: 'YBT',
+      category: 'composite',
+      storageKind: 'script',
+      enabled: true,
+      sortOrder: 998,
+    });
+    importConversionScript(Buffer.from('SELECT 9;', 'utf8'), {
+      fileName: 'G8888.sql',
+      moduleCode: 'YBT',
+      subtypeCode: 'YBT_TO_1104_TEST',
+    });
+
+    const composite = getModuleSubtypeStats('YBT', ['composite']);
+    const custom = composite.find((s) => s.code === 'YBT_TO_1104_TEST');
+    assert.ok(custom);
+    assert.equal(custom.count, 1);
+    assert.equal(
+      listConversionScripts({ moduleCode: 'YBT', subtypeCode: 'CONVERSION_SCRIPT', reportCode: 'G8888' })
+        .length,
+      0
+    );
+  });
+
+  it('getModuleCategoryStats 综合计数含 Word 文档', () => {
+    upsertSubtype({
+      code: 'YBT_DOC_COMP_TEST',
+      name: '综合 Word 测试',
+      moduleCode: 'YBT',
+      category: 'composite',
+      storageKind: 'document',
+      enabled: true,
+      sortOrder: 997,
+    });
+    const before = getModuleCategoryStats('YBT').find((s) => s.code === 'composite')?.count || 0;
+    run(
+      `INSERT INTO documents (doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['G_TEST_DOC', '测试', 'v1', 'YBT_DOC_COMP_TEST', 'YBT', 't.docx', 'hash-test-doc']
+    );
+    const after = getModuleCategoryStats('YBT').find((s) => s.code === 'composite')?.count || 0;
+    assert.equal(after, before + 1);
   });
 
   it('getModuleSubtypeStats 按模块与标签返回子类', () => {
