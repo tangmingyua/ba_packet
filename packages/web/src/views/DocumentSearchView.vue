@@ -1,7 +1,7 @@
 <template>
   <section class="doc-search-page">
     <p class="hint">
-      搜索填报说明中的<strong>文档代号/标题</strong>与<strong>部分、指标、正文</strong>等节点正文；英文不区分大小写；至少 1 个字即可。
+      搜索说明中的<strong>文档代号/标题</strong>与<strong>部分、指标、正文</strong>等节点正文；英文不区分大小写；至少 1 个字即可。
     </p>
 
     <form class="search-bar" @submit.prevent="runSearch">
@@ -21,7 +21,7 @@
 
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-else-if="searched && !result?.totalDocuments" class="feedback">
-      未在填报说明中找到「{{ lastKeyword }}」
+      未在说明中找到「{{ lastKeyword }}」
     </p>
     <p v-else-if="result?.totalDocuments" class="result-summary">
       共 {{ result.totalDocuments }} 份说明、{{ result.totalHits }} 处命中

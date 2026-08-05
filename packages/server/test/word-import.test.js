@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { setupTestDb, teardownTestDb } from './helpers/fixture.js';
 import { readDocumentXmlFromDocx } from '../src/services/docx-file.js';
-import { parseWordImportDocument } from '../src/services/word-import-pipeline.js';
+import { parseWordImportDocument, docCodeFromImportFileName } from '../src/services/word-import-pipeline.js';
 import { extractWordBlocks, placeholderText } from '../src/services/word-structure-extractor.js';
 import { importFillInstructionDocument, listDocuments, getDocument } from '../src/services/document-import.js';
 import { queryOne } from '../src/db/database.js';
@@ -32,6 +32,17 @@ describe('word-import pipeline', () => {
   it('placeholderText 带表号或通用文案', () => {
     assert.equal(placeholderText('NR01'), '表样见 NR01 Excel 导入');
     assert.equal(placeholderText(''), '请查看表样');
+  });
+
+  it('fallback 说明代号取自文件名而非 DOC', () => {
+    assert.equal(docCodeFromImportFileName('数据拆分说明.docx'), '数据拆分说明');
+    const xml = readDocumentXmlFromDocx(fs.readFileSync(DOC_1104));
+    const parsed = parseWordImportDocument(xml, {
+      fileName: '一表通数据拆分.docx',
+      profileId: 'generic',
+    });
+    assert.equal(parsed.profile.id, 'generic');
+    assert.equal(parsed.documents[0].docCode, '一表通数据拆分');
   });
 
   it('1104 Profile 自动切分多条', () => {

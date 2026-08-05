@@ -78,6 +78,10 @@ export function resolveWordImportProfile(profileId, ctx = {}) {
     .sort((a, b) => b.priority - a.priority);
 
   for (const profile of ranked) {
+    if (profile.id === '1104-merged') {
+      const mod = String(ctx.moduleCode || '').trim();
+      if (mod && mod !== '1104') continue;
+    }
     if (profile.fileNamePatterns?.some((re) => re.test(fileName))) return profile;
     if (profile.contentHints?.some((re) => re.test(sampleText))) return profile;
   }

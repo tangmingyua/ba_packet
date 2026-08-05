@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
 import { defaultReportCodeForDocCode, normalizeReportCodeInput } from '../config/document-report-mapping.js';
 import { stripRomanIndicatorPrefix } from './docx-fill-instruction-parser.js';
-import { readDocumentXmlFromDocx } from './docx-file.js';
+import { readWordPartsFromDocx } from './docx-file.js';
 import { parseWordImportDocument, countTreeNodes } from './word-import-pipeline.js';
 import { resolveSubtypeCode } from '../config/system-subtypes.js';
 import { resolveImportSubtypeCode, ensureSubtypeVersionForImport } from './dataset-config.js';
@@ -36,12 +36,15 @@ function mapDocumentRow(row) {
 
 function mapNodeRow(row) {
   let tableRows = null;
+  let tableSpans = null;
   if (row.meta_json) {
     try {
       const parsed = JSON.parse(row.meta_json);
       if (Array.isArray(parsed?.tableRows)) tableRows = parsed.tableRows;
+      if (Array.isArray(parsed?.tableSpans)) tableSpans = parsed.tableSpans;
     } catch {
       tableRows = null;
+      tableSpans = null;
     }
   }
   return {
@@ -56,12 +59,15 @@ function mapNodeRow(row) {
     indicatorNo: row.indicator_no == null ? null : Number(row.indicator_no),
     indicatorKey: row.indicator_key || null,
     tableRows,
+    tableSpans,
   };
 }
 
 function nodeMetaJson(node) {
   if (node.tableRows?.length) {
-    return JSON.stringify({ tableRows: node.tableRows });
+    const payload = { tableRows: node.tableRows };
+    if (node.tableSpans?.length) payload.tableSpans = node.tableSpans;
+    return JSON.stringify(payload);
   }
   return null;
 }
@@ -299,10 +305,12 @@ function buildTreeFromRows(rows) {
 export function importFillInstructionDocument(buffer, options = {}) {
   const fileName = options.fileName || 'upload.docx';
   const fileHash = hashBuffer(buffer);
-  const documentXml = readDocumentXmlFromDocx(buffer);
+  const { documentXml, numberingXml } = readWordPartsFromDocx(buffer);
   const parsed = parseWordImportDocument(documentXml, {
     fileName,
     profileId: options.profileId,
+    moduleCode: String(options.moduleCode || '').trim(),
+    numberingXml,
   });
 
   const moduleCode = String(

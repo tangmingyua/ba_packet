@@ -71,6 +71,16 @@ function extractDocCodeFromFileName(fileName) {
   return '';
 }
 
+/** 整本 fallback 时用文件名（去扩展名）作说明代号 */
+export function docCodeFromImportFileName(fileName) {
+  let base = String(fileName || '')
+    .replace(/\.docx$/i, '')
+    .trim();
+  if (!base) return 'DOCUMENT';
+  base = base.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+  return base.slice(0, 120) || 'DOCUMENT';
+}
+
 function anchorMatches(block, profile) {
   if (block.meta?.skipInOutline) return false;
   if (!profile.anchorTextMatch) return false;
@@ -158,6 +168,7 @@ export function buildStructureDocumentTree(blocks, meta = {}) {
         nodeKind: 'table',
         text: block.text || summarizeTableRows(rows),
         tableRows: rows,
+        tableSpans: block.meta?.tableSpans || null,
         children: [],
       });
       continue;
@@ -186,14 +197,23 @@ function buildDocumentTree(blocks, profile, meta) {
       docTitle: meta.docTitle,
     });
   }
+  if (profile.id === 'generic') {
+    return parseDocumentBlocks(blocks, {
+      docCode: meta.docCode,
+      docTitle: meta.docTitle,
+    });
+  }
   return buildStructureDocumentTree(blocks, meta);
 }
 
-function buildFallbackDocument(blocks, fileName) {
+function buildFallbackDocument(blocks, fileName, profile) {
+  const fromFileName = extractDocCodeFromFileName(fileName);
   const docCode =
-    extractDocCodeFromFileName(fileName) ||
-    parseDocCode(blocks.find((b) => !b.meta?.skipInOutline)?.text || '') ||
-    'DOC';
+    fromFileName ||
+    (profile?.id === 'generic'
+      ? docCodeFromImportFileName(fileName)
+      : parseDocCode(blocks.find((b) => !b.meta?.skipInOutline)?.text || '') ||
+        docCodeFromImportFileName(fileName));
   const docTitle =
     String(fileName || '')
       .replace(/\.docx$/i, '')
@@ -296,7 +316,7 @@ function buildFrom1104Paragraphs(paragraphs, blocks, profile, options) {
   } else {
     splitMode = 'fallback_whole';
     fallback = true;
-    const fallbackDoc = buildFallbackDocument(blocks, options.fileName);
+    const fallbackDoc = buildFallbackDocument(blocks, options.fileName, profile);
     applyPlaceholderReportCodes(fallbackDoc.blocks, fallbackDoc.docCode);
     fallbackDoc.tree = parseDocumentBlocks(fallbackDoc.blocks, {
       docCode: fallbackDoc.docCode,
@@ -313,11 +333,13 @@ function buildFrom1104Paragraphs(paragraphs, blocks, profile, options) {
  * @param {{ fileName?: string, profileId?: string }} options
  */
 export function parseWordImportDocument(documentXml, options = {}) {
+  const moduleCode = String(options.moduleCode || '').trim();
   const paragraphs = extractParagraphTexts(documentXml);
   const paragraphSample = paragraphs.slice(0, 150).join('\n');
   let profile = resolveWordImportProfile(options.profileId, {
     fileName: options.fileName,
     sampleText: paragraphSample,
+    moduleCode,
   });
 
   if (profile.treeMode === '1104-semantic') {
@@ -325,11 +347,16 @@ export function parseWordImportDocument(documentXml, options = {}) {
     return buildFrom1104Paragraphs(paragraphs, blocks, profile, options);
   }
 
-  const blocks = extractWordBlocks(documentXml);
+  const prependListNumbers = profile.id !== 'imas-nr';
+  const blocks = extractWordBlocks(documentXml, {
+    numberingXml: options.numberingXml,
+    prependListNumbers,
+  });
   const blockSample = sampleTextFromBlocks(blocks);
   profile = resolveWordImportProfile(options.profileId, {
     fileName: options.fileName,
     sampleText: blockSample || paragraphSample,
+    moduleCode,
   });
 
   const anchors = profile.anchorTextMatch ? findSplitAnchors(blocks, profile) : [];
@@ -358,7 +385,7 @@ export function parseWordImportDocument(documentXml, options = {}) {
     });
   } else {
     splitMode = 'fallback_whole';
-    const fallback = buildFallbackDocument(blocks, options.fileName);
+    const fallback = buildFallbackDocument(blocks, options.fileName, profile);
     applyPlaceholderReportCodes(fallback.blocks, fallback.docCode);
     logicalDocs = [fallback];
   }

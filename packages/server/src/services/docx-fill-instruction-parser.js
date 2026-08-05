@@ -252,10 +252,13 @@ function createDocumentParseState(meta, titleParagraph) {
   };
 }
 
-function addTableNodeToParseState(state, rows) {
+function addTableNodeToParseState(state, rows, tableSpans) {
   state.mergeTarget = null;
   const matrix = rows || [];
-  const node = createNode('table', summarizeTableRows(matrix), { tableRows: matrix });
+  const node = createNode('table', summarizeTableRows(matrix), {
+    tableRows: matrix,
+    tableSpans: tableSpans || null,
+  });
 
   if (state.ctx.inDetailPart) {
     if (state.currentSection) state.currentSection.children.push(node);
@@ -403,7 +406,7 @@ export function parseDocumentBlocks(blocks, meta = {}) {
 
   for (const block of blocks) {
     if (block.blockKind === 'table') {
-      addTableNodeToParseState(state, block.meta?.rows || []);
+      addTableNodeToParseState(state, block.meta?.rows || [], block.meta?.tableSpans);
       continue;
     }
     const text = block.text;

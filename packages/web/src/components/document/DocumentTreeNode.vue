@@ -35,7 +35,15 @@
       <table class="doc-word-table">
         <tbody>
           <tr v-for="(row, ri) in tableRows" :key="ri">
-            <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
+            <template v-for="(cell, ci) in row" :key="`${ri}-${ci}`">
+              <td
+                v-if="!tableSpanAt(ri, ci)?.skip"
+                :colspan="tableSpanAt(ri, ci)?.colspan || 1"
+                :rowspan="tableSpanAt(ri, ci)?.rowspan || 1"
+              >
+                {{ cell }}
+              </td>
+            </template>
           </tr>
         </tbody>
       </table>
@@ -105,6 +113,12 @@ const tableRows = computed(() => {
   if (!Array.isArray(rows) || !rows.length) return [];
   return rows.map((row) => (Array.isArray(row) ? row : [String(row ?? '')]));
 });
+
+function tableSpanAt(ri, ci) {
+  const spans = props.node.tableSpans;
+  if (!Array.isArray(spans) || !spans[ri] || !spans[ri][ci]) return null;
+  return spans[ri][ci];
+}
 
 const nodeRef = ref(null);
 

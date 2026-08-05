@@ -2,6 +2,8 @@
  * Word 结构层：heading / paragraph / table / placeholder
  */
 
+import { buildNumberingLookup, prependListNumberToParagraph } from './word-numbering.js';
+
 const HEADING_STYLE_LEVEL = {
   Heading1: 1,
   Heading2: 2,
@@ -193,8 +195,91 @@ function resolveHeadingLevel(text, meta) {
   return null;
 }
 
+function readTcCell(tcXml) {
+  const tcPr = tcXml.match(/<w:tcPr\b[\s\S]*?<\/w:tcPr>/i)?.[0] || '';
+  const gridSpanM = tcPr.match(/<w:gridSpan[^>]*w:val="(\d+)"/i);
+  const gridSpan = gridSpanM ? Math.max(1, Number(gridSpanM[1])) : 1;
+  let vMerge = null;
+  if (/<w:vMerge\b/i.test(tcPr)) {
+    const valM = tcPr.match(/<w:vMerge[^>]*w:val="(\w+)"/i);
+    vMerge = valM ? valM[1] : 'continue';
+  }
+  return { text: cellText(tcXml), gridSpan, vMerge };
+}
+
+function buildTableWithSpans(rawRows) {
+  if (!rawRows.length) return { rows: [], spans: [] };
+
+  let colCount = 0;
+  for (const raw of rawRows) {
+    let c = 0;
+    for (const cell of raw) c += cell.gridSpan || 1;
+    colCount = Math.max(colCount, c);
+  }
+
+  const rowCount = rawRows.length;
+  const texts = Array.from({ length: rowCount }, () => Array(colCount).fill(''));
+  const spans = Array.from({ length: rowCount }, () =>
+    Array.from({ length: colCount }, () => ({ skip: false, colspan: 1, rowspan: 1 }))
+  );
+
+  for (let ri = 0; ri < rowCount; ri += 1) {
+    const raw = rawRows[ri];
+    let col = 0;
+    for (const cell of raw) {
+      while (col < colCount && spans[ri][col].skip) col += 1;
+      if (col >= colCount) break;
+
+      const cs = cell.gridSpan || 1;
+
+      if (cell.vMerge === 'continue') {
+        for (let k = 0; k < cs && col + k < colCount; k += 1) {
+          spans[ri][col + k].skip = true;
+        }
+        col += cs;
+        continue;
+      }
+
+      texts[ri][col] = cell.text;
+      spans[ri][col].colspan = cs;
+      for (let k = 1; k < cs; k += 1) {
+        if (col + k < colCount) spans[ri][col + k].skip = true;
+      }
+
+      if (cell.vMerge === 'restart') {
+        let rowspan = 1;
+        for (let rr = ri + 1; rr < rowCount; rr += 1) {
+          let c2 = 0;
+          let found = false;
+          for (const below of rawRows[rr]) {
+            while (c2 < colCount && spans[rr][c2].skip) c2 += 1;
+            if (c2 === col) {
+              found = below.vMerge === 'continue';
+              break;
+            }
+            c2 += below.gridSpan || 1;
+          }
+          if (!found) break;
+          rowspan += 1;
+        }
+        spans[ri][col].rowspan = rowspan;
+        for (let rr = ri + 1; rr < ri + rowspan; rr += 1) {
+          for (let k = 0; k < cs && col + k < colCount; k += 1) {
+            spans[rr][col + k].skip = true;
+          }
+        }
+      }
+
+      col += cs;
+    }
+  }
+
+  return { rows: texts, spans };
+}
+
+/** @returns {{ rows: string[][], spans: Array<Array<{ skip: boolean, colspan: number, rowspan: number }>> }} */
 export function parseTableXml(tblXml) {
-  const rows = [];
+  const rawRows = [];
   let pos = 0;
   while (pos < tblXml.length) {
     const trStart = indexOfTagOpen(tblXml, 'w:tr', pos);
@@ -209,13 +294,13 @@ export function parseTableXml(tblXml) {
       if (tcStart === -1) break;
       const tcEnd = findClosingTag(trXml, tcStart, 'w:tc');
       if (tcEnd === -1) break;
-      cells.push(cellText(trXml.slice(tcStart, tcEnd)));
+      cells.push(readTcCell(trXml.slice(tcStart, tcEnd)));
       cpos = tcEnd;
     }
-    if (cells.length) rows.push(cells);
+    if (cells.length) rawRows.push(cells);
     pos = trEnd;
   }
-  return rows;
+  return buildTableWithSpans(rawRows);
 }
 
 function cellText(tcXml) {
@@ -252,9 +337,15 @@ export function placeholderText(reportCode) {
 
 /**
  * @param {string} documentXml
+ * @param {{ numberingXml?: string, prependListNumbers?: boolean }} [options]
  * @returns {import('./word-import-pipeline.js').WordBlock[]}
  */
-export function extractWordBlocks(documentXml) {
+export function extractWordBlocks(documentXml, options = {}) {
+  const { numberingXml = '', prependListNumbers = false } = options;
+  const numberingLookup = prependListNumbers ? buildNumberingLookup(numberingXml) : null;
+  /** @type {Map<string, number[]>} */
+  const countersState = new Map();
+
   const elements = extractBodyElements(documentXml);
   /** @type {import('./word-import-pipeline.js').WordBlock[]} */
   const blocks = [];
@@ -262,14 +353,15 @@ export function extractWordBlocks(documentXml) {
 
   for (const el of elements) {
     if (el.tag === 'tbl') {
-      const rows = parseTableXml(el.xml);
+      const parsed = parseTableXml(el.xml);
+      const rows = parsed.rows;
       if (rows.length) {
         blocks.push({
           blockKind: 'table',
           level: 0,
           sortOrder: sortOrder++,
           text: summarizeTableRows(rows),
-          meta: { source: 'word_tbl', rows },
+          meta: { source: 'word_tbl', rows, tableSpans: parsed.spans },
         });
       } else {
         blocks.push({
@@ -283,7 +375,10 @@ export function extractWordBlocks(documentXml) {
       continue;
     }
 
-    const text = paragraphText(el.xml);
+    let text = paragraphText(el.xml);
+    if (numberingLookup) {
+      text = prependListNumberToParagraph(el.xml, text, numberingLookup, countersState);
+    }
     if (!text) continue;
 
     const meta = {

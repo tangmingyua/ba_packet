@@ -15,10 +15,26 @@ test('parseTableXml extracts cell text by row', () => {
         <w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc>
       </w:tr>
     </w:tbl>`;
-  assert.deepEqual(parseTableXml(tbl), [
+  assert.deepEqual(parseTableXml(tbl).rows, [
     ['列A', '列B'],
     ['1', '2'],
   ]);
+});
+
+test('parseTableXml applies gridSpan colspan', () => {
+  const tbl = `
+    <w:tbl>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+          <w:p><w:r><w:t>合并</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>`;
+  const parsed = parseTableXml(tbl);
+  assert.equal(parsed.rows[0][0], '合并');
+  assert.equal(parsed.spans[0][0].colspan, 2);
+  assert.equal(parsed.spans[0][1].skip, true);
 });
 
 test('parseDocumentBlocks inserts table node under current part', () => {

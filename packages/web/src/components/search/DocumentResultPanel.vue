@@ -7,7 +7,7 @@
     <div v-if="listItems.length" class="document-layout">
       <aside class="document-list">
         <div class="list-header">
-          <h3>填报说明</h3>
+          <h3>说明</h3>
           <span v-if="searchMode" class="list-meta">{{ listItems.length }} 份</span>
         </div>
         <ul class="document-items">
@@ -62,7 +62,7 @@
             :highlight-indicator-key="focusIndicatorKey"
           />
         </template>
-        <p v-else class="muted empty-hint">请从左侧选择填报说明</p>
+        <p v-else class="muted empty-hint">请从左侧选择说明</p>
       </div>
     </div>
   </section>
@@ -95,7 +95,7 @@ const props = defineProps({
   keyword: { type: String, default: '' },
   moduleCode: { type: String, default: '' },
   subtypeCode: { type: String, default: '' },
-  emptyText: { type: String, default: '未找到匹配填报说明' },
+  emptyText: { type: String, default: '未找到匹配说明' },
 });
 
 const listItems = ref([]);

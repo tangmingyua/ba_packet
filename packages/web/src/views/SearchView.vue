@@ -426,7 +426,7 @@ const isMaterialStorageKind = computed(() =>
 const SUBTYPE_RESULT_TITLES = {
   excel: '配置类数据',
   form_template: '表样命中',
-  document: '填报说明命中',
+  document: '说明命中',
   script: '脚本命中',
   code_value: '码值',
 };
