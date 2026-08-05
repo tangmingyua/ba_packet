@@ -516,17 +516,21 @@ export function getDocumentIndicator(id, indicatorKey) {
 /** 人工设置 / 清除对应表样 report_code（空字符串表示清除） */
 export function updateDocumentReportMapping(id, reportCode) {
   const documentId = Number(id);
-  const row = queryOne('SELECT id, doc_code FROM documents WHERE id = ?', [documentId]);
+  const row = queryOne('SELECT id, doc_code, version_label FROM documents WHERE id = ?', [documentId]);
   if (!row) throw new Error('填报说明不存在');
 
+  const versionLabel = String(row.version_label ?? EMPTY_VERSION).trim();
   const normalized = normalizeReportCodeInput(reportCode);
-  run('DELETE FROM report_doc_mapping WHERE document_id = ?', [documentId]);
+  run('DELETE FROM report_doc_mapping WHERE document_id = ? AND version_label = ?', [
+    documentId,
+    versionLabel,
+  ]);
 
   if (normalized) {
     const conflict = queryOne(
       `SELECT document_id FROM report_doc_mapping
        WHERE report_code = ? AND version_label = ? AND document_id != ?`,
-      [normalized, EMPTY_VERSION, documentId]
+      [normalized, versionLabel, documentId]
     );
     if (conflict) {
       throw new Error(`表样 ${normalized} 已关联其他填报说明`);
@@ -534,7 +538,7 @@ export function updateDocumentReportMapping(id, reportCode) {
     run(
       `INSERT INTO report_doc_mapping (report_code, version_label, document_id, doc_code)
        VALUES (?, ?, ?, ?)`,
-      [normalized, EMPTY_VERSION, documentId, row.doc_code]
+      [normalized, versionLabel, documentId, row.doc_code]
     );
   }
 
@@ -549,14 +553,34 @@ export function updateDocumentReportMapping(id, reportCode) {
 }
 
 /** 按表样 report_code 查 document 元数据（不含节点树）；仅查 report_doc_mapping */
-export function getDocumentByReport(reportCode) {
+export function getDocumentByReport(reportCode, { versionLabel } = {}) {
   const normalized = normalizeReportCodeInput(reportCode);
   if (!normalized) return null;
-  const mapping = queryOne(
-    `SELECT document_id, doc_code FROM report_doc_mapping
-     WHERE report_code = ? AND version_label = ?`,
-    [normalized, EMPTY_VERSION]
-  );
+
+  const preferredVersion = String(versionLabel ?? EMPTY_VERSION).trim();
+  const versionsToTry = [];
+  if (preferredVersion) versionsToTry.push(preferredVersion);
+  if (!versionsToTry.includes(EMPTY_VERSION)) versionsToTry.push(EMPTY_VERSION);
+
+  let mapping = null;
+  for (const vl of versionsToTry) {
+    mapping = queryOne(
+      `SELECT document_id, doc_code FROM report_doc_mapping
+       WHERE report_code = ? AND version_label = ?`,
+      [normalized, vl]
+    );
+    if (mapping) break;
+  }
+
+  if (!mapping) {
+    mapping = queryOne(
+      `SELECT document_id, doc_code FROM report_doc_mapping
+       WHERE report_code = ?
+       ORDER BY document_id DESC
+       LIMIT 1`,
+      [normalized]
+    );
+  }
   if (!mapping) return null;
 
   const row = queryOne('SELECT * FROM documents WHERE id = ?', [Number(mapping.document_id)]);
@@ -567,8 +591,7 @@ export function getDocumentByReport(reportCode) {
   );
 
   return {
-    ...mapDocumentRow(row),
-    reportCode: normalized,
+    ...mapDocumentWithReport(row),
     nodeCount,
   };
 }

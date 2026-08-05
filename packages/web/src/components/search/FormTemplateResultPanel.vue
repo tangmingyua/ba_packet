@@ -334,7 +334,9 @@ async function onIndicatorCellClick({ row, col }) {
   try {
     let docMeta;
     try {
-      docMeta = await getDocumentByReport(reportCode);
+      docMeta = await getDocumentByReport(reportCode, {
+        versionLabel: detail.value?.versionLabel,
+      });
     } catch {
       instructionError.value = `未找到表样 ${reportCode} 对应的填报说明，请先导入并关联`;
       return;

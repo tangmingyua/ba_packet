@@ -335,8 +335,15 @@ export function getDocument(id) {
   return request(`/api/documents/${id}`);
 }
 
-export function getDocumentByReport(reportCode) {
-  return request(`/api/documents/by-report/${encodeURIComponent(reportCode)}`);
+export function getDocumentByReport(reportCode, { versionLabel } = {}) {
+  const query = new URLSearchParams();
+  if (versionLabel != null && String(versionLabel).trim()) {
+    query.set('versionLabel', String(versionLabel).trim());
+  }
+  const qs = query.toString();
+  return request(
+    `/api/documents/by-report/${encodeURIComponent(reportCode)}${qs ? `?${qs}` : ''}`
+  );
 }
 
 export function getDocumentIndicator(documentId, indicatorKey) {

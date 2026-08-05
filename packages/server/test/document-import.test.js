@@ -15,7 +15,7 @@ import {
   getDocumentIndicator,
   listDocuments,
 } from '../src/services/document-import.js';
-import { queryAll } from '../src/db/database.js';
+import { queryAll, queryOne } from '../src/db/database.js';
 import { stripRomanIndicatorPrefix } from '../src/services/docx-fill-instruction-parser.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,6 +81,19 @@ describe('document-import step1', () => {
     assert.equal(g01Second.overwritten, true);
     assert.equal(g01Second.id, g01First.id);
     assert.equal(listDocuments().length, firstListedCount);
+  });
+
+  it('getDocumentByReport 按 version_label 匹配表样关联', () => {
+    importFillInstructionDocument(sampleBuffer, { fileName: 'by-report-ver.docx', versionLabel: 'V1.0' });
+    const g01 = listDocuments().find((d) => d.docCode === 'G01' && d.versionLabel === 'V1.0');
+    assert.ok(g01);
+    assert.equal(g01.reportCode, 'G0100');
+
+    const matched = getDocumentByReport('G0100', { versionLabel: 'V1.0' });
+    assert.ok(matched);
+    assert.equal(matched.docCode, 'G01');
+
+    assert.ok(getDocumentByReport('G0100'));
   });
 
   it('getDocumentByReport G0100 返回元数据', () => {
@@ -164,6 +177,22 @@ describe('document-import step1', () => {
 
     updateDocumentReportMapping(gf01.id, '');
     assert.equal(getDocument(gf01.id).reportCode, null);
+  });
+
+  it('updateDocumentReportMapping 写入映射时使用说明 version_label', () => {
+    importFillInstructionDocument(sampleBuffer, { fileName: 'ver-map.docx', versionLabel: 'V1.0' });
+    const gf01 = listDocuments().find((d) => d.docCode === 'GF01' && d.versionLabel === 'V1.0');
+    assert.ok(gf01, '应存在 GF01 / V1.0 说明');
+
+    updateDocumentReportMapping(gf01.id, 'G9998');
+    assert.equal(getDocument(gf01.id).reportCode, 'G9998');
+
+    const mapping = queryOne(
+      'SELECT version_label, report_code FROM report_doc_mapping WHERE document_id = ?',
+      [gf01.id]
+    );
+    assert.equal(mapping.version_label, 'V1.0');
+    assert.equal(mapping.report_code, 'G9998');
   });
 
   it('getDocumentIndicator 按指标序号返回说明段落', () => {

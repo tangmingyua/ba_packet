@@ -605,7 +605,10 @@ app.get('/api/documents/search', async (request, reply) => {
 });
 
 app.get('/api/documents/by-report/:reportCode', async (request, reply) => {
-  const item = getDocumentByReport(request.params.reportCode);
+  const versionLabel = request.query?.versionLabel;
+  const item = getDocumentByReport(request.params.reportCode, {
+    versionLabel: versionLabel != null ? String(versionLabel) : undefined,
+  });
   if (!item) return reply.code(404).send({ message: '未找到对应填报说明' });
   return item;
 });
