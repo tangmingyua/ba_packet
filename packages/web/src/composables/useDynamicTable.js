@@ -19,6 +19,9 @@ export { getRowValueForExcelColumn } from '../utils/fieldLabels.js';
 
 export const PAGE_SIZE = 10;
 
+/** 配置类/答疑结果表单元格默认展示字数上限（超出可点开展开） */
+export const RESULT_CELL_DISPLAY_MAX_CHARS = 30;
+
 /** 内部字段：表名筛选用，不参与列展示 */
 export const ROW_TABLE_KEY = '$tableName';
 
@@ -52,7 +55,18 @@ const NORM_SECONDARY_STD_CODES = [
   'check_rule_code',
 ];
 
-const NORM_TRUNCATABLE_STD_CODES = ['data_element_desc', 'remark', 'collection_scope', 'data_source_scope', 'logic'];
+const NORM_TRUNCATABLE_STD_CODES = [
+  'data_element_desc',
+  'remark',
+  'collection_scope',
+  'data_source_scope',
+  'logic',
+  'formula_desc',
+  'check_scope',
+  'check_nature',
+  'check_method',
+  'modify_suggestion',
+];
 
 /** 答疑动态主列（标准字段 code） */
 const QA_PRIMARY_STD_CODES = [
@@ -307,19 +321,36 @@ function buildColumnMetaFromKeys(allKeys, mode) {
         ? [...new Set([...NORM_TRUNCATABLE_STD_CODES.filter((c) => c === 'data_element_desc'), ...QA_DESC_STD_CODES])]
         : ['data_element_desc'];
 
+  const codeLabels = resolveLabelsForCodeList(
+    mode === 'qa' ? QA_CODE_STD_CODES : ['table_no', 'table_code', 'data_item_code', 'indicator_code', 'check_rule_code'],
+    allKeys
+  ).filter((l) => displayCols.includes(l));
+
+  let truncatableLabels = resolveLabelsForCodeList(truncatableStd, allKeys).filter((l) =>
+    displayCols.includes(l)
+  );
+
+  if (mode === 'norm' || mode === 'aggregate') {
+    const truncSet = new Set(truncatableLabels);
+    const versionLabels = new Set(resolveLabelsForCodeList(['version'], allKeys));
+    const codeSet = new Set(codeLabels);
+    for (const col of displayCols) {
+      if (truncSet.has(col) || versionLabels.has(col) || codeSet.has(col)) continue;
+      if (/校验|说明|逻辑|范围|备注|公式|建议|意见/.test(col)) {
+        truncSet.add(col);
+      }
+    }
+    truncatableLabels = [...truncSet];
+  }
+
   return {
     displayCols,
     primaryCols,
     secondaryCols,
-    truncatableLabels: resolveLabelsForCodeList(truncatableStd, allKeys).filter((l) =>
-      displayCols.includes(l)
-    ),
+    truncatableLabels,
     descLabels: resolveLabelsForCodeList(descStd, allKeys).filter((l) => displayCols.includes(l)),
     highlightLabels: resolveSearchHighlightLabels(mode, allKeys),
-    codeLabels: resolveLabelsForCodeList(
-      mode === 'qa' ? QA_CODE_STD_CODES : ['table_no', 'table_code', 'data_item_code', 'indicator_code', 'check_rule_code'],
-      allKeys
-    ).filter((l) => displayCols.includes(l)),
+    codeLabels,
     groupLabels: [],
   };
 }

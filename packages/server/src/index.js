@@ -72,6 +72,7 @@ import {
   registerLocalApiAuth,
   writeRuntimeSession,
 } from './local-api-auth.js';
+import { registerDesktopWebUi } from './desktop-web-ui.js';
 
 const PORT = Number(process.env.BA_PORT || 39281);
 const HOST = process.env.BA_HOST || '127.0.0.1';
@@ -736,6 +737,7 @@ app.get('/api/import/catalog', async () => getDatasetCatalog());
 export async function buildApp() {
   await initPlugins();
   await initDb();
+  await registerDesktopWebUi(app);
   return app;
 }
 

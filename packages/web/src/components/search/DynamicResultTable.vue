@@ -90,7 +90,7 @@
               </template>
 
               <template v-else-if="isKeywordHighlight(col)">
-                <div class="cell-inner">
+                <div class="cell-inner" :title="cellText(row, col)">
                   <span class="cell-keyword" v-html="renderCellHtml(row, col) || '—'" />
                 </div>
               </template>
@@ -108,7 +108,7 @@
               </template>
 
               <template v-else>
-                <div class="cell-inner">
+                <div class="cell-inner" :title="cellText(row, col)">
                   <span :class="isDesc(col) ? 'cell-desc' : 'cell-secondary'">
                     {{ cellText(row, col) || '—' }}
                   </span>
@@ -120,24 +120,42 @@
       </table>
     </div>
 
-    <div v-if="totalPages > 1" class="pagination">
-      <button type="button" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">
-        上一页
-      </button>
-      <template v-for="(item, idx) in pageList" :key="`${item.type}-${item.page ?? idx}`">
-        <span v-if="item.type === 'ellipsis'" class="page-ellipsis">...</span>
-        <span
-          v-else
-          class="page-num"
-          :class="{ active: item.active }"
-          @click="goToPage(item.page)"
+    <div v-if="totalCount" class="pagination">
+      <label class="page-size-picker">
+        <span class="page-size-label">每页</span>
+        <select
+          v-model.number="pageSizeLocal"
+          class="page-size-select"
+          aria-label="每页显示条数"
+          @change="onPageSizeChange"
         >
-          {{ item.page }}
-        </span>
+          <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}</option>
+        </select>
+        <span class="page-size-label">条</span>
+      </label>
+      <template v-if="totalPages > 1">
+        <button type="button" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">
+          上一页
+        </button>
+        <template v-for="(item, idx) in pageList" :key="`${item.type}-${item.page ?? idx}`">
+          <span v-if="item.type === 'ellipsis'" class="page-ellipsis">...</span>
+          <span
+            v-else
+            class="page-num"
+            :class="{ active: item.active }"
+            @click="goToPage(item.page)"
+          >
+            {{ item.page }}
+          </span>
+        </template>
+        <button
+          type="button"
+          :disabled="currentPage >= totalPages"
+          @click="goToPage(currentPage + 1)"
+        >
+          下一页
+        </button>
       </template>
-      <button type="button" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">
-        下一页
-      </button>
     </div>
 
     <Teleport to="body">
@@ -192,6 +210,8 @@ import {
 } from '../../composables/useDynamicTable.js';
 import { extractDictNameFromCellText } from '../../utils/codeValueDictName.js';
 
+const pageSizeOptions = [10, 50, 100];
+
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   columnMeta: { type: Object, required: true },
@@ -205,6 +225,9 @@ const props = defineProps({
 const emit = defineEmits(['page-change', 'back']);
 
 const currentPage = ref(1);
+const pageSizeLocal = ref(
+  pageSizeOptions.includes(props.pageSize) ? props.pageSize : PAGE_SIZE
+);
 const extraColsVisible = ref(false);
 const expandedCell = ref('');
 const popover = ref(null);
@@ -225,12 +248,21 @@ const codeLabels = computed(() => props.columnMeta.codeLabels || []);
 const groupLabels = computed(() => props.columnMeta.groupLabels || []);
 const highlightLabels = computed(() => props.columnMeta.highlightLabels || []);
 
-const paginated = computed(() => paginateRows(props.rows, currentPage.value, props.pageSize));
+const paginated = computed(() =>
+  paginateRows(props.rows, currentPage.value, pageSizeLocal.value)
+);
 const pageRows = computed(() => paginated.value.rows);
 const totalCount = computed(() => paginated.value.total);
 const totalPages = computed(() => paginated.value.totalPages);
 const pageList = computed(() => buildPageList(currentPage.value, totalPages.value));
 const visibleColumns = computed(() => displayCols.value);
+
+watch(
+  () => props.pageSize,
+  (size) => {
+    if (pageSizeOptions.includes(size)) pageSizeLocal.value = size;
+  }
+);
 
 watch(
   () => props.rows,
@@ -448,6 +480,13 @@ function toggleExtraCols() {
   closeCodeValueModal();
 }
 
+function onPageSizeChange() {
+  currentPage.value = 1;
+  closePopover();
+  closeCodeValueModal();
+  scrollRef.value?.scrollTo({ top: 0 });
+}
+
 function goToPage(page) {
   if (page < 1 || page > totalPages.value) return;
   currentPage.value = page;
@@ -535,6 +574,38 @@ onUnmounted(() => {
   overflow: auto;
 }
 
+.page-size-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.page-size-label {
+  white-space: nowrap;
+}
+
+.page-size-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.page-size-select:hover {
+  border-color: var(--accent);
+}
+
+.page-size-select:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 1px;
+}
+
 .cell-link {
   position: relative;
   padding-right: 24px;
@@ -546,10 +617,11 @@ onUnmounted(() => {
 }
 
 .cell-link-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  display: block;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: var(--result-cell-max-width, 21em);
 }
 
 .link-icon {

@@ -152,11 +152,21 @@ fn runtime_paths(app: &AppHandle) -> Result<RuntimePaths, String> {
 
             .map_err(|error| error.to_string())?;
 
-
+        let mut server_exe = resource_dir.join("server.exe");
+        if !server_exe.is_file() {
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let sidecar = exe_dir.join("server.exe");
+                    if sidecar.is_file() {
+                        server_exe = sidecar;
+                    }
+                }
+            }
+        }
 
         Ok(RuntimePaths {
 
-            server_exe: resource_dir.join("server.exe"),
+            server_exe,
 
             resources_dir: resource_dir.clone(),
 
@@ -457,6 +467,9 @@ fn spawn_server(
             .env("BA_RESOURCES_PATH", &paths.resources_dir)
             .env("BA_DB_PLAIN", "1")
             .env("BA_API_AUTH", "0");
+        if let Some(web_root) = sidecar_web_root() {
+            command.env("BA_WEB_ROOT", web_root);
+        }
     }
 
 
@@ -593,6 +606,22 @@ pub fn api_base_url() -> String {
 
     format!("http://127.0.0.1:{PORT}")
 
+}
+
+/** 便携目录下的 web/index.html（与 exe 同目录，由本地 API 托管静态资源） */
+pub fn sidecar_web_root() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    let exe_dir = exe_path.parent()?;
+    let web_index = exe_dir.join("web").join("index.html");
+    if web_index.is_file() {
+        Some(exe_dir.join("web"))
+    } else {
+        None
+    }
+}
+
+pub fn uses_sidecar_web_ui() -> bool {
+    sidecar_web_root().is_some()
 }
 
 

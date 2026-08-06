@@ -419,6 +419,46 @@ function ensureSeedSubtypes(freshInstall = false) {
   }
 }
 
+/** 「反洗钱现场检查」主类紧挨在「反洗钱」之后 */
+function ensureAmlSiteInspectionModuleOrder() {
+  const aml = queryOne(`SELECT sort_order AS so FROM modules WHERE code = 'AML'`);
+  const sit = queryOne(`SELECT sort_order AS so FROM modules WHERE code = 'AML_SIT_INSPEC'`);
+  if (!aml || !sit) return;
+
+  const target = Number(aml.so) + 1;
+  const current = Number(sit.so);
+  const othersAtTarget = Number(
+    queryOne(
+      `SELECT COUNT(*) AS c FROM modules WHERE sort_order = ? AND code NOT IN ('AML', 'AML_SIT_INSPEC')`,
+      [target]
+    )?.c || 0
+  );
+  if (current === target && othersAtTarget === 0) return;
+
+  const TEMP = 100000;
+  const peersAtCurrent = Number(
+    queryOne(`SELECT COUNT(*) AS c FROM modules WHERE sort_order = ? AND code != 'AML_SIT_INSPEC'`, [
+      current,
+    ])?.c || 0
+  );
+
+  run(`UPDATE modules SET sort_order = ? WHERE code = 'AML_SIT_INSPEC'`, [TEMP + current]);
+
+  if (peersAtCurrent === 0) {
+    run(`UPDATE modules SET sort_order = sort_order - 1 WHERE sort_order > ? AND sort_order < ?`, [
+      current,
+      TEMP,
+    ]);
+  }
+
+  run(`UPDATE modules SET sort_order = sort_order + 1 WHERE sort_order >= ? AND sort_order < ?`, [
+    target,
+    TEMP,
+  ]);
+
+  run(`UPDATE modules SET sort_order = ? WHERE code = 'AML_SIT_INSPEC'`, [target]);
+}
+
 /** 业务子类标签/名称修正（存量库迁移） */
 function backfillSubtypeCategories() {
   run(`UPDATE subtypes SET category = 'norm' WHERE code = 'suspicious_trn' AND category = 'qa'`);
@@ -426,6 +466,13 @@ function backfillSubtypeCategories() {
   run(`UPDATE subtypes SET name = '表样' WHERE code = '1104_FORM_TEMPLATE' AND name IN ('1104 表样', '1104表样')`);
   run(`UPDATE subtypes SET name = '填报说明' WHERE code = '1104_FILL_INSTRUCTION' AND name IN ('1104 填报说明', '1104填报说明')`);
   run(`UPDATE subtypes SET category = 'composite' WHERE category IN ('changelog', 'to1104')`);
+  run(
+    `INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES ('AML_SIT_INSPEC', '反洗钱现场检查', 99, 1)`
+  );
+  run(
+    `UPDATE subtypes SET module_code = 'AML_SIT_INSPEC' WHERE code = 'AML_SITE_INSP' AND module_code = 'AML'`
+  );
+  ensureAmlSiteInspectionModuleOrder();
   run(`
     UPDATE data_records
     SET std_category = 'norm'

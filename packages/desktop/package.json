@@ -16,11 +16,17 @@
 
     "dist:win": "tauri build --no-bundle",
 
+    "predist:win:frontend": "node scripts/ensure-tauri-frontend.js",
+
     "dist:win:portable": "npm run dist:win && node scripts/package-portable.js",
 
     "dist:win:sfx": "npm run dist:win:portable && node scripts/package-sfx.js",
 
+    "clean:win": "node scripts/clean-win.js",
+
     "build:win": "scripts\\build-win.cmd",
+
+    "build:win:onefile": "npm run build:win",
 
     "dev:electron": "electron .",
 
@@ -29,6 +35,8 @@
   },
 
   "devDependencies": {
+
+    "adm-zip": "^0.5.16",
 
     "@tauri-apps/cli": "^2.11.4",
 

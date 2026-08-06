@@ -84,7 +84,8 @@ describe('aggregate browse', () => {
       moduleCode: 'YBT',
       mode: 'norm',
     });
-    assert.equal(index.columns.length, 2);
+    assert.equal(index.columns.length, 3);
+    assert.ok(index.columns.some((c) => c.code === 'version'));
     assert.equal(index.items.length, 3);
     const a1 = index.items.find((r) => r.values['表名'] === 'A表' && r.values['数据项'] === '字段1');
     assert.equal(a1?.count, 1);

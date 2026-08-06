@@ -31,8 +31,7 @@
               class="template-item"
               :class="{ active: activeId === item.id }"
             >
-              <span class="code">{{ item.reportCode }}</span>
-              <span class="title">{{ item.reportTitle || item.sheetName }}</span>
+              <span class="sheet-name">{{ listSheetLabel(item) }}</span>
               <span class="meta">版本 {{ item.versionLabel }} · {{ item.rowCount }}×{{ item.colCount }}</span>
             </router-link>
           </li>
@@ -46,7 +45,7 @@
             <div>
               <h2>{{ detail.reportCode }} — {{ detail.reportTitle }}</h2>
               <p class="preview-meta">
-                版本 {{ detail.versionLabel }} · Sheet {{ detail.sheetName }} ·
+                版本 {{ detail.versionLabel }} ·
                 {{ detail.rowCount }} 行 × {{ detail.colCount }} 列 ·
                 {{ detail.merges?.length ?? 0 }} 处合并
               </p>
@@ -131,6 +130,7 @@ import {
   getDocumentIndicator,
 } from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
+import { formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const route = useRoute();
@@ -198,6 +198,12 @@ async function loadSubtypes() {
   } catch (e) {
     loadError.value = e.message || '加载子类失败';
   }
+}
+
+function listSheetLabel(item) {
+  return formTemplateListSheetLabel(item, {
+    subtypeCode: selectedSubtypeCode.value || item?.subtypeCode,
+  });
 }
 
 function clearInstruction() {

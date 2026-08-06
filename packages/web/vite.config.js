@@ -34,6 +34,19 @@ export default defineConfig({
         changeOrigin: true,
         router: () => resolveProxyTarget(),
         configure(proxy) {
+          proxy.on('error', (err, _req, res) => {
+            if (res && !res.headersSent && typeof res.writeHead === 'function') {
+              res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(
+                JSON.stringify({
+                  message:
+                    '无法连接本地 API（请先启动 npm run dev:server，或使用根目录 npm run dev 同时启动前后端）',
+                })
+              );
+              return;
+            }
+            console.warn('[vite] api proxy:', err.code || err.message);
+          });
           proxy.on('proxyReq', (proxyReq) => {
             const session = readApiSession();
             if (session.token) {

@@ -18,10 +18,11 @@
               :class="{ active: selectedId === item.id }"
               @click="selectTemplate(item)"
             >
-              <span class="code">{{ item.reportCode }}</span>
-              <span class="title">{{ item.reportTitle || item.sheetName }}</span>
-              <span v-if="searchMode && item.hitCount" class="meta">
-                {{ item.hitCount }} 处命中
+              <span class="sheet-row">
+                <span class="sheet-name">{{ listSheetLabel(item) }}</span>
+                <span v-if="searchMode && item.hitCount != null" class="hit-count">{{
+                  item.hitCount
+                }}</span>
               </span>
             </button>
             <ul v-if="searchMode && selectedId === item.id && hitsForSelected.length" class="hit-rows">
@@ -45,8 +46,7 @@
             <div>
               <h2>{{ detail.reportCode }} — {{ detail.reportTitle }}</h2>
               <p class="preview-meta">
-                版本 {{ detail.versionLabel }} · Sheet {{ detail.sheetName }} ·
-                {{ detail.rowCount }} 行 × {{ detail.colCount }} 列
+                版本 {{ detail.versionLabel }} · {{ detail.rowCount }} 行 × {{ detail.colCount }} 列
                 <span v-if="searchMode && keyword"> · 关键词「{{ keyword }}」</span>
                 <span v-if="focusCell"> · 定位 R{{ focusCell.rowNum }}C{{ focusCell.colNum }}</span>
               </p>
@@ -114,6 +114,7 @@ import {
   searchFormTemplateCells,
 } from '../../api';
 import FormTemplateMatrix from '../form-template/FormTemplateMatrix.vue';
+import { formTemplateListSheetLabel } from '../../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../../utils/formTemplateIndicator.js';
 
 const props = defineProps({
@@ -176,6 +177,13 @@ function hitPosLabel(hit) {
   if (hit.cellKind === 'template_title') return '表样名';
   if (hit.cellKind === 'template_code') return '表号';
   return `R${hit.rowNum}C${hit.colNum}`;
+}
+
+function listSheetLabel(item) {
+  return formTemplateListSheetLabel(item, {
+    moduleCode: props.moduleCode,
+    subtypeCode: props.subtypeCode,
+  });
 }
 
 function clearInstruction() {
@@ -425,9 +433,7 @@ watch(
 
 .template-item {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: block;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   text-align: left;
@@ -435,6 +441,30 @@ watch(
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.sheet-name {
+  font-size: 12px;
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .template-item:hover {
@@ -445,22 +475,6 @@ watch(
   background: #fff;
   border-color: var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-.template-item .code {
-  font-weight: 600;
-  font-size: 12px;
-}
-
-.template-item .title {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
-.template-item .meta {
-  font-size: 11px;
-  color: var(--text-muted);
 }
 
 .hit-rows {

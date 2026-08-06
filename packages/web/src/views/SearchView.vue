@@ -151,7 +151,7 @@
         <AggregateBrowsePanel
           v-if="showAggregateBrowse && aggregateBrowseData"
           :columns="aggregateBrowseData.columns"
-          :items="aggregateBrowseData.items"
+          :items="displayAggregateBrowseItems"
           :link-column-label="aggregateLinkColumnLabel"
           :empty-text="emptyText"
           @pick="onAggregateBrowsePick"
@@ -272,7 +272,6 @@ import SubtypeTabs from '../components/search/SubtypeTabs.vue';
 import { parseCategoryFilter, QUERY_DISPLAY_CATEGORIES, getCategoryLabel } from '../constants/materialCategories.js';
 import {
   buildColumnMeta,
-  createFilterRule,
   createMultiSelectFilterRule,
   filterRows,
   flattenReport,
@@ -284,9 +283,9 @@ import {
   mergeFieldMappingDefaultDisplayByVersion,
   mergeFieldMappingOrdersByVersion,
   mergeFieldMappingsByVersion,
-  MULTI_SELECT_OPERATOR,
   normalizeActiveFilters,
 } from '../composables/useDynamicTable.js';
+import { buildAggregateBrowseItemsFromRows } from '../utils/aggregateBrowseClient.js';
 
 const emit = defineEmits(['search-state']);
 
@@ -321,6 +320,8 @@ const activeReportCode = ref('');
 const elapsedMs = ref(0);
 const scriptListFetchKey = ref(0);
 const fieldMappingsByVersion = ref({});
+const fieldMappingDefaultFilterByVersion = ref({});
+const catalogSubtypes = ref([]);
 
 const tableFilter = ref('__all__');
 const customFilters = ref([]);
@@ -448,6 +449,7 @@ const aggregateLinkColumnLabel = computed(() => {
 });
 
 const showResultFilterBar = computed(() => {
+  if (showAggregateBrowse.value && selectedStorageKind.value === 'excel') return true;
   if (showAggregateBrowse.value) return false;
   if (useSubtypeScopedRender.value) {
     return selectedStorageKind.value === 'excel';
@@ -520,11 +522,86 @@ function applyAggregateBrowseState(result) {
   aggregateBrowseData.value = resolveAggregateBrowseFromResult(result);
   if (shouldEnterAggregateBrowse(result)) {
     showAggregateBrowse.value = true;
-    customFilters.value = [];
-    appliedCustomFilters.value = [];
   } else {
     showAggregateBrowse.value = false;
   }
+}
+
+function collectDefaultFilterColumnLabels(byVersion) {
+  const cols = [];
+  const seen = new Set();
+  for (const vid of Object.keys(byVersion || {}).sort()) {
+    for (const col of byVersion[vid] || []) {
+      if (col && !seen.has(col)) {
+        seen.add(col);
+        cols.push(col);
+      }
+    }
+  }
+  return cols;
+}
+
+function resolveVersionExcelColumnLabel() {
+  for (const vid of Object.keys(fieldMappingsByVersion.value).sort()) {
+    const mapped = fieldMappingsByVersion.value[vid]?.version;
+    if (mapped) return mapped;
+  }
+  return '版本';
+}
+
+function resolveDefaultVersionLabelForSubtype(subtypeCode) {
+  const code = String(subtypeCode || '').trim();
+  if (!code) return '';
+  const st = catalogSubtypes.value.find((s) => s.code === code);
+  const def = st?.versions?.find((v) => v.isDefault);
+  return def?.versionLabel?.trim() || '';
+}
+
+function buildSubtypeDefaultCustomFilters(result) {
+  const byVersion =
+    result?.fieldMappingDefaultFilterByVersion || fieldMappingDefaultFilterByVersion.value;
+  const cols = collectDefaultFilterColumnLabels(byVersion);
+  if (!cols.length) return [];
+
+  const versionCol = resolveVersionExcelColumnLabel();
+  const defaultVersion = resolveDefaultVersionLabelForSubtype(selectedSubtypeCode.value);
+
+  return cols.map((col) => {
+    if (col === versionCol && defaultVersion) {
+      return createMultiSelectFilterRule({ col, op: 'in', val: [defaultVersion] });
+    }
+    return createMultiSelectFilterRule({ col, op: 'in', val: [] });
+  });
+}
+
+function applySubtypeDefaultFilters(result) {
+  customFilters.value = buildSubtypeDefaultCustomFilters(result);
+  appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
+}
+
+function customFiltersFromAggregateRow(row) {
+  const linkLabel = aggregateLinkColumnLabel.value;
+  const defaults = buildSubtypeDefaultCustomFilters(null);
+
+  const fillMultiSelectFromRow = (rule) => {
+    const rowVal = String(row.values?.[rule.col] ?? '').trim();
+    if (rowVal) {
+      return createMultiSelectFilterRule({ col: rule.col, op: 'in', val: [rowVal] });
+    }
+    return createMultiSelectFilterRule({
+      col: rule.col,
+      op: 'in',
+      val: [...(rule.val || [])],
+    });
+  };
+
+  const rules = defaults.map((rule) => fillMultiSelectFromRow(rule));
+
+  if (linkLabel && !rules.some((r) => r.col === linkLabel)) {
+    rules.push(fillMultiSelectFromRow(createMultiSelectFilterRule({ col: linkLabel, op: 'in', val: [] })));
+  }
+
+  return rules;
 }
 
 function onAggregateBrowsePick(row) {
@@ -532,19 +609,13 @@ function onAggregateBrowsePick(row) {
   if (!linkLabel) return;
   showAggregateBrowse.value = false;
   detailFromAggregateBrowse.value = true;
-  const val = String(row.values?.[linkLabel] ?? '').trim();
-  const rule =
-    val === ''
-      ? createFilterRule({ col: linkLabel, op: 'empty', val: '' })
-      : createFilterRule({ col: linkLabel, op: 'eq', val });
-  customFilters.value = [rule];
-  appliedCustomFilters.value = normalizeActiveFilters([rule]);
+  customFilters.value = customFiltersFromAggregateRow(row);
+  appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
 }
 
 function onBackFromAggregateDetail() {
   detailFromAggregateBrowse.value = false;
-  customFilters.value = [];
-  appliedCustomFilters.value = [];
+  applySubtypeDefaultFilters(null);
   showAggregateBrowse.value = true;
 }
 
@@ -704,6 +775,16 @@ const filteredRows = computed(() =>
   })
 );
 
+const displayAggregateBrowseItems = computed(() => {
+  const data = aggregateBrowseData.value;
+  if (!data?.columns?.length) return [];
+  const rows = filterRows(baseRows.value, {
+    tableFilter: isQaLayout.value ? '__all__' : appliedTableFilter.value,
+    customFilters: appliedCustomFilters.value,
+  });
+  return buildAggregateBrowseItemsFromRows(rows, data.columns);
+});
+
 const columnMeta = computed(() => {
   const rows = filteredRows.value.length ? filteredRows.value : baseRows.value;
   const mode =
@@ -797,6 +878,7 @@ function resetLocalFilters() {
 
 function applySearchFieldMappings(result) {
   fieldMappingsByVersion.value = result?.fieldMappingsByVersion || {};
+  fieldMappingDefaultFilterByVersion.value = result?.fieldMappingDefaultFilterByVersion || {};
   mergeFieldMappingsByVersion(result?.fieldMappingsByVersion || {});
   mergeFieldMappingOrdersByVersion(result?.fieldMappingOrdersByVersion || {});
   mergeFieldMappingDefaultDisplayByVersion(result?.fieldMappingDefaultDisplayByVersion || {});
@@ -804,20 +886,7 @@ function applySearchFieldMappings(result) {
 }
 
 function applyDefaultFilterColumns(result) {
-  const byVersion = result?.fieldMappingDefaultFilterByVersion || {};
-  const cols = [];
-  const seen = new Set();
-  for (const vid of Object.keys(byVersion).sort()) {
-    for (const col of byVersion[vid] || []) {
-      if (col && !seen.has(col)) {
-        seen.add(col);
-        cols.push(col);
-      }
-    }
-  }
-  customFilters.value = cols.map((col) =>
-    createMultiSelectFilterRule({ col, op: 'in', val: [] })
-  );
+  applySubtypeDefaultFilters(result);
 }
 
 function resetAll() {
@@ -981,10 +1050,21 @@ async function refreshSubtypeStats() {
   }
 }
 
+async function ensureCatalogSubtypes() {
+  if (catalogSubtypes.value.length) return;
+  try {
+    const catalog = await getDatasetCatalog();
+    catalogSubtypes.value = catalog.subtypes || [];
+  } catch {
+    catalogSubtypes.value = [];
+  }
+}
+
 async function loadModules() {
   try {
     const catalog = await getDatasetCatalog();
     modules.value = catalog.modules || [];
+    catalogSubtypes.value = catalog.subtypes || [];
     if (!moduleCode.value && modules.value.length) {
       moduleCode.value =
         route.query.moduleCode ||
@@ -1220,20 +1300,24 @@ async function doSearch() {
     }
     lastKeyword.value = result.keyword;
     applySearchFieldMappings(result);
-  if (shouldEnterAggregateBrowse(result)) {
-    detailFromAggregateBrowse.value = false;
-    applyAggregateBrowseState(result);
-  } else {
-    applyDefaultFilterColumns(result);
-    applyAggregateBrowseState(result);
-    if (String(result?.keyword ?? '').trim()) {
+    await ensureCatalogSubtypes();
+    if (shouldEnterAggregateBrowse(result)) {
       detailFromAggregateBrowse.value = false;
+      applySubtypeDefaultFilters(result);
+      applyAggregateBrowseState(result);
+    } else {
+      applyDefaultFilterColumns(result);
+      applyAggregateBrowseState(result);
+      if (String(result?.keyword ?? '').trim()) {
+        detailFromAggregateBrowse.value = false;
+      }
     }
-  }
     reports.value = result.reports;
     pickDefaultTabs();
     appliedTableFilter.value = tableFilter.value;
-    appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
+    if (!shouldEnterAggregateBrowse(result)) {
+      appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
+    }
     searched.value = true;
     scriptListFetchKey.value += 1;
     if (apiSearchMode() === 'aggregate' && moduleCode.value) {

@@ -34,7 +34,20 @@ internal static class Launcher
                 Product);
 
             string mainExe = Path.Combine(targetDir, Product + ".exe");
-            bool needExtract = !File.Exists(mainExe) || !File.Exists(Path.Combine(targetDir, "portable.flag"));
+            string localBuildIdPath = Path.Combine(targetDir, "dist-build-id.txt");
+            string zipBuildId = ReadBuildIdFromZip(exeBytes, zipStart, zipLen);
+            string localBuildId = File.Exists(localBuildIdPath)
+                ? File.ReadAllText(localBuildIdPath).Trim()
+                : "";
+
+            bool needExtract =
+                !File.Exists(mainExe)
+                || !File.Exists(Path.Combine(targetDir, "portable.flag"))
+                || string.IsNullOrEmpty(zipBuildId)
+                || !string.Equals(zipBuildId, localBuildId, StringComparison.Ordinal)
+                || (!File.Exists(localBuildIdPath)
+                    && File.Exists(mainExe)
+                    && File.GetLastWriteTimeUtc(exePath) > File.GetLastWriteTimeUtc(mainExe));
 
             if (needExtract)
             {
@@ -71,6 +84,27 @@ internal static class Launcher
         {
             LogError("启动失败：" + ex);
             return 99;
+        }
+    }
+
+    private static string ReadBuildIdFromZip(byte[] exeBytes, int zipStart, int zipLen)
+    {
+        try
+        {
+            using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
+            {
+                ZipArchiveEntry entry = archive.GetEntry("dist-build-id.txt");
+                if (entry == null) return null;
+                using (var reader = new StreamReader(entry.Open()))
+                {
+                    return reader.ReadToEnd().Trim();
+                }
+            }
+        }
+        catch
+        {
+            return null;
         }
     }
 

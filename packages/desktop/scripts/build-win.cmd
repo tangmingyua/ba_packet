@@ -22,6 +22,11 @@ cd /d "%REPO%"
 call npm run build -w @ba-packet/web
 if errorlevel 1 exit /b 1
 
+echo [build-win] 校验前端将嵌入 Tauri...
+cd /d "%REPO%\packages\desktop"
+node scripts\ensure-tauri-frontend.js
+if errorlevel 1 exit /b 1
+
 echo [build-win] Tauri 打包（免安装版）...
 cd /d "%REPO%\packages\desktop"
 call npx tauri build --no-bundle
@@ -32,8 +37,14 @@ cd /d "%REPO%\packages\desktop"
 node scripts\package-portable.js
 if errorlevel 1 exit /b 1
 
+echo [build-win] 生成单文件 EXE（免安装版）...
+node scripts\package-sfx.js
+if errorlevel 1 exit /b 1
+
 echo.
-echo [build-win] 打包完成:
+echo [build-win] 打包完成（分发请使用单文件 EXE）:
+dir /b "src-tauri\target\release\portable\*免安装版.exe" 2>nul
+echo.
+echo 可选：目录版 zip / 文件夹
 dir /b "src-tauri\target\release\portable\*.zip" 2>nul
-dir /b "src-tauri\target\release\portable\监管资料库搜索\*.exe" 2>nul
 exit /b 0

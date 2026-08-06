@@ -19,11 +19,25 @@ function cellToString(value) {
   return String(value).trim();
 }
 
-/** 跨版本合并聚合列（映射顺序：版本 id 升序，同版本按 mapping id） */
+/** 跨版本合并聚合列：版本始终参与聚合，其余为「聚合展示」字段 */
 export function collectAggregateColumnDefs(versionIds) {
   const sortedIds = [...versionIds].sort((a, b) => a - b);
   const seen = new Set();
   const cols = [];
+
+  for (const vid of sortedIds) {
+    const versionMap = listFieldMappings(vid).find((m) => m.standardField === 'version');
+    if (versionMap?.originalColumn) {
+      seen.add('version');
+      cols.push({ code: 'version', label: versionMap.originalColumn });
+      break;
+    }
+  }
+  if (!seen.has('version')) {
+    seen.add('version');
+    cols.push({ code: 'version', label: '版本' });
+  }
+
   for (const vid of sortedIds) {
     for (const m of listFieldMappings(vid)) {
       if (!m.aggregateDisplay) continue;
@@ -33,6 +47,13 @@ export function collectAggregateColumnDefs(versionIds) {
     }
   }
   return cols;
+}
+
+function aggregateCellValue(row, payload, code) {
+  if (code === 'version') {
+    return cellToString(row.std_version || row.version_label || payload.version);
+  }
+  return cellToString(payload[code]);
 }
 
 function buildFiltersForValues(columnDefs, values) {
@@ -65,7 +86,8 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
 
   const versionIds = [...new Set(rows.map((r) => r.subtype_version_id))];
   const columnDefs = collectAggregateColumnDefs(versionIds);
-  if (!columnDefs.length) return null;
+  const hasAggregateDisplayCol = columnDefs.some((c) => c.code !== 'version');
+  if (!hasAggregateDisplayCol) return null;
 
   const bucket = new Map();
 
@@ -74,7 +96,7 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
     const values = {};
     const keyParts = [];
     for (const { code, label } of columnDefs) {
-      const v = cellToString(payload[code]);
+      const v = aggregateCellValue(row, payload, code);
       values[label] = v;
       keyParts.push(`${code}\u0000${v}`);
     }

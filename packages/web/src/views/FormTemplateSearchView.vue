@@ -56,10 +56,9 @@
           :class="{ active: selectedId === item.id }"
         >
           <button type="button" class="hit-group-head" @click="selectTemplate(item)">
-            <span class="code">{{ item.reportCode }}</span>
-            <span class="title">{{ item.reportTitle }}</span>
-            <span class="meta">
-              {{ item.moduleCode || '1104' }} · 版本 {{ item.versionLabel }} · {{ item.hitCount }} 处命中
+            <span class="sheet-row">
+              <span class="sheet-name">{{ listSheetLabel(item) }}</span>
+              <span class="hit-count">{{ item.hitCount }}</span>
             </span>
           </button>
           <ul v-if="selectedId === item.id" class="hit-rows">
@@ -159,6 +158,7 @@ import {
   searchFormTemplateCells,
 } from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
+import { formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const keyword = ref('');
@@ -220,6 +220,10 @@ function hitPosLabel(hit) {
   if (hit.cellKind === 'template_title') return '表样名';
   if (hit.cellKind === 'template_code') return '表号';
   return `R${hit.rowNum}C${hit.colNum}`;
+}
+
+function listSheetLabel(item) {
+  return formTemplateListSheetLabel(item, { moduleCode: moduleCode.value });
 }
 
 function clearInstruction() {
@@ -445,6 +449,10 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border);
 }
 
+.hit-group-head:hover {
+  background: var(--bg-hover);
+}
+
 .hit-group.active .hit-group-head {
   background: #fff;
 }
@@ -456,28 +464,30 @@ onMounted(async () => {
   border: none;
   background: transparent;
   cursor: pointer;
+}
+
+.hit-group-head .sheet-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
 }
 
-.hit-group-head:hover {
-  background: var(--bg-hover);
-}
-
-.hit-group-head .code {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.hit-group-head .title {
+.hit-group-head .sheet-name {
   font-size: 12px;
-  color: var(--text-secondary);
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hit-group-head .meta {
+.hit-group-head .hit-count {
+  flex-shrink: 0;
   font-size: 11px;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .hit-rows {

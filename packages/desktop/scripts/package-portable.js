@@ -18,6 +18,8 @@ const RESOURCE_FILES = [
   { src: 'seed/catalog.db', dest: 'seed/catalog.db' },
 ];
 
+const WEB_DIST = path.join(DESKTOP, '../web/dist');
+
 function findMainExe() {
   const candidates = [
     path.join(RELEASE, 'ba-packet-desktop.exe'),
@@ -43,6 +45,16 @@ function dirSizeBytes(dir) {
     total += entry.isDirectory() ? dirSizeBytes(full) : fs.statSync(full).size;
   }
   return total;
+}
+
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDirSync(from, to);
+    else fs.copyFileSync(from, to);
+  }
 }
 
 function ensureBundleResources() {
@@ -77,7 +89,32 @@ for (const { src, dest } of RESOURCE_FILES) {
   console.log(`[package-portable] 资源: ${dest} (${mb} MB)`);
 }
 
+if (!fs.existsSync(WEB_DIST)) {
+  throw new Error(`未找到 web/dist，请先 npm run build -w @ba-packet/web (${WEB_DIST})`);
+}
+const webOut = path.join(OUT_DIR, 'web');
+copyDirSync(WEB_DIST, webOut);
+const webMb = (dirSizeBytes(webOut) / 1024 / 1024).toFixed(1);
+if (Number(webMb) < 0.1) {
+  throw new Error(`前端 web/ 复制失败或为空: ${webOut}`);
+}
+console.log(`[package-portable] 前端: web/ (${webMb} MB)`);
+
 fs.writeFileSync(path.join(OUT_DIR, 'portable.flag'), '', 'utf-8');
+
+const tauriConf = JSON.parse(
+  fs.readFileSync(path.join(DESKTOP, 'src-tauri/tauri.conf.json'), 'utf-8')
+);
+const webIndex = path.join(DESKTOP, '../web/dist/index.html');
+const webMtime = fs.existsSync(webIndex) ? fs.statSync(webIndex).mtimeMs : 0;
+const webHashPath = path.join(DESKTOP, 'src-tauri/.frontend-dist.sha256');
+const webHash = fs.existsSync(webHashPath)
+  ? fs.readFileSync(webHashPath, 'utf8').trim()
+  : String(webMtime);
+const mainStat = fs.statSync(destExe);
+const buildId = `${tauriConf.version}|${mainStat.size}|${mainStat.mtimeMs}|${webHash}`;
+fs.writeFileSync(path.join(OUT_DIR, 'dist-build-id.txt'), buildId, 'utf-8');
+console.log(`[package-portable] 构建标识: ${buildId}`);
 
 const readme = `监管资料库搜索 - 免安装版
 
@@ -88,6 +125,7 @@ const readme = `监管资料库搜索 - 免安装版
 
 目录内必须包含：
   - ${PRODUCT}.exe
+  - web/（与当前 npm run build 一致的前端静态资源）
   - server.exe
   - sql-wasm.wasm
   - dataset-schema.sql

@@ -1,7 +1,7 @@
 mod server;
 
 use serde::Serialize;
-use server::{api_base_url, start_server, ServerProcess};
+use server::{api_base_url, start_server, uses_sidecar_web_ui, ServerProcess};
 use std::sync::Mutex;
 use tauri::{Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -37,6 +37,17 @@ fn build_init_script(api_token: &str) -> String {
     )
 }
 
+fn resolve_release_web_url() -> Result<WebviewUrl, String> {
+    if uses_sidecar_web_ui() {
+        let base = api_base_url();
+        let url = format!("{base}/")
+            .parse()
+            .map_err(|error| format!("无法解析前端地址: {error}"))?;
+        return Ok(WebviewUrl::External(url));
+    }
+    Ok(WebviewUrl::App("index.html".into()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -56,7 +67,7 @@ pub fn run() {
                         .expect("invalid dev url"),
                 )
             } else {
-                WebviewUrl::App("index.html".into())
+                resolve_release_web_url()?
             };
 
             WebviewWindowBuilder::new(app, "main", url)

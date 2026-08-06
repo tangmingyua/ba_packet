@@ -74,7 +74,8 @@ fs.writeFileSync(SFX_EXE, out);
 
 const mb = (out.length / 1024 / 1024).toFixed(1);
 console.log(`[sfx] 单文件 EXE: ${SFX_EXE} (${mb} MB)`);
-console.log('[sfx] 完成。用户双击该 exe 即可，首次运行会解压到 %LOCALAPPDATA%\\监管资料库搜索 并启动主程序。');
+console.log('[sfx] 完成。用户双击该 exe 即可，会解压/更新到 %LOCALAPPDATA%\\监管资料库搜索 并启动主程序。');
+console.log('[sfx] 若界面仍是旧版：先删 %LOCALAPPDATA%\\监管资料库搜索 再运行；或重新打包后再次双击（会按 dist-build-id 自动覆盖）。');
 
 // 清理中间产物
 try { fs.unlinkSync(LAUNCHER_EXE); } catch {}
