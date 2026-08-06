@@ -6,7 +6,6 @@
       </span>
       <div class="col-toggle-wrap">
         <button v-if="showBack" type="button" class="btn" @click="emit('back')">返回</button>
-        <button type="button" class="btn" :disabled="!totalCount" @click="exportCsv">导出 CSV</button>
         <button
           type="button"
           class="col-toggle-btn"
@@ -204,7 +203,6 @@ import {
   ROW_MODULE_CODE_KEY,
   buildPageList,
   copyText,
-  exportRowsCsv,
   highlightKeyword,
   paginateRows,
 } from '../../composables/useDynamicTable.js';
@@ -494,14 +492,6 @@ function goToPage(page) {
   closeCodeValueModal();
   emit('page-change', page);
   scrollRef.value?.scrollTo({ top: 0 });
-}
-
-function exportCsv() {
-  exportRowsCsv(
-    props.rows,
-    displayCols.value,
-    `${props.title}_${new Date().toISOString().slice(0, 10)}.csv`
-  );
 }
 
 function colWidthStyle(col) {

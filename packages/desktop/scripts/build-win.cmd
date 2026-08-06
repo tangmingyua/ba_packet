@@ -3,48 +3,48 @@ setlocal enabledelayedexpansion
 
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=amd64
 if errorlevel 1 (
-  echo [build-win] VS 开发环境初始化失败
+  echo [build-win] VS dev environment failed
   exit /b 1
 )
 
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 
 cd /d "%~dp0..\..\.."
-set REPO=%CD%
+set "REPO=%CD%"
 cd /d "%~dp0.."
 
-echo [build-win] 准备打包资源...
+for /f "delims=" %%i in ('node scripts\write-build-stamp.js') do set "BA_DESKTOP_BUILD_STAMP=%%i"
+echo [build-win] BA_DESKTOP_BUILD_STAMP=!BA_DESKTOP_BUILD_STAMP!
+
+echo [build-win] prepare resources...
 node scripts\prepare-resources.js
 if errorlevel 1 exit /b 1
 
-echo [build-win] 构建前端...
+echo [build-win] clean and build web-dist...
+node scripts\clean-desktop-web-dist.js
 cd /d "%REPO%"
-call npm run build -w @ba-packet/web
+call npm run build:desktop -w @ba-packet/web
 if errorlevel 1 exit /b 1
 
-echo [build-win] 校验前端将嵌入 Tauri...
+echo [build-win] ensure tauri frontend...
 cd /d "%REPO%\packages\desktop"
 node scripts\ensure-tauri-frontend.js
 if errorlevel 1 exit /b 1
 
-echo [build-win] Tauri 打包（免安装版）...
-cd /d "%REPO%\packages\desktop"
+echo [build-win] tauri build...
 call npx tauri build --no-bundle
 if errorlevel 1 exit /b 1
 
-echo [build-win] 生成免安装目录与 zip...
-cd /d "%REPO%\packages\desktop"
+echo [build-win] package portable...
 node scripts\package-portable.js
 if errorlevel 1 exit /b 1
 
-echo [build-win] 生成单文件 EXE（免安装版）...
+echo [build-win] package sfx...
 node scripts\package-sfx.js
 if errorlevel 1 exit /b 1
 
 echo.
-echo [build-win] 打包完成（分发请使用单文件 EXE）:
-dir /b "src-tauri\target\release\portable\*免安装版.exe" 2>nul
-echo.
-echo 可选：目录版 zip / 文件夹
-dir /b "src-tauri\target\release\portable\*.zip" 2>nul
+echo [build-win] done batch !BA_DESKTOP_BUILD_STAMP!
+echo   portable-builds\!BA_DESKTOP_BUILD_STAMP!\
+dir /b "src-tauri\target\release\portable-builds\!BA_DESKTOP_BUILD_STAMP!\口袋BA.exe" 2>nul
 exit /b 0

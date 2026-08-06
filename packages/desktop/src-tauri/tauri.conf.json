@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "监管资料库搜索",
+  "productName": "口袋BA",
   "version": "0.9.0",
   "identifier": "com.ba.packet.catalog",
   "build": {
     "beforeDevCommand": "npm run dev -w @ba-packet/web",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build -w @ba-packet/web",
-    "frontendDist": "../../web/dist"
+    "beforeBuildCommand": "npm run build:desktop -w @ba-packet/web",
+    "frontendDist": "../build/web-dist"
   },
   "app": {
     "windows": [],

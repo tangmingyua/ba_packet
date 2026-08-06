@@ -46,7 +46,7 @@ async function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: '监管资料库搜索',
+    title: '口袋BA',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       additionalArguments: preloadArgs,

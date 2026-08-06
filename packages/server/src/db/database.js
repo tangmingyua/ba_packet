@@ -459,6 +459,119 @@ function ensureAmlSiteInspectionModuleOrder() {
   run(`UPDATE modules SET sort_order = ? WHERE code = 'AML_SIT_INSPEC'`, [target]);
 }
 
+/** 子类配置版本 + 关联 data_records.std_version */
+function renameSubtypeVersionCatalog(subtypeCode, fromLabel, toLabel) {
+  const svRow = queryOne(
+    `SELECT id FROM subtype_versions WHERE subtype_code = ? AND version_label = ?`,
+    [subtypeCode, fromLabel]
+  );
+  if (!svRow) return;
+  const svConflict = queryOne(
+    `SELECT id FROM subtype_versions WHERE subtype_code = ? AND version_label = ?`,
+    [subtypeCode, toLabel]
+  );
+  if (svConflict) return;
+  run(`UPDATE subtype_versions SET version_label = ? WHERE id = ?`, [toLabel, svRow.id]);
+  run(
+    `UPDATE data_records SET std_version = ?
+     WHERE subtype_version_id = ? AND (std_version = ? OR std_version IS NULL OR std_version = '')`,
+    [toLabel, svRow.id, fromLabel]
+  );
+}
+
+function renameFormTemplateVersionLabels(subtypeCode, fromLabel, toLabel) {
+  const hasFrom = queryOne(
+    `SELECT 1 AS ok FROM form_templates WHERE subtype_code = ? AND version_label = ? LIMIT 1`,
+    [subtypeCode, fromLabel]
+  );
+  if (!hasFrom) return;
+
+  const dupes = queryAll(
+    `SELECT old.id
+     FROM form_templates old
+     INNER JOIN form_templates newer
+       ON newer.report_code = old.report_code AND newer.version_label = ?
+     WHERE old.subtype_code = ? AND old.version_label = ?`,
+    [toLabel, subtypeCode, fromLabel]
+  );
+  for (const d of dupes) {
+    run('DELETE FROM form_template_cells WHERE template_id = ?', [d.id]);
+    run('DELETE FROM form_templates WHERE id = ?', [d.id]);
+  }
+
+  run(
+    `UPDATE form_templates SET version_label = ?
+     WHERE subtype_code = ? AND version_label = ?`,
+    [toLabel, subtypeCode, fromLabel]
+  );
+}
+
+function renameDocumentVersionLabels(subtypeCode, fromLabel, toLabel) {
+  const hasFrom = queryOne(
+    `SELECT 1 AS ok FROM documents WHERE subtype_code = ? AND version_label = ? LIMIT 1`,
+    [subtypeCode, fromLabel]
+  );
+  if (!hasFrom) return;
+
+  const mappingDupes = queryAll(
+    `SELECT old.report_code
+     FROM report_doc_mapping old
+     INNER JOIN report_doc_mapping newer
+       ON newer.report_code = old.report_code AND newer.version_label = ?
+     INNER JOIN documents d ON d.id = old.document_id AND d.subtype_code = ?
+     WHERE old.version_label = ?`,
+    [toLabel, subtypeCode, fromLabel]
+  );
+  for (const row of mappingDupes) {
+    run(`DELETE FROM report_doc_mapping WHERE report_code = ? AND version_label = ?`, [
+      row.report_code,
+      fromLabel,
+    ]);
+  }
+
+  run(
+    `UPDATE report_doc_mapping
+     SET version_label = ?
+     WHERE version_label = ?
+       AND document_id IN (
+         SELECT id FROM documents WHERE subtype_code = ? AND version_label = ?
+       )`,
+    [toLabel, fromLabel, subtypeCode, fromLabel]
+  );
+
+  const docDupes = queryAll(
+    `SELECT old.id
+     FROM documents old
+     INNER JOIN documents newer
+       ON newer.doc_code = old.doc_code AND newer.version_label = ?
+     WHERE old.subtype_code = ? AND old.version_label = ?`,
+    [toLabel, subtypeCode, fromLabel]
+  );
+  for (const d of docDupes) {
+    run('DELETE FROM document_nodes WHERE document_id = ?', [d.id]);
+    run('DELETE FROM report_doc_mapping WHERE document_id = ?', [d.id]);
+    run('DELETE FROM documents WHERE id = ?', [d.id]);
+  }
+
+  run(
+    `UPDATE documents SET version_label = ?
+     WHERE subtype_code = ? AND version_label = ?`,
+    [toLabel, subtypeCode, fromLabel]
+  );
+}
+
+/** 大集中采集规范、1104 表样/填报说明：V1.0 → V2026（与大集中一致） */
+function backfillMaterialVersionLabelV2026() {
+  const fromLabel = 'V1.0';
+  const toLabel = 'V2026';
+  for (const subtypeCode of ['DJZ_COLLECT_REG', '1104_FORM_TEMPLATE', '1104_FILL_INSTRUCTION']) {
+    renameSubtypeVersionCatalog(subtypeCode, fromLabel, toLabel);
+  }
+  renameFormTemplateVersionLabels('DJZ_COLLECT_REG', fromLabel, toLabel);
+  renameFormTemplateVersionLabels('1104_FORM_TEMPLATE', fromLabel, toLabel);
+  renameDocumentVersionLabels('1104_FILL_INSTRUCTION', fromLabel, toLabel);
+}
+
 /** 业务子类标签/名称修正（存量库迁移） */
 function backfillSubtypeCategories() {
   run(`UPDATE subtypes SET category = 'norm' WHERE code = 'suspicious_trn' AND category = 'qa'`);
@@ -473,6 +586,7 @@ function backfillSubtypeCategories() {
     `UPDATE subtypes SET module_code = 'AML_SIT_INSPEC' WHERE code = 'AML_SITE_INSP' AND module_code = 'AML'`
   );
   ensureAmlSiteInspectionModuleOrder();
+  backfillMaterialVersionLabelV2026();
   run(`
     UPDATE data_records
     SET std_category = 'norm'

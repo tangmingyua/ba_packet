@@ -17,7 +17,7 @@ fn rerun_if_changed_tree(dir: &Path) {
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dist = manifest_dir.join("../../web/dist");
+    let dist = manifest_dir.join("../build/web-dist");
     if dist.exists() {
         rerun_if_changed_tree(&dist);
     }

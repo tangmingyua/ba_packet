@@ -4,6 +4,9 @@ node_modules/
 # 构建产物
 dist/
 packages/web/dist/
+packages/desktop/build/
+packages/desktop/.last-desktop-build.json
+packages/desktop/.desktop-build-stamp.env
 release/
 packages/desktop/release/
 

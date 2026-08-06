@@ -6,7 +6,7 @@ using System.Reflection;
 
 internal static class Launcher
 {
-    private const string Product = "监管资料库搜索";
+    private const string Product = "口袋BA";
     private static readonly byte[] Magic = { (byte)'B', (byte)'A', (byte)'S', (byte)'F', (byte)'X' };
 
     private static int Main()
@@ -34,34 +34,19 @@ internal static class Launcher
                 Product);
 
             string mainExe = Path.Combine(targetDir, Product + ".exe");
-            string localBuildIdPath = Path.Combine(targetDir, "dist-build-id.txt");
-            string zipBuildId = ReadBuildIdFromZip(exeBytes, zipStart, zipLen);
-            string localBuildId = File.Exists(localBuildIdPath)
-                ? File.ReadAllText(localBuildIdPath).Trim()
-                : "";
 
-            bool needExtract =
-                !File.Exists(mainExe)
-                || !File.Exists(Path.Combine(targetDir, "portable.flag"))
-                || string.IsNullOrEmpty(zipBuildId)
-                || !string.Equals(zipBuildId, localBuildId, StringComparison.Ordinal)
-                || (!File.Exists(localBuildIdPath)
-                    && File.Exists(mainExe)
-                    && File.GetLastWriteTimeUtc(exePath) > File.GetLastWriteTimeUtc(mainExe));
-
-            if (needExtract)
+            // 每次启动单文件 exe 都解压覆盖程序与 web/（zip 不含 app-data，用户库保留）
+            Directory.CreateDirectory(targetDir);
+            using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
             {
-                Directory.CreateDirectory(targetDir);
-                using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
-                using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
+                foreach (var entry in archive.Entries)
                 {
-                    foreach (var entry in archive.Entries)
-                    {
-                        string dest = Path.Combine(targetDir, entry.FullName);
-                        string dir = Path.GetDirectoryName(dest);
-                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                        entry.ExtractToFile(dest, true);
-                    }
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
+                    string dest = Path.Combine(targetDir, entry.FullName);
+                    string dir = Path.GetDirectoryName(dest);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                    entry.ExtractToFile(dest, true);
                 }
             }
 
@@ -84,27 +69,6 @@ internal static class Launcher
         {
             LogError("启动失败：" + ex);
             return 99;
-        }
-    }
-
-    private static string ReadBuildIdFromZip(byte[] exeBytes, int zipStart, int zipLen)
-    {
-        try
-        {
-            using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
-            using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
-            {
-                ZipArchiveEntry entry = archive.GetEntry("dist-build-id.txt");
-                if (entry == null) return null;
-                using (var reader = new StreamReader(entry.Open()))
-                {
-                    return reader.ReadToEnd().Trim();
-                }
-            }
-        }
-        catch
-        {
-            return null;
         }
     }
 

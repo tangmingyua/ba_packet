@@ -2,13 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import {
+  DESKTOP,
+  FRONTEND_STAMP,
+  RELEASE,
+  WEB_DIST,
+  portableBuildRoot,
+  resolveBuildStamp,
+} from './desktop-build-paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DESKTOP = path.resolve(__dirname, '..');
-const RELEASE = path.join(DESKTOP, 'src-tauri/target/release');
 const BUNDLE = path.join(DESKTOP, 'bundle/resources');
-const PRODUCT = '监管资料库搜索';
-const OUT_DIR = path.join(RELEASE, 'portable', PRODUCT);
+const PRODUCT = '口袋BA';
 
 /** 与 tauri.conf.json bundle.resources 保持一致 */
 const RESOURCE_FILES = [
@@ -18,7 +23,9 @@ const RESOURCE_FILES = [
   { src: 'seed/catalog.db', dest: 'seed/catalog.db' },
 ];
 
-const WEB_DIST = path.join(DESKTOP, '../web/dist');
+const stamp = resolveBuildStamp();
+const buildRoot = portableBuildRoot(stamp);
+const OUT_DIR = path.join(buildRoot, PRODUCT);
 
 function findMainExe() {
   const candidates = [
@@ -48,6 +55,7 @@ function dirSizeBytes(dir) {
 }
 
 function copyDirSync(src, dest) {
+  fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name);
@@ -72,12 +80,15 @@ function ensureBundleResources() {
 
 ensureBundleResources();
 
+fs.mkdirSync(buildRoot, { recursive: true });
+
 const mainExe = findMainExe();
 fs.rmSync(OUT_DIR, { recursive: true, force: true });
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const destExe = path.join(OUT_DIR, `${PRODUCT}.exe`);
 fs.copyFileSync(mainExe, destExe);
+console.log(`[package-portable] 构建批次: ${stamp}`);
 console.log(`[package-portable] 主程序: ${destExe}`);
 
 for (const { src, dest } of RESOURCE_FILES) {
@@ -90,7 +101,9 @@ for (const { src, dest } of RESOURCE_FILES) {
 }
 
 if (!fs.existsSync(WEB_DIST)) {
-  throw new Error(`未找到 web/dist，请先 npm run build -w @ba-packet/web (${WEB_DIST})`);
+  throw new Error(
+    `未找到桌面 web 产物，请先 npm run build:desktop -w @ba-packet/web (${WEB_DIST})`
+  );
 }
 const webOut = path.join(OUT_DIR, 'web');
 copyDirSync(WEB_DIST, webOut);
@@ -98,25 +111,34 @@ const webMb = (dirSizeBytes(webOut) / 1024 / 1024).toFixed(1);
 if (Number(webMb) < 0.1) {
   throw new Error(`前端 web/ 复制失败或为空: ${webOut}`);
 }
-console.log(`[package-portable] 前端: web/ (${webMb} MB)`);
+const webJs = fs.readdirSync(path.join(webOut, 'assets')).find((n) => n.startsWith('index-') && n.endsWith('.js'));
+console.log(`[package-portable] 前端: web/ (${webMb} MB)${webJs ? ` · ${webJs}` : ''}`);
 
 fs.writeFileSync(path.join(OUT_DIR, 'portable.flag'), '', 'utf-8');
 
 const tauriConf = JSON.parse(
   fs.readFileSync(path.join(DESKTOP, 'src-tauri/tauri.conf.json'), 'utf-8')
 );
-const webIndex = path.join(DESKTOP, '../web/dist/index.html');
-const webMtime = fs.existsSync(webIndex) ? fs.statSync(webIndex).mtimeMs : 0;
-const webHashPath = path.join(DESKTOP, 'src-tauri/.frontend-dist.sha256');
-const webHash = fs.existsSync(webHashPath)
-  ? fs.readFileSync(webHashPath, 'utf8').trim()
-  : String(webMtime);
+const webHash = fs.existsSync(FRONTEND_STAMP)
+  ? fs.readFileSync(FRONTEND_STAMP, 'utf8').trim()
+  : String(fs.statSync(path.join(WEB_DIST, 'index.html')).mtimeMs);
 const mainStat = fs.statSync(destExe);
-const buildId = `${tauriConf.version}|${mainStat.size}|${mainStat.mtimeMs}|${webHash}`;
+const buildId = `${tauriConf.version}|${stamp}|${webHash}|${mainStat.size}`;
 fs.writeFileSync(path.join(OUT_DIR, 'dist-build-id.txt'), buildId, 'utf-8');
+fs.writeFileSync(path.join(OUT_DIR, 'build-stamp.txt'), `${stamp}\n`, 'utf-8');
 console.log(`[package-portable] 构建标识: ${buildId}`);
 
-const readme = `监管资料库搜索 - 免安装版
+const metaPath = path.join(DESKTOP, '.last-desktop-build.json');
+fs.writeFileSync(
+  metaPath,
+  JSON.stringify({ stamp, buildRoot, outDir: OUT_DIR, webDist: WEB_DIST, buildId }, null, 2),
+  'utf-8'
+);
+
+const readme = `口袋BA - 免安装版
+
+构建批次: ${stamp}
+前端来源: packages/desktop/build/web-dist（桌面专用构建目录）
 
 1. 解压整个文件夹到任意位置（不要只复制 exe，需保留同目录下所有文件）
 2. 双击「${PRODUCT}.exe」运行
@@ -125,7 +147,7 @@ const readme = `监管资料库搜索 - 免安装版
 
 目录内必须包含：
   - ${PRODUCT}.exe
-  - web/（与当前 npm run build 一致的前端静态资源）
+  - web/（当前批次前端静态资源）
   - server.exe
   - sql-wasm.wasm
   - dataset-schema.sql
@@ -133,7 +155,7 @@ const readme = `监管资料库搜索 - 免安装版
 `;
 fs.writeFileSync(path.join(OUT_DIR, '使用说明.txt'), readme, 'utf-8');
 
-const zipPath = path.join(RELEASE, 'portable', `${PRODUCT}-免安装版.zip`);
+const zipPath = path.join(buildRoot, `${PRODUCT}.zip`);
 if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
 execSync(

@@ -596,28 +596,6 @@ export function buildPageList(currentPage, totalPages, maxVisible = 7) {
   return items;
 }
 
-export function exportRowsCsv(rows, columns, filename) {
-  if (!rows.length || !columns.length) return;
-  let csv = '\uFEFF';
-  csv += columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(',') + '\n';
-  for (const row of rows) {
-    csv +=
-      columns
-        .map((c) => {
-          const v = String(row[c] ?? '').replace(/"/g, '""');
-          return `"${v}"`;
-        })
-        .join(',') + '\n';
-  }
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename || `口袋BA查询结果_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

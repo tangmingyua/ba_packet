@@ -1,14 +1,19 @@
-/** 1104 表样列表：去掉 sheet 名末尾 _231 等后缀（仅前端展示） */
-export function strip1104FormTemplateListSuffix(text) {
+/** 表样列表：去掉 sheet 名末尾 _231 / _111 等版本后缀（仅前端展示） */
+export function stripFormTemplateListSheetSuffix(text) {
   const s = String(text ?? '').trim();
   if (!s) return s;
   return s.replace(/_\d+$/, '');
 }
 
-function is1104FormTemplateContext(item, options = {}) {
+/** 与 1104 相同 sheet 命名规则的主类 */
+const STRIP_LIST_SUFFIX_MODULE_CODES = new Set(['1104', 'DJZ']);
+
+function shouldStripFormTemplateListSuffix(item, options = {}) {
   const moduleCode = String(options.moduleCode ?? item?.moduleCode ?? '').trim();
   const subtypeCode = String(options.subtypeCode ?? item?.subtypeCode ?? '').trim();
-  return moduleCode === '1104' || subtypeCode === '1104_FORM_TEMPLATE';
+  if (STRIP_LIST_SUFFIX_MODULE_CODES.has(moduleCode)) return true;
+  if (subtypeCode === '1104_FORM_TEMPLATE') return true;
+  return subtypeCode.startsWith('DJZ_');
 }
 
 /** 表样左侧列表主标题（sheet 名 / 表题 / 表号） */
@@ -16,6 +21,9 @@ export function formTemplateListSheetLabel(item, options = {}) {
   const raw =
     item?.sheetName?.trim() || item?.reportTitle?.trim() || item?.reportCode || '';
   if (!raw) return '—';
-  if (!is1104FormTemplateContext(item, options)) return raw;
-  return strip1104FormTemplateListSuffix(raw);
+  if (!shouldStripFormTemplateListSuffix(item, options)) return raw;
+  return stripFormTemplateListSheetSuffix(raw);
 }
+
+/** @deprecated 使用 stripFormTemplateListSheetSuffix */
+export const strip1104FormTemplateListSuffix = stripFormTemplateListSheetSuffix;

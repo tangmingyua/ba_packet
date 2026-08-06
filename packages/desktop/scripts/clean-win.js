@@ -2,14 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { DESKTOP, RELEASE, WEB_DIST } from './desktop-build-paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DESKTOP = path.resolve(__dirname, '..');
-const ROOT = path.resolve(DESKTOP, '../..');
-const WEB_DIST = path.join(ROOT, 'packages/web/dist');
 const BUNDLE = path.join(DESKTOP, 'bundle/resources');
-const RELEASE = path.join(DESKTOP, 'src-tauri/target/release');
-const PORTABLE = path.join(RELEASE, 'portable');
+const PORTABLE_BUILDS = path.join(RELEASE, 'portable-builds');
+const LEGACY_PORTABLE = path.join(RELEASE, 'portable');
 
 function rm(target) {
   if (!fs.existsSync(target)) return;
@@ -19,13 +17,17 @@ function rm(target) {
 
 rm(WEB_DIST);
 rm(BUNDLE);
-rm(PORTABLE);
+rm(LEGACY_PORTABLE);
+rm(PORTABLE_BUILDS);
 
 const mainExe = path.join(RELEASE, 'ba-packet-desktop.exe');
 if (fs.existsSync(mainExe)) {
   fs.unlinkSync(mainExe);
   console.log(`[clean-win] 已删除: ${mainExe}`);
 }
+
+const stampFile = path.join(DESKTOP, '.last-desktop-build.json');
+if (fs.existsSync(stampFile)) fs.unlinkSync(stampFile);
 
 try {
   execSync('cargo clean', {
@@ -38,5 +40,5 @@ try {
 
 console.log('[clean-win] 完成。请重新执行 npm run build:desktop');
 console.log(
-  '[clean-win] 若曾运行过单文件 EXE，请删除旧解压目录：%LOCALAPPDATA%\\监管资料库搜索'
+  '[clean-win] 若曾运行过单文件 EXE，请删除旧解压目录：%LOCALAPPDATA%\\口袋BA'
 );

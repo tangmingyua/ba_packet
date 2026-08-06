@@ -6,6 +6,7 @@
       'search-page-compact': searched,
     }"
   >
+    <SearchPageWatermark />
     <!-- 新头部：模块 Tab + 标签卡片 + 子类 + 查询/筛选 -->
     <header class="search-page-header">
       <div
@@ -265,6 +266,7 @@ import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
 import ConversionScriptListPanel from '../components/conversion-script/ConversionScriptListPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import AggregateBrowsePanel from '../components/search/AggregateBrowsePanel.vue';
+import SearchPageWatermark from '../components/search/SearchPageWatermark.vue';
 import ModuleCategoryCards from '../components/search/ModuleCategoryCards.vue';
 import SearchLandingModeCards from '../components/search/SearchLandingModeCards.vue';
 import ModuleTabs from '../components/search/ModuleTabs.vue';
