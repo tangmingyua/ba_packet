@@ -419,44 +419,32 @@ function ensureSeedSubtypes(freshInstall = false) {
   }
 }
 
-/** 「反洗钱现场检查」主类紧挨在「反洗钱」之后 */
-function ensureAmlSiteInspectionModuleOrder() {
-  const aml = queryOne(`SELECT sort_order AS so FROM modules WHERE code = 'AML'`);
-  const sit = queryOne(`SELECT sort_order AS so FROM modules WHERE code = 'AML_SIT_INSPEC'`);
-  if (!aml || !sit) return;
+/** 查询页主类 Tab 显示顺序（sort_order 0 起） */
+const MODULE_TAB_DISPLAY_ORDER = [
+  { code: 'YBT', name: '一表通' },
+  { code: 'EAST', name: 'EAST' },
+  { code: 'FIN_BASIC_DATA', name: '金数' },
+  { code: '1104', name: '1104' },
+  { code: 'DJZ', name: '大集中' },
+  { code: 'CREDIT', name: '征信' },
+  { code: 'AML', name: '反洗钱' },
+  { code: 'AML_SIT_INSPEC', name: '反洗钱现场检查' },
+  { code: 'RCPMIS', name: 'RCPMIS' },
+  { code: 'SAFE', name: 'SAFE' },
+  { code: 'IMAS', name: '利率监测' },
+  { code: 'IMAS_NR', name: '利率监测NR' },
+  { code: 'PISA', name: 'PISA' },
+];
 
-  const target = Number(aml.so) + 1;
-  const current = Number(sit.so);
-  const othersAtTarget = Number(
-    queryOne(
-      `SELECT COUNT(*) AS c FROM modules WHERE sort_order = ? AND code NOT IN ('AML', 'AML_SIT_INSPEC')`,
-      [target]
-    )?.c || 0
-  );
-  if (current === target && othersAtTarget === 0) return;
-
-  const TEMP = 100000;
-  const peersAtCurrent = Number(
-    queryOne(`SELECT COUNT(*) AS c FROM modules WHERE sort_order = ? AND code != 'AML_SIT_INSPEC'`, [
-      current,
-    ])?.c || 0
-  );
-
-  run(`UPDATE modules SET sort_order = ? WHERE code = 'AML_SIT_INSPEC'`, [TEMP + current]);
-
-  if (peersAtCurrent === 0) {
-    run(`UPDATE modules SET sort_order = sort_order - 1 WHERE sort_order > ? AND sort_order < ?`, [
-      current,
-      TEMP,
+function ensureModuleDisplayOrder() {
+  MODULE_TAB_DISPLAY_ORDER.forEach(({ code, name }, index) => {
+    run(`INSERT OR IGNORE INTO modules (code, name, sort_order, enabled) VALUES (?, ?, ?, 1)`, [
+      code,
+      name,
+      index,
     ]);
-  }
-
-  run(`UPDATE modules SET sort_order = sort_order + 1 WHERE sort_order >= ? AND sort_order < ?`, [
-    target,
-    TEMP,
-  ]);
-
-  run(`UPDATE modules SET sort_order = ? WHERE code = 'AML_SIT_INSPEC'`, [target]);
+    run(`UPDATE modules SET sort_order = ?, name = ? WHERE code = ?`, [index, name, code]);
+  });
 }
 
 /** 子类配置版本 + 关联 data_records.std_version */
@@ -585,7 +573,7 @@ function backfillSubtypeCategories() {
   run(
     `UPDATE subtypes SET module_code = 'AML_SIT_INSPEC' WHERE code = 'AML_SITE_INSP' AND module_code = 'AML'`
   );
-  ensureAmlSiteInspectionModuleOrder();
+  ensureModuleDisplayOrder();
   backfillMaterialVersionLabelV2026();
   run(`
     UPDATE data_records

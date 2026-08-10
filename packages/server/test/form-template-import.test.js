@@ -97,6 +97,7 @@ function authHeaders(extra = {}) {
 const IMPORT_1104 = { moduleCode: '1104' };
 const IMPORT_NR = { moduleCode: 'IMAS' };
 const IMPORT_YBT = { moduleCode: 'YBT' };
+const IMPORT_PISA = { moduleCode: 'PISA' };
 
 describe('form-template-import', () => {
   let tmpDir;
@@ -552,11 +553,50 @@ describe('form-template-import', () => {
     const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'ybt.xlsx', ...IMPORT_YBT });
     assert.equal(parsed.sheets.length, 2);
     const bySheet = Object.fromEntries(parsed.sheets.map((s) => [s.sheetName, s]));
-    assert.equal(bySheet['JGXX(1.1机构信息)'].reportCode, 'JGXX');
+    assert.equal(bySheet['JGXX(1.1机构信息)'].reportCode, 'JGXX(1.1机构信息)');
     assert.equal(bySheet['JGXX(1.1机构信息)'].reportTitle, 'JGXX(1.1机构信息)');
     assert.equal(bySheet['JGXX(1.1机构信息)'].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
-    assert.equal(bySheet['ZHGL(1.2账户管理)'].reportCode, 'ZHGL');
+    assert.equal(bySheet['ZHGL(1.2账户管理)'].reportCode, 'ZHGL(1.2账户管理)');
     assert.equal(bySheet['ZHGL(1.2账户管理)'].reportTitle, 'ZHGL(1.2账户管理)');
+  });
+
+  it('PISA 模块与一表通相同：不强制 Sheet 名含「_」，Sheet 名即为表名', async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['表一'], ['1. 项目']]),
+      'PISA表(1.1示例)'
+    );
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, { fileName: 'pisa.xlsx', ...IMPORT_PISA });
+    assert.equal(parsed.sheets.length, 1);
+    assert.equal(parsed.sheets[0].sheetName, 'PISA表(1.1示例)');
+    assert.equal(parsed.sheets[0].reportCode, 'PISA表(1.1示例)');
+    assert.equal(parsed.sheets[0].reportTitle, 'PISA表(1.1示例)');
+    assert.equal(parsed.sheets[0].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+  });
+
+  it('PISA 同前缀多 Sheet 以完整 Sheet 名为 report_code，互不覆盖', async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['a']]),
+      'CJBD-BC-AB'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['b']]),
+      'CJBD-XT-HN (4)'
+    );
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, {
+      fileName: 'pisa.xlsx',
+      moduleCode: 'PISA',
+      versionLabel: 'V1.0',
+    });
+    assert.equal(parsed.sheets.length, 2);
+    const codes = parsed.sheets.map((s) => s.reportCode).sort();
+    assert.deepEqual(codes, ['CJBD-BC-AB', 'CJBD-XT-HN (4)']);
   });
 
   it('POST /api/form-template/import 须传 moduleCode', async () => {

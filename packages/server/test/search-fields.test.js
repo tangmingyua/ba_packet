@@ -30,4 +30,14 @@ describe('search-fields', () => {
       'question_desc',
     ]);
   });
+
+  it('resolveSuggestTableNameFromPayload 优先表名再表名（主）', async () => {
+    const { resolveSuggestTableNameFromPayload } = await import('../src/services/search-fields.js');
+    assert.equal(
+      resolveSuggestTableNameFromPayload({ table_name: '  A表 ', table_name_main: 'B表' }),
+      'A表'
+    );
+    assert.equal(resolveSuggestTableNameFromPayload({ table_name_main: '主表' }), '主表');
+    assert.equal(resolveSuggestTableNameFromPayload({}), '');
+  });
 });

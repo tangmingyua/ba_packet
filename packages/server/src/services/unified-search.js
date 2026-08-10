@@ -8,10 +8,17 @@ import {
   resolveSearchMode,
   searchDatasetRecords,
   suggestDatasetItems,
+  parseModuleCodeFilter,
 } from './dataset-search.js';
 import { searchFormTemplates } from './form-template-search.js';
 import { searchDocuments } from './document-search.js';
 import { sortByRelevance } from './relevance.js';
+
+/** Excel 联想已在 suggestDatasetItems 内按 payload 计分，勿再用 dataItemName 二次过滤 */
+function mergeSuggestItems(excelItems, materialItems, keyword, limit) {
+  const materialSorted = sortByRelevance(materialItems, keyword, 'dataItemName');
+  return [...excelItems, ...materialSorted].slice(0, limit);
+}
 import { listModules, getSubtype, listSubtypes } from './dataset-config.js';
 import { buildAggregateBrowseIndex } from './aggregate-browse.js';
 import { compareVersionLabelsDesc, sortByVersionLabelDesc } from '../utils/version-sort.js';
@@ -648,15 +655,17 @@ export function unifiedSuggest(keyword, options = {}) {
 
   const categoryList = resolveCategoryList(options.mode, options.categories);
   const mod = normalizeModuleCode(options.moduleCode);
+  const modList = parseModuleCodeFilter(options.moduleCode, options.moduleCodes);
   const subtypeList = parseSubtypeFilter(options.subtypeCode);
 
   if (subtypeList.length) {
-    let items = [];
+    let excelItems = [];
+    let materialItems = [];
     for (const code of subtypeList) {
       const st = getSubtype(code);
       if (!st || !st.enabled || (mod && st.moduleCode !== mod)) continue;
       if (st.storageKind === 'excel') {
-        items.push(
+        excelItems.push(
           ...suggestDatasetItems(q, {
             limit,
             mode: options.mode,
@@ -666,7 +675,7 @@ export function unifiedSuggest(keyword, options = {}) {
           }).items
         );
       } else {
-        items.push(
+        materialItems.push(
           ...materialSuggestItems(q, {
             moduleCode: mod || st.moduleCode,
             categoryList,
@@ -677,12 +686,10 @@ export function unifiedSuggest(keyword, options = {}) {
       }
     }
     return {
-      items: sortByRelevance(items, q, 'dataItemName')
-        .slice(0, limit)
-        .map((item) => ({
-          ...item,
-          categoryLabel: item.categoryLabel || getCategoryLabel(item.category || 'norm'),
-        })),
+      items: mergeSuggestItems(excelItems, materialItems, q, limit).map((item) => ({
+        ...item,
+        categoryLabel: item.categoryLabel || getCategoryLabel(item.category || 'norm'),
+      })),
     };
   }
 
@@ -692,21 +699,25 @@ export function unifiedSuggest(keyword, options = {}) {
           limit,
           mode: options.mode,
           categories: categoryList,
-          moduleCode: mod || undefined,
+          moduleCode: modList.length === 1 ? modList[0] : mod || undefined,
+          moduleCodes: modList.length > 1 ? modList : options.moduleCodes,
           subtypeCode: options.subtypeCode,
         }).items
       : [];
 
   const materialItems = materialSuggestItems(q, {
-    moduleCode: mod,
+    moduleCode: modList.length === 1 ? modList[0] : mod || undefined,
     categoryList,
     limit,
     subtypeCode: options.subtypeCode,
   });
 
-  const merged = sortByRelevance([...excelItems, ...materialItems], q, 'dataItemName')
-    .slice(0, limit)
-    .map((item) => ({
+  let merged = mergeSuggestItems(excelItems, materialItems, q, limit);
+  if (modList.length) {
+    const allowed = new Set(modList);
+    merged = merged.filter((item) => allowed.has(item.moduleCode));
+  }
+  merged = merged.slice(0, limit).map((item) => ({
       ...item,
       categoryLabel: item.categoryLabel || getCategoryLabel(item.category || 'norm'),
     }));

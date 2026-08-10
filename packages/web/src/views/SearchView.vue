@@ -9,24 +9,41 @@
     <SearchPageWatermark />
     <!-- 新头部：模块 Tab + 标签卡片 + 子类 + 查询/筛选 -->
     <header class="search-page-header">
-      <div
-        v-if="searched"
-        class="module-tabs-row"
-        :class="{ 'module-tabs-row--solo': !modules.length }"
-      >
-        <ModuleTabs
-          v-if="modules.length"
-          v-model="moduleCode"
-          :options="modules"
-          @change="onModuleChange"
+      <div v-if="searched" class="search-page-header-scroll">
+        <div
+          class="module-tabs-row"
+          :class="{ 'module-tabs-row--solo': !modules.length }"
+        >
+          <ModuleTabs
+            v-if="modules.length"
+            v-model="moduleCode"
+            :options="modules"
+            @change="onModuleChange"
+          />
+          <p v-else-if="moduleLabel" class="module-tab-fallback" :title="moduleCode">
+            {{ moduleLabel }}
+          </p>
+          <button type="button" class="btn back-home-btn" @click="onGoHome">← 返回首页</button>
+        </div>
+
+        <ModuleCategoryCards
+          v-if="isAggregateMode && moduleCode"
+          v-model="selectedCategories"
+          single
+          :options="visibleCategoryStats"
+          @change="onCategoriesChange"
         />
-        <p v-else-if="moduleLabel" class="module-tab-fallback" :title="moduleCode">
-          {{ moduleLabel }}
-        </p>
-        <button type="button" class="btn back-home-btn" @click="onGoHome">← 返回首页</button>
+
+        <SubtypeTabs
+          v-if="showSubtypeTabs"
+          v-model="selectedSubtypeCode"
+          :options="subtypeStats"
+          @change="onSubtypeChange"
+        />
       </div>
 
-      <div v-if="!searched" class="landing-hero home-center">
+      <template v-else>
+        <div class="landing-hero home-center">
         <div class="home-logo">
           <div class="home-logo-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -41,24 +58,10 @@
           v-model="landingQueryMode"
           @change="onLandingModeChange"
         />
-      </div>
+        </div>
+      </template>
 
-      <ModuleCategoryCards
-        v-if="searched && isAggregateMode && moduleCode"
-        v-model="selectedCategories"
-        single
-        :options="visibleCategoryStats"
-        @change="onCategoriesChange"
-      />
-
-      <SubtypeTabs
-        v-if="showSubtypeTabs"
-        v-model="selectedSubtypeCode"
-        :options="subtypeStats"
-        @change="onSubtypeChange"
-      />
-
-      <div class="header-search-row">
+      <div class="header-search-row" :class="{ 'header-toolbar-unified-size': searched }">
         <form
           class="header-search"
           :class="{ 'landing-search-shell': !searched }"
@@ -71,7 +74,7 @@
             </svg>
           </span>
           <select
-            v-if="showLandingModuleSelect"
+            v-if="showHeaderModuleSelect"
             v-model="moduleCode"
             class="header-module-select"
             aria-label="主类"
@@ -97,14 +100,24 @@
           <div v-if="showSuggest && suggestions.length" class="header-suggestions show">
             <div
               v-for="(item, index) in suggestions"
-              :key="`${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
+              :key="`${item.moduleCode || ''}-${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
               class="suggestion-item"
               :class="{ active: index === suggestIndex }"
               @mousedown.prevent="pickSuggest(item)"
             >
               <div class="suggestion-title" v-html="suggestTitleHtml(item)" />
               <div class="suggestion-meta">
-                表名：{{ item.tableName }} · {{ item.reportName }}
+                <span v-if="item.moduleName || item.moduleCode" class="suggestion-module">
+                  {{ item.moduleName || item.moduleCode }}
+                </span>
+                <template v-if="suggestShowSubtype(item)">
+                  <span v-if="item.moduleName || item.moduleCode"> · </span>
+                  <span class="suggestion-subtype">{{ item.reportName }}</span>
+                </template>
+                <span v-if="item.tableName">
+                  <span v-if="(item.moduleName || item.moduleCode) || suggestShowSubtype(item)"> · </span>
+                  表名：{{ item.tableName }}
+                </span>
                 <span v-if="item.categoryLabel" class="category-tag">{{ item.categoryLabel }}</span>
               </div>
             </div>
@@ -345,6 +358,9 @@ const MODE_TO_CATEGORIES = {
 
 const modeLabels = { norm: '查规范', qa: '查答疑', aggregate: '按模块查询' };
 
+/** 首页「查规范」联想范围：一表通、EAST、金数 */
+const NORM_LANDING_SUGGEST_MODULE_CODES = ['YBT', 'EAST', 'FIN_BASIC_DATA'];
+
 const modeConfig = {
   norm: { placeholder: '搜索数据项名称，如：贷款、客户、机构...' },
   qa: { placeholder: '搜索答疑问题或关键词...' },
@@ -390,9 +406,11 @@ function apiSearchMode() {
 
 const isAggregateMode = computed(() => apiSearchMode() === 'aggregate');
 
-const showLandingModuleSelect = computed(
-  () => !searched.value && landingQueryMode.value === 'aggregate' && modules.value.length > 0
-);
+const showHeaderModuleSelect = computed(() => {
+  if (!modules.value.length) return false;
+  const mode = searched.value ? apiSearchMode() : landingQueryMode.value;
+  return mode === 'aggregate';
+});
 
 const filterBarVariant = computed(() => (apiSearchMode() === 'qa' ? 'qa' : 'norm'));
 
@@ -787,6 +805,17 @@ const displayAggregateBrowseItems = computed(() => {
   return buildAggregateBrowseItemsFromRows(rows, data.columns);
 });
 
+/** 答疑类 Excel 列表：版本列默认隐藏（含按模块查询进入的答疑子类/分类） */
+const hideVersionByDefault = computed(() => {
+  if (searchMode.value === 'qa') return true;
+  if (searchMode.value !== 'aggregate') return false;
+  if (selectedSubtypeMeta.value?.category === 'qa') return true;
+  if (activeReport.value?.category === 'qa') return true;
+  const cats = selectedCategories.value;
+  if (cats.length === 1 && cats[0] === 'qa') return true;
+  return false;
+});
+
 const columnMeta = computed(() => {
   const rows = filteredRows.value.length ? filteredRows.value : baseRows.value;
   const mode =
@@ -795,7 +824,9 @@ const columnMeta = computed(() => {
       : searchMode.value === 'aggregate'
         ? 'aggregate'
         : 'qa';
-  return buildColumnMeta(rows, mode);
+  return buildColumnMeta(rows, mode, {
+    hideVersionByDefault: hideVersionByDefault.value,
+  });
 });
 
 const displayTotal = computed(() => filteredRows.value.length);
@@ -866,6 +897,9 @@ function applySidebarMode(mode) {
   if (!VALID_SEARCH_MODES.includes(mode)) return;
   homeMode.value = mode;
   selectedCategories.value = [...(MODE_TO_CATEGORIES[mode] || [])];
+  if (isNormOrQaMode(mode)) {
+    applyNormQaDefaultModule();
+  }
   if (!searched.value) {
     landingQueryMode.value = mode;
   }
@@ -937,6 +971,16 @@ function resolveYbtModuleCode() {
   );
 }
 
+function isNormOrQaMode(mode) {
+  return mode === 'norm' || mode === 'qa';
+}
+
+/** 查规范 / 查答疑详情默认一表通主类 */
+function applyNormQaDefaultModule() {
+  const ybt = resolveYbtModuleCode();
+  if (ybt) moduleCode.value = ybt;
+}
+
 function previewSearchMode() {
   if (searched.value) return apiSearchMode();
   const mode = landingQueryMode.value;
@@ -945,9 +989,17 @@ function previewSearchMode() {
 
 function previewSearchApiOptions() {
   const mode = previewSearchMode();
-  const opts = {
-    moduleCode: resolveYbtModuleCode() || undefined,
-  };
+  const opts = {};
+  if (mode === 'norm') {
+    opts.moduleCodes = NORM_LANDING_SUGGEST_MODULE_CODES;
+  } else if (mode === 'aggregate') {
+    opts.moduleCode = moduleCode.value || resolveYbtModuleCode() || undefined;
+    if (selectedCategories.value.length) {
+      opts.categories = [...selectedCategories.value];
+    }
+  } else {
+    opts.moduleCode = resolveYbtModuleCode() || undefined;
+  }
   if (mode !== 'aggregate') {
     const cats = MODE_TO_CATEGORIES[mode] || [];
     if (cats.length) opts.categories = cats;
@@ -958,16 +1010,18 @@ function previewSearchApiOptions() {
 async function applyLandingDefaultsBeforeSearch() {
   if (searched.value) return;
 
-  if (!moduleCode.value) {
-    const ybt = resolveYbtModuleCode();
-    if (ybt) moduleCode.value = ybt;
-  }
-
   const mode = VALID_SEARCH_MODES.includes(landingQueryMode.value)
     ? landingQueryMode.value
     : 'aggregate';
   homeMode.value = mode;
   landingQueryMode.value = mode;
+
+  if (isNormOrQaMode(mode)) {
+    applyNormQaDefaultModule();
+  } else if (!moduleCode.value) {
+    const ybt = resolveYbtModuleCode();
+    if (ybt) moduleCode.value = ybt;
+  }
 
   if (mode === 'aggregate') {
     await refreshCategoryStats();
@@ -988,6 +1042,12 @@ function onLandingModeChange() {
   if (keyword.value.trim()) {
     onInput();
   }
+}
+
+function suggestShowSubtype(item) {
+  if (!item?.reportName) return false;
+  const mode = searched.value ? apiSearchMode() : landingQueryMode.value;
+  return mode === 'qa';
 }
 
 function suggestTitleHtml(item) {
@@ -1351,6 +1411,7 @@ function onDocumentClick(e) {
 watch(
   () => route.query.moduleCode,
   (code) => {
+    if (isNormOrQaMode(apiSearchMode())) return;
     if (code && code !== moduleCode.value) {
       moduleCode.value = String(code);
       refreshCategoryStats();
@@ -1369,6 +1430,9 @@ onMounted(async () => {
     pendingHomeMode.value = null;
   }
   await loadModules();
+  if (isNormOrQaMode(apiSearchMode())) {
+    applyNormQaDefaultModule();
+  }
   await refreshCategoryStats();
   if (apiSearchMode() === 'aggregate' && !selectedCategories.value.length) {
     selectDefaultModuleCategory();
@@ -1697,6 +1761,16 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
+.suggestion-module {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.suggestion-subtype {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 .suggestion-empty {
   padding: 12px 14px;
   color: var(--text-muted);
@@ -1726,25 +1800,34 @@ onUnmounted(() => {
   flex: 0 1 auto;
   max-height: 42vh;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   gap: 3px;
   padding: 0 0 6px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   position: relative;
-  z-index: 2;
+  z-index: 5;
   background: var(--bg);
+}
+
+.search-page-compact .search-page-header-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-.search-page-compact .search-page-header::-webkit-scrollbar {
+.search-page-compact .search-page-header-scroll::-webkit-scrollbar {
   width: 6px;
 }
 
-.search-page-compact .search-page-header::-webkit-scrollbar-thumb {
+.search-page-compact .search-page-header-scroll::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
 }
@@ -1789,25 +1872,55 @@ onUnmounted(() => {
   flex-wrap: wrap;
   margin-top: 2px;
   position: relative;
-  z-index: 1;
+  z-index: 20;
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .search-page-compact .header-filter-bar {
   flex: 2 1 320px;
   min-width: 180px;
   position: relative;
-  z-index: 3;
+  z-index: 25;
+  overflow: visible;
 }
 
 .search-page-compact .header-search-input {
   padding: 6px 10px;
-  font-size: 13px;
 }
 
 .search-page-compact .header-search .btn-primary {
   padding: 6px 14px;
-  font-size: 13px;
+}
+
+/* 与筛选字段名「版本」(12px) 同字号，仅改 font-size */
+.search-page-compact .header-toolbar-unified-size {
+  --header-toolbar-font-size: 12px;
+}
+
+.search-page-compact .header-toolbar-unified-size .header-search-input,
+.search-page-compact .header-toolbar-unified-size .header-search-input::placeholder,
+.search-page-compact .header-toolbar-unified-size .header-module-select,
+.search-page-compact .header-toolbar-unified-size .header-search .btn {
+  font-size: var(--header-toolbar-font-size) !important;
+}
+
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .multi-select-field-name),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .multi-select-trigger),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .multi-select-trigger .placeholder),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .multi-select-trigger .selected-text),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .filter-group select),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .filter-group input),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .filter-input-compact),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .btn-add-filter),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .btn-icon),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .filter-actions .btn),
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .custom-filter-index) {
+  font-size: var(--header-toolbar-font-size) !important;
+}
+
+.search-page-compact .header-toolbar-unified-size :deep(.header-filter-bar .multi-select-trigger .dropdown-arrow) {
+  font-size: 10px;
 }
 
 .search-page-compact :deep(.module-category-cards) {

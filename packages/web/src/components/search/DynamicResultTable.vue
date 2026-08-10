@@ -6,16 +6,21 @@
       </span>
       <div class="col-toggle-wrap">
         <button v-if="showBack" type="button" class="btn" @click="emit('back')">返回</button>
-        <button
-          type="button"
-          class="col-toggle-btn"
-          :class="{ expanded: extraColsVisible }"
-          :disabled="!secondaryCols.length"
-          @click="toggleExtraCols"
-        >
-          <span>{{ extraColsVisible ? '▾' : '▸' }}</span>
-          {{ extraColsVisible ? ' 收起次要列' : ' 展开全部列' }}
-        </button>
+        <div ref="colPickerAnchorRef" class="result-col-picker">
+          <button
+            type="button"
+            class="col-toggle-btn"
+            :class="{ expanded: colPickerOpen }"
+            :disabled="!visibleColumns.length"
+            @click.stop="toggleColPicker"
+          >
+            展示列
+            <span v-if="visibleColumns.length" class="col-picker-summary">
+              {{ shownColumnsCount }}/{{ visibleColumns.length }}
+            </span>
+            <span class="col-picker-arrow">▾</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -41,20 +46,42 @@
         <thead>
           <tr>
             <th
-              v-for="col in visibleColumns"
+              v-for="col in tableColumns"
               :key="col"
-              :class="{ 'col-hidden': isColHidden(col) }"
+              draggable="true"
+              class="col-header-draggable"
+              :class="{ 'col-dragging': dragCol === col, 'col-drag-over': dragOverCol === col }"
               :style="colWidthStyle(col)"
+              @dragstart="onColDragStart(col, $event)"
+              @dragend="onColDragEnd"
+              @dragover="onColDragOver(col, $event)"
+              @dragleave="onColDragLeave(col)"
+              @drop="onColDrop(col, $event)"
             >
-              <span>{{ col }}</span>
-              <div class="resize-handle" @mousedown.prevent="startResize(col, $event)" />
+              <span
+                class="col-header-label"
+                draggable="false"
+                role="button"
+                tabindex="0"
+                title="点击列操作"
+                @click.stop="openColHeaderMenu(col, $event)"
+                @keydown.enter.prevent="openColHeaderMenu(col, $event)"
+              >
+                {{ col }}
+              </span>
+              <div
+                class="resize-handle"
+                draggable="false"
+                @mousedown.prevent="startResize(col, $event)"
+                @dragstart.stop.prevent
+              />
             </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, rowIdx) in pageRows" :key="rowIdx">
             <td
-              v-for="col in visibleColumns"
+              v-for="col in tableColumns"
               :key="col"
               :class="cellClass(row, col)"
             >
@@ -159,6 +186,51 @@
 
     <Teleport to="body">
       <div
+        v-if="colPickerOpen"
+        ref="colPickerDropdownRef"
+        class="result-col-picker-dropdown"
+        :style="colPickerStyle"
+        @click.stop
+      >
+        <div class="result-col-picker-title">选择要展示的列</div>
+        <div class="result-col-picker-list">
+          <label
+            v-for="col in visibleColumns"
+            :key="col"
+            class="result-col-picker-item"
+          >
+            <input
+              type="checkbox"
+              :checked="isColumnShown(col)"
+              :disabled="isColumnShown(col) && shownColumnsCount <= 1"
+              @change="onColumnPickerChange(col, $event)"
+            />
+            <span class="result-col-picker-label">{{ col }}</span>
+          </label>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="colHeaderMenu"
+        class="col-header-menu"
+        :style="colHeaderMenuStyle"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="col-header-menu-item"
+          :disabled="shownColumnsCount <= 1"
+          @click="hideColumnFromMenu"
+        >
+          隐藏
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="popover"
         ref="popoverRef"
         class="cell-popover"
@@ -208,7 +280,7 @@ import {
 } from '../../composables/useDynamicTable.js';
 import { extractDictNameFromCellText } from '../../utils/codeValueDictName.js';
 
-const pageSizeOptions = [10, 50, 100];
+const pageSizeOptions = [15, 50, 100];
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -226,7 +298,13 @@ const currentPage = ref(1);
 const pageSizeLocal = ref(
   pageSizeOptions.includes(props.pageSize) ? props.pageSize : PAGE_SIZE
 );
-const extraColsVisible = ref(false);
+const shownColumns = ref([]);
+const colPickerOpen = ref(false);
+const colPickerAnchorRef = ref(null);
+const colPickerDropdownRef = ref(null);
+const colPickerStyle = ref({});
+const colHeaderMenu = ref(null);
+const colHeaderMenuStyle = ref({});
 const expandedCell = ref('');
 const popover = ref(null);
 const popoverStyle = ref({});
@@ -237,6 +315,9 @@ const popoverRef = ref(null);
 const cellRefs = new Map();
 const codeValueModal = ref(null);
 let resizing = null;
+const columnOrder = ref([]);
+const dragCol = ref(null);
+const dragOverCol = ref(null);
 
 const displayCols = computed(() => props.columnMeta.displayCols || []);
 const secondaryCols = computed(() => props.columnMeta.secondaryCols || []);
@@ -253,7 +334,78 @@ const pageRows = computed(() => paginated.value.rows);
 const totalCount = computed(() => paginated.value.total);
 const totalPages = computed(() => paginated.value.totalPages);
 const pageList = computed(() => buildPageList(currentPage.value, totalPages.value));
-const visibleColumns = computed(() => displayCols.value);
+
+function syncColumnOrder(cols) {
+  const next = cols || [];
+  if (!next.length) {
+    columnOrder.value = [];
+    return;
+  }
+  if (!columnOrder.value.length) {
+    columnOrder.value = [...next];
+    return;
+  }
+  const kept = columnOrder.value.filter((c) => next.includes(c));
+  const added = next.filter((c) => !kept.includes(c));
+  columnOrder.value = [...kept, ...added];
+}
+
+const visibleColumns = computed(() =>
+  columnOrder.value.length ? columnOrder.value : displayCols.value
+);
+
+const shownColumnSet = computed(() => new Set(shownColumns.value));
+
+const shownColumnsCount = computed(() => shownColumns.value.length);
+
+const tableColumns = computed(() =>
+  visibleColumns.value.filter((col) => shownColumnSet.value.has(col))
+);
+
+function defaultShownColumnList() {
+  const sec = new Set(secondaryCols.value);
+  return displayCols.value.filter((col) => !sec.has(col));
+}
+
+function resetShownColumns() {
+  const def = new Set(defaultShownColumnList());
+  shownColumns.value = visibleColumns.value.filter((c) => def.has(c));
+}
+
+function isColumnShown(col) {
+  return shownColumnSet.value.has(col);
+}
+
+function applyShownColumns(nextSet) {
+  shownColumns.value = visibleColumns.value.filter((col) => nextSet.has(col));
+  recheckAllOverflow();
+}
+
+function hideColumn(col) {
+  if (shownColumnsCount.value <= 1) return;
+  const next = new Set(shownColumns.value);
+  next.delete(col);
+  applyShownColumns(next);
+}
+
+function setColumnShown(col, shown) {
+  const next = new Set(shownColumns.value);
+  if (shown) next.add(col);
+  else {
+    if (next.size <= 1) return;
+    next.delete(col);
+  }
+  applyShownColumns(next);
+}
+
+watch(
+  () => props.columnMeta.displayCols,
+  (cols) => {
+    syncColumnOrder(cols || []);
+    resetShownColumns();
+  },
+  { immediate: true }
+);
 
 watch(
   () => props.pageSize,
@@ -268,22 +420,17 @@ watch(
     currentPage.value = 1;
     closePopover();
     closeCodeValueModal();
-    extraColsVisible.value = false;
+    closeColHeaderMenu();
     cellRefs.clear();
   }
 );
 
-watch(extraColsVisible, () => recheckAllOverflow());
+watch(shownColumns, () => recheckAllOverflow(), { deep: true });
 
 watch(colWidths, () => recheckAllOverflow(), { deep: true });
 
-function isColHidden(col) {
-  return !extraColsVisible.value && secondaryCols.value.includes(col);
-}
-
 function cellClass(row, col) {
   return {
-    'col-hidden': isColHidden(col),
     truncatable: isTruncatable(col) && !isLinkCell(row, col),
     'has-link': isLinkCell(row, col),
   };
@@ -472,16 +619,91 @@ async function copyPopover() {
   }, 1500);
 }
 
-function toggleExtraCols() {
-  extraColsVisible.value = !extraColsVisible.value;
+function closeColHeaderMenu() {
+  colHeaderMenu.value = null;
+  colHeaderMenuStyle.value = {};
+}
+
+function positionColHeaderMenu(anchorEl) {
+  if (!anchorEl) return;
+  const rect = anchorEl.getBoundingClientRect();
+  const margin = 8;
+  colHeaderMenuStyle.value = {
+    position: 'fixed',
+    top: `${rect.bottom + 4}px`,
+    left: `${Math.min(rect.left, window.innerWidth - 120 - margin)}px`,
+    zIndex: 10060,
+  };
+}
+
+function openColHeaderMenu(col, event) {
   closePopover();
   closeCodeValueModal();
+  colPickerOpen.value = false;
+  if (colHeaderMenu.value?.col === col) {
+    closeColHeaderMenu();
+    return;
+  }
+  const anchor = event.currentTarget || event.target;
+  colHeaderMenu.value = { col };
+  nextTick(() => positionColHeaderMenu(anchor));
+}
+
+function hideColumnFromMenu() {
+  if (!colHeaderMenu.value) return;
+  hideColumn(colHeaderMenu.value.col);
+  closeColHeaderMenu();
+}
+
+function onColumnPickerChange(col, event) {
+  const checked = event.target.checked;
+  if (!checked && shownColumnsCount.value <= 1) {
+    event.target.checked = true;
+    return;
+  }
+  setColumnShown(col, checked);
+}
+
+function updateColPickerPosition() {
+  const el = colPickerAnchorRef.value;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const maxH = Math.min(360, window.innerHeight - rect.bottom - 16);
+  colPickerStyle.value = {
+    position: 'fixed',
+    top: `${rect.bottom + 4}px`,
+    right: `${Math.max(marginFromRight(rect), 8)}px`,
+    left: 'auto',
+    minWidth: `${Math.max(rect.width, 200)}px`,
+    maxWidth: `${Math.min(320, window.innerWidth - 16)}px`,
+    maxHeight: `${Math.max(maxH, 120)}px`,
+    zIndex: 10055,
+  };
+}
+
+function marginFromRight(anchorRect) {
+  return window.innerWidth - anchorRect.right;
+}
+
+function toggleColPicker() {
+  closeColHeaderMenu();
+  closePopover();
+  colPickerOpen.value = !colPickerOpen.value;
+  if (colPickerOpen.value) {
+    nextTick(() => updateColPickerPosition());
+  }
+}
+
+function closeColPicker() {
+  colPickerOpen.value = false;
 }
 
 function onPageSizeChange() {
   currentPage.value = 1;
   closePopover();
   closeCodeValueModal();
+  closeColHeaderMenu();
+  closeColPicker();
   scrollRef.value?.scrollTo({ top: 0 });
 }
 
@@ -497,6 +719,51 @@ function goToPage(page) {
 function colWidthStyle(col) {
   const w = colWidths.value[col];
   return w ? { width: `${w}px`, minWidth: `${w}px` } : undefined;
+}
+
+function onColDragStart(col, event) {
+  if (
+    event.target.closest('.resize-handle') ||
+    event.target.closest('.col-header-label')
+  ) {
+    event.preventDefault();
+    return;
+  }
+  closeColHeaderMenu();
+  dragCol.value = col;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', col);
+}
+
+function onColDragEnd() {
+  dragCol.value = null;
+  dragOverCol.value = null;
+}
+
+function onColDragOver(col, event) {
+  event.preventDefault();
+  if (dragCol.value && dragCol.value !== col) dragOverCol.value = col;
+}
+
+function onColDragLeave(col) {
+  if (dragOverCol.value === col) dragOverCol.value = null;
+}
+
+function onColDrop(targetCol, event) {
+  event.preventDefault();
+  const from = dragCol.value || event.dataTransfer.getData('text/plain');
+  dragCol.value = null;
+  dragOverCol.value = null;
+  if (!from || from === targetCol) return;
+
+  const order = [...visibleColumns.value];
+  const fromIdx = order.indexOf(from);
+  const toIdx = order.indexOf(targetCol);
+  if (fromIdx < 0 || toIdx < 0) return;
+  order.splice(fromIdx, 1);
+  order.splice(toIdx, 0, from);
+  columnOrder.value = order;
+  recheckAllOverflow();
 }
 
 function startResize(col, event) {
@@ -529,10 +796,27 @@ function onDocumentClick(e) {
   if (!e.target.closest('.cell-popover') && !e.target.closest('.cell-content')) {
     closePopover();
   }
+  if (
+    !e.target.closest('.result-col-picker-dropdown') &&
+    !e.target.closest('.result-col-picker')
+  ) {
+    closeColPicker();
+  }
+  if (
+    !e.target.closest('.col-header-menu') &&
+    !e.target.closest('.col-header-label')
+  ) {
+    closeColHeaderMenu();
+  }
 }
 
 function onWindowChange() {
   if (popover.value) positionPopover();
+  if (colPickerOpen.value) updateColPickerPosition();
+  if (colHeaderMenu.value) {
+    /* 滚动时关闭，避免错位 */
+    closeColHeaderMenu();
+  }
 }
 
 onMounted(() => {
@@ -547,6 +831,8 @@ onUnmounted(() => {
   scrollRef.value?.removeEventListener('scroll', onWindowChange);
   closePopover();
   closeCodeValueModal();
+  closeColPicker();
+  closeColHeaderMenu();
 });
 </script>
 
@@ -556,6 +842,73 @@ onUnmounted(() => {
   flex-direction: column;
   flex: 1 1 0;
   min-height: 0;
+}
+
+.result-table-wrap :deep(.table-header) {
+  padding: 4px 12px;
+  min-height: 0;
+}
+
+.result-table-wrap :deep(.table-title) {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.result-table-wrap :deep(.table-count) {
+  font-size: 12px;
+}
+
+.result-table-wrap :deep(.col-toggle-btn) {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.result-table-wrap :deep(.col-toggle-wrap .btn) {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.result-table-wrap :deep(.col-header-draggable) {
+  cursor: grab;
+  user-select: none;
+}
+
+.result-table-wrap :deep(.col-header-draggable.col-dragging) {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
+.result-table-wrap :deep(.col-header-draggable.col-drag-over) {
+  outline: 2px dashed var(--accent-blue);
+  outline-offset: -2px;
+}
+
+.result-table-wrap :deep(.col-header-label) {
+  display: inline-block;
+  padding-right: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.result-table-wrap :deep(.col-header-label:hover) {
+  color: var(--accent);
+}
+
+.col-picker-summary {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.col-picker-arrow {
+  margin-left: 2px;
+  font-size: 10px;
+}
+
+.result-col-picker {
+  position: relative;
 }
 
 .result-table-scroll {
@@ -638,5 +991,83 @@ onUnmounted(() => {
 
 .cell-inner:hover .cell-copy-btn-static {
   opacity: 1;
+}
+</style>
+
+<style>
+.result-col-picker-dropdown {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.result-col-picker-title {
+  padding: 4px 12px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.result-col-picker-list {
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.result-col-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.result-col-picker-item:hover {
+  background: var(--accent-light, rgba(37, 99, 235, 0.06));
+}
+
+.result-col-picker-label {
+  flex: 1;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.col-header-menu {
+  min-width: 88px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+
+.col-header-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.col-header-menu-item:hover:not(:disabled) {
+  background: var(--accent-light, rgba(37, 99, 235, 0.08));
+  color: var(--accent);
+}
+
+.col-header-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>

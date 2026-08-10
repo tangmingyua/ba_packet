@@ -3,13 +3,15 @@
  * 按模式限定搜索字段：规范=表名+数据项+填报规范；答疑=表名+数据项+问题描述
  */
 import { queryAll, queryOne } from '../db/database.js';
-import { sortByRelevance } from './relevance.js';
 import { listFieldMappings, listStandardFields } from './dataset-config.js';
 import {
   buildBrowseWhereSql,
   buildSearchMatchParams,
   buildSearchMatchSql,
   payloadMatchesKeyword,
+  resolveSuggestTableNameFromPayload,
+  resolveSuggestDataItemLabel,
+  scoreSuggestDatasetMatch,
 } from './search-fields.js';
 import {
   getCategoryLabel,
@@ -83,19 +85,41 @@ function parseSubtypeFilter(input) {
   return [...new Set(list)];
 }
 
-function queryMatchingRows({ keyword, mode, versionId, distinct = false, categories, moduleCode, subtypeCode }) {
+export function parseModuleCodeFilter(moduleCode, moduleCodes) {
+  if (moduleCodes != null && moduleCodes !== '') {
+    const raw = Array.isArray(moduleCodes) ? moduleCodes : String(moduleCodes).split(/[,，]/);
+    const list = raw.map((s) => String(s).trim()).filter(Boolean);
+    if (list.length) return [...new Set(list)];
+  }
+  const mod = String(moduleCode ?? '').trim();
+  return mod ? [mod] : [];
+}
+
+function queryMatchingRows({
+  keyword,
+  mode,
+  versionId,
+  distinct = false,
+  categories,
+  moduleCode,
+  moduleCodes,
+  subtypeCode,
+}) {
   const q = String(keyword ?? '').trim();
   const matchSql = q ? buildSearchMatchSql(mode) : buildBrowseWhereSql();
   const matchParams = q ? buildSearchMatchParams(q, mode) : [];
   const { clause, params: categoryParams } = categoryFilterClause(mode, categories);
 
   const params = [...matchParams, ...categoryParams];
-  const mod = String(moduleCode ?? '').trim();
+  const modList = parseModuleCodeFilter(moduleCode, moduleCodes);
   const subtypes = parseSubtypeFilter(subtypeCode);
   let moduleClause = '';
-  if (mod) {
+  if (modList.length === 1) {
     moduleClause = ' AND s.module_code = ?';
-    params.push(mod);
+    params.push(modList[0]);
+  } else if (modList.length > 1) {
+    moduleClause = ` AND s.module_code IN (${modList.map(() => '?').join(',')})`;
+    params.push(...modList);
   }
   if (subtypes.length === 1) {
     moduleClause += ' AND s.code = ?';
@@ -125,7 +149,7 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
   if (distinct) {
     sql += ' ORDER BY r.std_data_item';
   } else {
-    sql += ' ORDER BY m.sort_order, s.sort_order, sv.id, r.std_data_item';
+    sql += ' ORDER BY m.sort_order, s.sort_order, sv.id, r.row_num, r.id';
   }
 
   let rows = queryAll(sql, params);
@@ -141,7 +165,7 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
       fallbackSql += ' AND r.subtype_version_id = ?';
       fallbackParams.push(Number(versionId));
     }
-    fallbackSql += ' ORDER BY m.sort_order, s.sort_order, sv.id';
+    fallbackSql += ' ORDER BY m.sort_order, s.sort_order, sv.id, r.row_num, r.id';
 
     const all = queryAll(fallbackSql, fallbackParams);
     rows = all.filter((row) => payloadMatchesKeyword(parsePayload(row.payload), q, mode));
@@ -152,6 +176,16 @@ function queryMatchingRows({ keyword, mode, versionId, distinct = false, categor
 
 export function queryDatasetMatchingRows(options) {
   return queryMatchingRows(options);
+}
+
+function suggestDedupeKey(row, payload, dataItemName, tableName, mode) {
+  const resolved = resolveSearchMode(mode);
+  if (resolved === 'qa') {
+    const qno = String(payload?.question_no ?? '').trim();
+    if (qno) return `${row.module_code || ''}\0${qno}`;
+    return `${row.module_code || ''}\0${row.id}`;
+  }
+  return `${row.module_code || ''}\0${dataItemName}\0${tableName}`;
 }
 
 /** 联想：在模式限定字段内匹配，返回数据项名称 */
@@ -165,27 +199,52 @@ export function suggestDatasetItems(keyword, options = {}) {
   const rows = queryMatchingRows({
     keyword: q,
     mode,
-    distinct: true,
+    distinct: false,
     categories: options.categories,
     moduleCode: options.moduleCode,
+    moduleCodes: options.moduleCodes,
     subtypeCode: options.subtypeCode,
   });
 
-  const merged = rows.map((row) => ({
-    data_item_name: row.std_data_item,
-    tableName: `${row.subtype_name || row.std_subtype} / ${row.std_version}`,
-    reportCode: row.subtype_code,
-    reportName: row.subtype_name || row.std_subtype,
-    category: row.record_category || 'norm',
-    moduleCode: row.module_code || 'YBT',
-    moduleName: row.module_name || row.module_code || '一表通',
-  }));
+  const capped = rows.length > 500 ? rows.slice(0, 500) : rows;
+  const seen = new Set();
+  const merged = [];
+  for (const row of capped) {
+    const payload = parsePayload(row.payload);
+    const tableName = resolveSuggestTableNameFromPayload(payload);
+    const dataItemName = resolveSuggestDataItemLabel(payload, row.std_data_item, mode);
+    const dedupeKey = suggestDedupeKey(row, payload, dataItemName, tableName, mode);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    merged.push({
+      data_item_name: dataItemName,
+      tableName,
+      reportCode: row.subtype_code,
+      reportName: row.subtype_name || row.std_subtype,
+      category: row.record_category || 'norm',
+      moduleCode: row.module_code || 'YBT',
+      moduleName: row.module_name || row.module_code || '一表通',
+      payload,
+    });
+  }
 
-  const items = sortByRelevance(merged, q)
-    .slice(0, limit)
+  const ranked = merged
     .map((row) => ({
+      ...row,
+      _score: scoreSuggestDatasetMatch(row.payload, row.data_item_name, q, mode),
+    }))
+    .filter((row) => row._score > 0)
+    .sort(
+      (a, b) =>
+        b._score - a._score ||
+        String(a.data_item_name).length - String(b.data_item_name).length
+    );
+
+  const items = ranked
+    .slice(0, limit)
+    .map(({ _score, payload, ...row }) => ({
       dataItemName: row.data_item_name,
-      tableName: row.tableName,
+      ...(row.tableName ? { tableName: row.tableName } : {}),
       reportCode: row.reportCode,
       reportName: row.reportName,
       category: row.category,
@@ -195,6 +254,28 @@ export function suggestDatasetItems(keyword, options = {}) {
     }));
 
   return { items };
+}
+
+function compareRowNumAsc(a, b) {
+  const ra = a?.rowNum;
+  const rb = b?.rowNum;
+  const na = ra == null || Number.isNaN(ra) ? null : Number(ra);
+  const nb = rb == null || Number.isNaN(rb) ? null : Number(rb);
+  if (na == null && nb == null) return 0;
+  if (na == null) return 1;
+  if (nb == null) return -1;
+  if (na !== nb) return na - nb;
+  const sa = String(a?.sheetName ?? '');
+  const sb = String(b?.sheetName ?? '');
+  const scmp = sa.localeCompare(sb, 'zh-CN');
+  if (scmp !== 0) return scmp;
+  const ia = a?.recordId ?? 0;
+  const ib = b?.recordId ?? 0;
+  return ia - ib;
+}
+
+function sortBlockItemsByExcelRow(items) {
+  return [...items].sort(compareRowNumAsc);
 }
 
 /** 搜索：按模式字段匹配，按子类分 report，按版本分 block */
@@ -241,6 +322,9 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories, mod
       version: row.std_version || '',
       subtype: row.std_subtype || '',
       subtypeVersionId: row.subtype_version_id,
+      rowNum: row.row_num != null ? Number(row.row_num) : null,
+      sheetName: row.sheet_name || '',
+      recordId: row.id != null ? Number(row.id) : null,
       category: recordCategory,
       categoryLabel: getCategoryLabel(recordCategory),
       moduleCode: report.moduleCode,
@@ -258,7 +342,7 @@ export function searchDatasetRecords(keyword, { versionId, mode, categories, mod
       tableName: blockKey,
       versionLabel: blockKey,
       tableNo: blockKey,
-      items,
+      items: sortBlockItemsByExcelRow(items),
     }));
     const hitCount = blocks.reduce((sum, block) => sum + block.items.length, 0);
     return {

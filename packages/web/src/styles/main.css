@@ -32,10 +32,10 @@
   --truncate-overflow: #6b7280;
   /* 搜索结果表格：单行紧凑展示 */
   --result-cell-max-width: 21em;
-  --result-cell-inner-h: 26px;
-  --result-row-h: 40px;
-  --result-thead-h: 44px;
-  --result-page-rows: 10;
+  --result-cell-inner-h: 38px;
+  --result-row-h: 54px;
+  --result-thead-h: 40px;
+  --result-page-rows: 15;
   --result-table-min-h: calc(
     var(--result-thead-h) + var(--result-row-h) * var(--result-page-rows)
   );
@@ -771,6 +771,28 @@ textarea {
   font-weight: 700;
 }
 
+.q-suggest-item .q-module {
+  flex-shrink: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+}
+
+.q-suggest-item .q-subtype {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+}
+
 .q-suggest-item .q-table {
   color: var(--text-secondary);
   font-size: 11px;
@@ -825,7 +847,7 @@ textarea {
   overflow-x: auto;
 }
 
-/* 查询结果：表格区域内部滚动，一次性显示全部行 */
+/* 查询结果：表格区域占满结果区剩余高度，内部滚动 */
 .result-table-wrap {
   display: flex;
   flex-direction: column;
@@ -835,9 +857,8 @@ textarea {
 }
 
 .result-table-scroll {
-  flex: 0 0 auto;
-  min-height: var(--result-table-min-h);
-  max-height: var(--result-table-min-h);
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -850,6 +871,7 @@ table.data-table.dt-enhanced {
   table-layout: auto;
   width: max-content;
   min-width: 100%;
+  font-size: 12px;
 }
 
 table.data-table.dt-enhanced th {
@@ -862,6 +884,8 @@ table.data-table.dt-enhanced th {
   text-overflow: clip;
   min-width: max-content;
   vertical-align: bottom;
+  font-size: 11px;
+  padding: 6px 10px;
 }
 
 table.data-table.dt-enhanced th > span {
@@ -887,6 +911,8 @@ table.data-table.dt-enhanced tbody td {
   overflow: hidden;
   vertical-align: middle;
   box-sizing: border-box;
+  font-size: 12px;
+  padding: 4px 10px;
 }
 
 table.data-table.dt-enhanced td.truncatable {
@@ -928,17 +954,21 @@ th .resize-handle.active {
   font-size: 12px;
 }
 
+table.data-table.dt-enhanced .cell-code {
+  font-size: 11px;
+}
+
 .cell-content {
   position: relative;
-  height: var(--result-cell-inner-h, 26px);
-  max-height: var(--result-cell-inner-h, 26px);
+  height: var(--result-cell-inner-h, 38px);
+  max-height: var(--result-cell-inner-h, 38px);
   overflow: hidden;
   cursor: pointer;
   word-break: normal;
   text-align: left;
-  line-height: 1.55;
+  line-height: 1.45;
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
   max-width: var(--result-cell-max-width, 21em);
 }
 
@@ -962,10 +992,17 @@ th .resize-handle.active {
   color: var(--text);
 }
 
+table.data-table.dt-enhanced .cell-content {
+  height: var(--result-cell-inner-h, 38px);
+  max-height: var(--result-cell-inner-h, 38px);
+  white-space: normal;
+  align-items: flex-start;
+}
+
 .cell-desc-wrap {
   position: relative;
   overflow: hidden;
-  max-height: 48px;
+  max-height: var(--result-cell-inner-h, 38px);
 }
 
 /* 单元格展开浮层（Teleport 到 body，不受表格滚动区域裁切） */

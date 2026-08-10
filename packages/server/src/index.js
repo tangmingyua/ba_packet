@@ -97,12 +97,13 @@ app.get('/api/health', async () => ({ ok: true, ...getDatasetStats() }));
 
 app.get('/api/suggest', async (request, reply) => {
   try {
-    const { q, limit, mode, categories, moduleCode, subtypeCode } = request.query;
+    const { q, limit, mode, categories, moduleCode, moduleCodes, subtypeCode } = request.query;
     return unifiedSuggest(q, {
       limit: limit ? Number(limit) : 10,
       mode,
       categories,
       moduleCode,
+      moduleCodes,
       subtypeCode,
     });
   } catch (error) {

@@ -11,7 +11,7 @@ import {
   readExcelJsSheetColWidthsPx,
 } from './form-template-excel-row-heights.js';
 import { queryAll, queryOne, run, saveDb } from '../db/database.js';
-import { matchFormTemplateFileName, normalizeFormTemplateModuleCode } from '../config/form-template-catalog.js';
+import { matchFormTemplateFileName, normalizeFormTemplateModuleCode, usesWholeSheetNameFormTemplateRules } from '../config/form-template-catalog.js';
 import { resolveSubtypeCode } from '../config/system-subtypes.js';
 import { resolveImportSubtypeCode, ensureSubtypeVersionForImport } from './dataset-config.js';
 import { replaceCellsForTemplate } from './form-template-cells.js';
@@ -82,7 +82,7 @@ export function resolveFormTemplateVersionLabel(sheetMeta, fileMeta) {
  * 一表通特殊处理：Sheet 名即为表名，不分割
  */
 export function resolveFormTemplateReportTitle(sheetName, reportTitle, moduleCode) {
-  if (moduleCode === 'YBT') {
+  if (usesWholeSheetNameFormTemplateRules(moduleCode)) {
     return String(sheetName || '').trim();
   }
   const t = String(sheetName || '').trim();
@@ -133,13 +133,12 @@ export function parseFormTemplateSheetMeta(sheetName, fileMeta = null) {
   const t = String(sheetName || '').trim();
   if (!t || isExcludedTemplateSheet(t)) return null;
 
-  const isYbt = fileMeta?.moduleCode === 'YBT';
+  const isWholeSheetNameModule = usesWholeSheetNameFormTemplateRules(fileMeta?.moduleCode);
 
-  // 一表通：所有非排除 Sheet 都导入，Sheet 名即为表名，版本从文件名或 LASTEST
-  if (isYbt) {
-    const reportCode = parseReportCodeFromCodePart(t) || fileMeta?.reportCode || t;
+  // 一表通 / PISA 等：所有非排除 Sheet 都导入；report_code 默认用完整 Sheet 名
+  if (isWholeSheetNameModule) {
     return {
-      reportCode,
+      reportCode: t,
       versionLabel: fileMeta?.versionLabel || FORM_TEMPLATE_LATEST_VERSION,
     };
   }
@@ -432,7 +431,11 @@ export function parseFormTemplateFromSheet(sheet, options = {}) {
   );
 
   const sheetMeta = parseFormTemplateSheetMeta(sheetName, options.fileMeta);
-  const reportCode = (options.reportCode || sheetMeta?.reportCode || sheetName).toUpperCase();
+  const moduleForRules = options.moduleCode || options.module || options.fileMeta?.moduleCode;
+  const rawReportCode = options.reportCode || sheetMeta?.reportCode || sheetName;
+  const reportCode = usesWholeSheetNameFormTemplateRules(moduleForRules)
+    ? String(rawReportCode).trim()
+    : String(rawReportCode).toUpperCase();
   const reportTitle = resolveFormTemplateReportTitle(sheetName, '', options.module);
   const versionLabel =
     options.versionLabel !== undefined

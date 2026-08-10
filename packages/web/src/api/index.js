@@ -40,10 +40,11 @@ export function getHealth() {
   return request('/api/health');
 }
 
-export function suggestItems(q, limit = 10, mode = 'aggregate', { categories, moduleCode, subtypeCode } = {}) {
+export function suggestItems(q, limit = 10, mode = 'aggregate', { categories, moduleCode, moduleCodes, subtypeCode } = {}) {
   const query = new URLSearchParams({ q, limit: String(limit), mode });
   if (categories?.length) query.set('categories', categories.join(','));
-  if (moduleCode) query.set('moduleCode', moduleCode);
+  if (moduleCodes?.length) query.set('moduleCodes', moduleCodes.join(','));
+  else if (moduleCode) query.set('moduleCode', moduleCode);
   if (subtypeCode) {
     const code = Array.isArray(subtypeCode) ? subtypeCode[0] : String(subtypeCode).split(/[,，]/)[0];
     if (code?.trim()) query.set('subtypeCode', code.trim());

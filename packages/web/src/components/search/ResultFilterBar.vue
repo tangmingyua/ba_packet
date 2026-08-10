@@ -20,13 +20,17 @@
           <template v-if="suggestions.length">
             <div
               v-for="(item, index) in suggestions"
-              :key="`${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
+              :key="`${item.moduleCode || ''}-${item.reportCode}-${item.tableName}-${item.dataItemName}-${index}`"
               class="q-suggest-item"
               :class="{ active: index === suggestIndex }"
               @mousedown.prevent="emit('suggest-pick', item)"
             >
               <span v-html="highlightName(item.dataItemName)" />
-              <span class="q-table">{{ item.tableName }}</span>
+              <span v-if="item.moduleName || item.moduleCode" class="q-module">{{
+                item.moduleName || item.moduleCode
+              }}</span>
+              <span v-if="variant === 'qa' && item.reportName" class="q-subtype">{{ item.reportName }}</span>
+              <span v-if="item.tableName" class="q-table">{{ item.tableName }}</span>
             </div>
           </template>
           <div v-else-if="keyword.trim()" class="q-suggest-empty">无匹配结果</div>
@@ -296,6 +300,7 @@ function highlightName(name) {
 
 .filter-bar-wrap.compact {
   margin-bottom: 0;
+  overflow: visible;
 }
 
 .unified-filter-bar {
@@ -335,6 +340,7 @@ function highlightName(name) {
   gap: 6px;
   flex-wrap: wrap;
   min-width: 140px;
+  overflow: visible;
 }
 
 .custom-filter-row-inline {
@@ -399,7 +405,7 @@ function highlightName(name) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  z-index: 30;
+  z-index: 200;
 }
 
 .col-suggest.show {

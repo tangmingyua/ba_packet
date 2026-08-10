@@ -17,7 +17,7 @@ import { sortFlattenEntriesByVersionDesc } from '../utils/versionSort.js';
 
 export { getRowValueForExcelColumn } from '../utils/fieldLabels.js';
 
-export const PAGE_SIZE = 10;
+export const PAGE_SIZE = 15;
 
 /** 配置类/答疑结果表单元格默认展示字数上限（超出可点开展开） */
 export const RESULT_CELL_DISPLAY_MAX_CHARS = 30;
@@ -272,14 +272,24 @@ function collectColumnKeys(rows) {
   return [...keys];
 }
 
-function buildDisplayColumnOrder(allKeys, mode) {
+function buildDisplayColumnOrder(allKeys, mode, options = {}) {
+  const hideVersionByDefault = mode === 'qa' || Boolean(options.hideVersionByDefault);
+  const versionLabels = excelColumnLabelsForCode('version', allKeys);
+  const versionSet = new Set(versionLabels);
+
   const prefix = [];
-  // 仅保留「版本」作为默认显示字段；「分类」「类型」放入 secondaryCols，默认折叠
-  for (const label of excelColumnLabelsForCode('version', allKeys)) {
-    if (!prefix.includes(label)) prefix.push(label);
+  const hiddenVersionCols = [];
+  if (hideVersionByDefault) {
+    for (const label of versionLabels) {
+      if (!hiddenVersionCols.includes(label)) hiddenVersionCols.push(label);
+    }
+  } else {
+    for (const label of versionLabels) {
+      if (!prefix.includes(label)) prefix.push(label);
+    }
   }
 
-  const prefixSet = new Set(prefix);
+  const prefixSet = new Set([...prefix, ...hiddenVersionCols]);
   const orderedMapped = mergeMappingOrderedLabels(allKeys).filter((col) => !prefixSet.has(col));
   const defaultVisibleSet = new Set(mergeDefaultDisplayLabels(allKeys));
 
@@ -294,18 +304,33 @@ function buildDisplayColumnOrder(allKeys, mode) {
     systemSecondary.push(SYSTEM_COL_CATEGORY);
   }
 
-  const used = new Set([...prefix, ...orderedMapped, ...systemSecondary]);
+  const used = new Set([...prefix, ...hiddenVersionCols, ...orderedMapped, ...systemSecondary]);
   const rest = allKeys.filter((k) => !used.has(k));
 
+  const displayCols = [
+    ...(hideVersionByDefault ? hiddenVersionCols : prefix),
+    ...orderedMapped,
+    ...rest,
+  ];
+
+  const primaryFromMappedFiltered = hideVersionByDefault
+    ? primaryFromMapped.filter((col) => !versionSet.has(col))
+    : primaryFromMapped;
+
+  const secondaryBase = [...secondaryFromMapped, ...systemSecondary, ...rest];
+  const secondaryCols = hideVersionByDefault
+    ? [...new Set([...hiddenVersionCols, ...secondaryBase.filter((col) => !versionSet.has(col))])]
+    : secondaryBase;
+
   return {
-    displayCols: [...prefix, ...orderedMapped, ...rest],
-    primaryCols: [...prefix, ...primaryFromMapped],
-    secondaryCols: [...secondaryFromMapped, ...systemSecondary, ...rest],
+    displayCols,
+    primaryCols: [...(hideVersionByDefault ? [] : prefix), ...primaryFromMappedFiltered],
+    secondaryCols,
   };
 }
 
-function buildColumnMetaFromKeys(allKeys, mode) {
-  const { displayCols, primaryCols, secondaryCols } = buildDisplayColumnOrder(allKeys, mode);
+function buildColumnMetaFromKeys(allKeys, mode, options = {}) {
+  const { displayCols, primaryCols, secondaryCols } = buildDisplayColumnOrder(allKeys, mode, options);
 
   const truncatableStd =
     mode === 'qa'
@@ -382,7 +407,7 @@ export function filterColumnSuggestions(columnOptions, query, limit = 12) {
   return list.filter((col) => col.toLowerCase().includes(q)).slice(0, limit);
 }
 /** 根据 mode 与行数据生成列元信息 */
-export function buildColumnMeta(rows, mode) {
+export function buildColumnMeta(rows, mode, options = {}) {
   const allKeys = collectColumnKeys(rows);
   if (!allKeys.length) {
     return {
@@ -397,7 +422,7 @@ export function buildColumnMeta(rows, mode) {
     };
   }
 
-  return buildColumnMetaFromKeys(allKeys, mode);
+  return buildColumnMetaFromKeys(allKeys, mode, options);
 }
 /** 客户端筛选运算符 */
 export const FILTER_OPERATORS = [

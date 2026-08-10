@@ -75,7 +75,12 @@ const showTopbar = computed(
 );
 
 function goHome() {
-  pendingHomeMode.value = null;
+  const mode = landingMode.value;
+  if (mode === 'norm' || mode === 'qa') {
+    pendingHomeMode.value = mode;
+  } else {
+    pendingHomeMode.value = null;
+  }
   router.push({ path: '/', query: {} });
   homeResetSignal.value += 1;
 }

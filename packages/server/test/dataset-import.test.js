@@ -18,6 +18,7 @@ import {
 } from '../src/services/dataset-config.js';
 import { importDatasetExcel, validateHeaders } from '../src/services/dataset-import.js';
 import { searchDatasetRecords, suggestDatasetItems } from '../src/services/dataset-search.js';
+import { unifiedSuggest } from '../src/services/unified-search.js';
 import { setupTestDb } from './helpers/fixture.js';
 
 function buildExcel(sheets) {
@@ -297,6 +298,18 @@ describe('dataset import model', () => {
 
     assert.ok(searchDatasetRecords('对公信贷', { mode: 'qa' }).reports[0]?.hitCount >= 1);
     assert.ok(searchDatasetRecords('贷款状态如何', { mode: 'qa' }).reports[0]?.hitCount >= 1);
+    const qaSuggest = suggestDatasetItems('贷款', { limit: 10, mode: 'qa', moduleCode: 'YBT' });
+    assert.ok(
+      qaSuggest.items.some((i) => /贷款/.test(i.dataItemName || '')),
+      '答疑联想应能命中问题描述中的关键词，而非仅数据项名称'
+    );
+    const unifiedQa = await unifiedSuggest('贷款', {
+      limit: 10,
+      mode: 'qa',
+      moduleCode: 'YBT',
+      categories: ['qa'],
+    });
+    assert.ok(unifiedQa.items.length > 0, 'unifiedSuggest 查答疑不应因空数据项名称滤掉 Excel 联想');
     assert.equal(searchDatasetRecords('不存在的关键词XYZ', { mode: 'qa' }).reports.length, 0);
     assert.equal(searchDatasetRecords('贷款状态如何', { mode: 'norm' }).reports.length, 0);
   });

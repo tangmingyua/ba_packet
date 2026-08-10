@@ -95,27 +95,29 @@ defineExpose({ checkOverflow });
 
 <style scoped>
 .cell-text-clamp {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: normal;
-  line-height: 1.55;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
 }
 
 .cell-content {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  height: var(--result-cell-inner-h, 26px);
-  max-height: var(--result-cell-inner-h, 26px);
+  height: var(--result-cell-inner-h, 38px);
+  max-height: var(--result-cell-inner-h, 38px);
   overflow: hidden;
   word-break: normal;
   text-align: left;
-  line-height: 1.55;
+  line-height: 1.45;
   color: var(--text);
   min-width: 0;
   max-width: 100%;
@@ -147,7 +149,7 @@ defineExpose({ checkOverflow });
 
 .cell-expand-hint {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   padding: 2px 5px;
   border-radius: 4px;
@@ -156,6 +158,7 @@ defineExpose({ checkOverflow });
   opacity: 0.72;
   pointer-events: none;
   transition: opacity 0.15s ease;
+  align-self: center;
 }
 
 .cell-content.has-overflow:hover .cell-expand-hint {
