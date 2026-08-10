@@ -6,8 +6,12 @@ using System.Reflection;
 
 internal static class Launcher
 {
-    private const string Product = "口袋BA";
     private static readonly byte[] Magic = { (byte)'B', (byte)'A', (byte)'S', (byte)'F', (byte)'X' };
+
+    private static string Product
+    {
+        get { return SfxInstallDir.Value; }
+    }
 
     private static int Main()
     {

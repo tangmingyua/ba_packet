@@ -147,7 +147,7 @@
           :show-suggest="filterShowSuggest"
           :loading="loading"
           @search="onFilterSearch"
-          @reset="resetFilters"
+          @reset="resetFilterBarOnly"
           @suggest-pick="pickFilterSuggest"
           @suggest-nav="moveFilterSuggest"
           @suggest-show="onFilterSuggestInput"
@@ -407,9 +407,9 @@ function apiSearchMode() {
 const isAggregateMode = computed(() => apiSearchMode() === 'aggregate');
 
 const showHeaderModuleSelect = computed(() => {
+  if (searched.value) return false;
   if (!modules.value.length) return false;
-  const mode = searched.value ? apiSearchMode() : landingQueryMode.value;
-  return mode === 'aggregate';
+  return landingQueryMode.value === 'aggregate';
 });
 
 const filterBarVariant = computed(() => (apiSearchMode() === 'qa' ? 'qa' : 'norm'));
@@ -1057,15 +1057,12 @@ function suggestTitleHtml(item) {
   return highlightKeyword(name, q);
 }
 
-function resetFilters() {
-  keyword.value = '';
-  lastKeyword.value = '';
-  reports.value = [];
-  error.value = '';
-  searched.value = false;
-  resetLocalFilters();
+/** 结果页筛选栏 ↺：只清空表名/自定义筛选，不退出查询结果 */
+function resetFilterBarOnly() {
+  tableFilter.value = '__all__';
+  appliedTableFilter.value = '__all__';
+  applySubtypeDefaultFilters(null);
   filterShowSuggest.value = false;
-  applySearchFieldMappings({});
 }
 
 function onCategoriesChange() {

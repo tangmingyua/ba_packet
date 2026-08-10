@@ -7,6 +7,7 @@ packages/web/dist/
 packages/desktop/build/
 packages/desktop/.last-desktop-build.json
 packages/desktop/.desktop-build-stamp.env
+packages/desktop/scripts/sfx-install-dir.g.cs
 release/
 packages/desktop/release/
 

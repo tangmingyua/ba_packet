@@ -3,12 +3,23 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { DESKTOP, RELEASE } from './desktop-build-paths.js';
+import { readDesktopProductFolderName } from './desktop-product-name.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PRODUCT = '口袋BA';
+const PRODUCT = readDesktopProductFolderName();
 const LAUNCHER_SRC = path.join(__dirname, 'sfx-launcher.cs');
+const LAUNCHER_INSTALL_DIR = path.join(__dirname, 'sfx-install-dir.g.cs');
 const CSC = 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
 const MAGIC = Buffer.from([0x42, 0x41, 0x53, 0x46, 0x58]); // BASFX
+
+function writeLauncherInstallDir(installDir) {
+  const escaped = installDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  fs.writeFileSync(
+    LAUNCHER_INSTALL_DIR,
+    `// 由 package-sfx.js 生成\ninternal static class SfxInstallDir\n{\n    public const string Value = "${escaped}";\n}\n`,
+    'utf-8'
+  );
+}
 
 const metaPath = path.join(DESKTOP, '.last-desktop-build.json');
 if (!fs.existsSync(metaPath)) {
@@ -33,8 +44,9 @@ if (fs.existsSync(appData)) {
 }
 
 if (fs.existsSync(LAUNCHER_EXE)) fs.unlinkSync(LAUNCHER_EXE);
+writeLauncherInstallDir(PRODUCT);
 execSync(
-  `"${CSC}" /nologo /target:winexe /platform:anycpu /utf8output /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /out:"${LAUNCHER_EXE}" "${LAUNCHER_SRC}"`,
+  `"${CSC}" /nologo /target:winexe /platform:anycpu /utf8output /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll /out:"${LAUNCHER_EXE}" "${LAUNCHER_SRC}" "${LAUNCHER_INSTALL_DIR}"`,
   { stdio: 'inherit' }
 );
 if (!fs.existsSync(LAUNCHER_EXE)) throw new Error('launcher 编译失败');
@@ -75,6 +87,8 @@ fs.writeFileSync(SFX_EXE, out);
 
 const mb = (out.length / 1024 / 1024).toFixed(1);
 console.log(`[sfx] 单文件 EXE (${stamp}): ${SFX_EXE} (${mb} MB)`);
-console.log('[sfx] 完成。每次运行单文件 exe 都会解压/覆盖 %LOCALAPPDATA%\\口袋BA 内程序与 web（app-data 不在包内，会保留）');
+console.log(
+  `[sfx] 完成。解压目录: %LOCALAPPDATA%\\${PRODUCT}（app-data 随版本独立，首启从 seed 初始化）`
+);
 
 if (fs.existsSync(LAUNCHER_EXE)) fs.unlinkSync(LAUNCHER_EXE);

@@ -10,10 +10,11 @@ import {
   portableBuildRoot,
   resolveBuildStamp,
 } from './desktop-build-paths.js';
+import { readDesktopProductFolderName } from './desktop-product-name.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLE = path.join(DESKTOP, 'bundle/resources');
-const PRODUCT = '口袋BA';
+const PRODUCT = readDesktopProductFolderName();
 
 /** 与 tauri.conf.json bundle.resources 保持一致 */
 const RESOURCE_FILES = [
@@ -131,11 +132,11 @@ console.log(`[package-portable] 构建标识: ${buildId}`);
 const metaPath = path.join(DESKTOP, '.last-desktop-build.json');
 fs.writeFileSync(
   metaPath,
-  JSON.stringify({ stamp, buildRoot, outDir: OUT_DIR, webDist: WEB_DIST, buildId }, null, 2),
+  JSON.stringify({ stamp, buildRoot, outDir: OUT_DIR, productName: PRODUCT, webDist: WEB_DIST, buildId }, null, 2),
   'utf-8'
 );
 
-const readme = `口袋BA - 免安装版
+const readme = `${PRODUCT} - 免安装版
 
 构建批次: ${stamp}
 前端来源: packages/desktop/build/web-dist（桌面专用构建目录）
@@ -144,6 +145,7 @@ const readme = `口袋BA - 免安装版
 2. 双击「${PRODUCT}.exe」运行
 3. 用户数据保存在本目录 app-data/（portable.flag 启用便携模式，catalog.db 为明文 SQLite）
 4. 需要目标机器已安装 Microsoft Edge WebView2 运行时
+5. 升级版本请使用新版本对应文件夹/单文件 exe；旧版目录可整夹删除
 
 目录内必须包含：
   - ${PRODUCT}.exe
