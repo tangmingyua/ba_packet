@@ -26,9 +26,9 @@ export function isExcelStorageKind(kind) {
 
 /** 配置类 + 表样 Excel / Word 等需在子类下维护版本号 */
 export function supportsSubtypeVersions(kind) {
-  return isExcelStorageKind(kind) || kind === 'form_template' || kind === 'document';
+  return isExcelStorageKind(kind) || kind === 'form_template' || kind === 'document' || kind === 'word_faithful';
 }
 
 export function isRestoreVersionedKind(kind) {
-  return kind === 'form_template' || kind === 'document';
+  return kind === 'form_template' || kind === 'document' || kind === 'word_faithful';
 }

@@ -114,4 +114,46 @@ describe('aggregate browse', () => {
     });
     assert.ok(res.aggregateBrowse?.items?.length >= 3);
   });
+
+  it('全量导入按目录行序排序聚合浏览，并排除无目录 Sheet', () => {
+    upsertSubtype({
+      code: 'BULK_CATALOG_SORT',
+      name: '目录序测试',
+      enabled: true,
+      category: 'norm',
+      moduleCode: 'YBT',
+      storageKind: 'excel',
+      sortOrder: 99,
+    });
+    const bulkVersion = createSubtypeVersion('BULK_CATALOG_SORT', {
+      versionLabel: 'v1',
+      sheetName: '全量导入',
+      headerRow: 1,
+      dataStartRow: 2,
+      bizKeyFields: [],
+    });
+    saveFieldMappings(bulkVersion.id, [
+      { originalColumn: '报表', standardField: 'table_name', aggregateDisplay: true },
+      { originalColumn: '字段', standardField: 'data_item', isRequired: true },
+    ]);
+
+    const buffer = buildExcel([
+      { name: '目录', rows: [['报表'], ['表A'], ['表B']] },
+      { name: '表B', rows: [['字段'], ['b1']] },
+      { name: '表A', rows: [['字段'], ['a1']] },
+      { name: '元信息', rows: [['字段'], ['meta1'], ['meta2']] },
+    ]);
+    importDatasetExcel(buffer, { fileName: 'catalog-sort.xlsx', versionIds: [bulkVersion.id] });
+
+    const index = buildAggregateBrowseIndex({
+      subtypeCode: 'BULK_CATALOG_SORT',
+      moduleCode: 'YBT',
+      mode: 'norm',
+    });
+    assert.equal(index.items.length, 2);
+    assert.equal(index.items[0].values['报表'], '表A');
+    assert.equal(index.items[1].values['报表'], '表B');
+    assert.equal(index.items[0].count, 1);
+    assert.equal(index.items[1].count, 1);
+  });
 });

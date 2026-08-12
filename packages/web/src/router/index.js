@@ -7,6 +7,7 @@ import SearchView from '../views/SearchView.vue';
 import ImportView from '../views/ImportView.vue';
 import FormTemplateView from '../views/FormTemplateView.vue';
 import DocumentView from '../views/DocumentView.vue';
+import WordFaithfulView from '../views/WordFaithfulView.vue';
 import ConversionScriptView from '../views/ConversionScriptView.vue';
 
 export default createRouter({
@@ -18,6 +19,8 @@ export default createRouter({
     { path: '/form-templates/:id', name: 'formTemplateDetail', component: FormTemplateView },
     { path: '/documents', name: 'documents', component: DocumentView },
     { path: '/documents/:id', name: 'documentDetail', component: DocumentView },
+    { path: '/word-faithful', name: 'wordFaithful', component: WordFaithfulView },
+    { path: '/word-faithful/:id', name: 'wordFaithfulDetail', component: WordFaithfulView },
     { path: '/conversion-scripts', name: 'conversionScripts', component: ConversionScriptView },
     {
       path: '/conversion-scripts/:id',

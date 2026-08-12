@@ -585,12 +585,15 @@ function backfillSubtypeCategories() {
   `);
 }
 
-/** 移除 EAST 下误建的表样子类及其表样数据（一次性存量清理） */
+/** 移除历史误建 code 的 EAST 表样子类（勿按 module_code 整类删除，会误伤用户自建子类） */
 function removeEastFormTemplateSubtypes() {
+  const LEGACY_EAST_FORM_SUBTYPE_CODES = ['EAST_FORM_TEMPLATE', 'EAST_FORM_TPL'];
+  const placeholders = LEGACY_EAST_FORM_SUBTYPE_CODES.map(() => '?').join(', ');
   const rows = queryAll(
     `SELECT code FROM subtypes
      WHERE storage_kind = 'form_template'
-       AND (module_code = 'EAST' OR code IN ('EAST_FORM_TEMPLATE', 'EAST_FORM_TPL'))`
+       AND code IN (${placeholders})`,
+    LEGACY_EAST_FORM_SUBTYPE_CODES
   );
   if (!rows.length) return;
   for (const { code } of rows) {
@@ -600,7 +603,7 @@ function removeEastFormTemplateSubtypes() {
       run('DELETE FROM form_templates WHERE id = ?', [t.id]);
     }
     run('DELETE FROM subtypes WHERE code = ?', [code]);
-    console.log(`[db] 已移除 EAST 表样子类：${code}（表样 ${templates.length} 条）`);
+    console.log(`[db] 已移除历史 EAST 表样子类：${code}（表样 ${templates.length} 条）`);
   }
 }
 
@@ -721,6 +724,15 @@ function ensureConversionScriptsUniqueBySubtype() {
   );
 }
 
+/** word_faithful_documents：存原始 docx（base64）供高保真预览 */
+function ensureWordFaithfulDocxColumn() {
+  const cols = queryAll('PRAGMA table_info(word_faithful_documents)');
+  if (!cols.length) return;
+  if (!cols.some((c) => c.name === 'docx_blob')) {
+    run(`ALTER TABLE word_faithful_documents ADD COLUMN docx_blob TEXT`);
+  }
+}
+
 /** 新模型：子类版本 / 映射 / datasets / data_records */
 function ensureDatasetModelSchema() {
   const schemaPath = resolveSchemaPath();
@@ -732,6 +744,7 @@ function ensureDatasetModelSchema() {
   ensureFormTemplateModuleColumn();
   ensureFormTemplateSheetIndexColumn();
   ensureWordImportSchema();
+  ensureWordFaithfulDocxColumn();
   db.run(schema);
 
   ensureModuleSchema();
@@ -746,6 +759,7 @@ function ensureDatasetModelSchema() {
   ensureFormTemplateModuleColumn();
   ensureFormTemplateSheetIndexColumn();
   ensureWordImportSchema();
+  ensureWordFaithfulDocxColumn();
   backfillFormTemplateCells();
   backfillFormTemplateLayouts({ queryAll, run, saveDb });
 

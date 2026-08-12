@@ -800,7 +800,7 @@ const displayAggregateBrowseItems = computed(() => {
   if (!data?.columns?.length) return [];
   const rows = filterRows(baseRows.value, {
     tableFilter: isQaLayout.value ? '__all__' : appliedTableFilter.value,
-    customFilters: appliedCustomFilters.value,
+    customFilters: customFilters.value,
   });
   return buildAggregateBrowseItemsFromRows(rows, data.columns);
 });

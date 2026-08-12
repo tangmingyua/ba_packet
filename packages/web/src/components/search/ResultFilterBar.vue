@@ -46,7 +46,7 @@
             <span class="multi-select-field-name" :title="rule.col">{{ rule.col || '—' }}</span>
             <MultiSelectFilter
               :model-value="rule.val || []"
-              :rows="props.rows"
+              :rows="rowsForFilterRule(index)"
               :col="rule.col"
               placeholder="请选择"
               @update:model-value="updateRule(rule.id, { val: $event })"
@@ -150,6 +150,8 @@ import {
   createFilterRule,
   filterColumnSuggestions,
   highlightKeyword,
+  reconcileMultiSelectFilterValues,
+  rowsForPriorFilterRules,
 } from '../../composables/useDynamicTable.js';
 import MultiSelectFilter from './MultiSelectFilter.vue';
 
@@ -198,12 +200,31 @@ watch(
   { immediate: true, deep: true }
 );
 
+watch(
+  () => props.rows,
+  () => {
+    const next = reconcileMultiSelectFilterValues(props.rows, localFilters.value);
+    if (JSON.stringify(next) !== JSON.stringify(localFilters.value)) {
+      localFilters.value = next;
+      syncFilters();
+    }
+  }
+);
+
+function rowsForFilterRule(ruleIndex) {
+  return rowsForPriorFilterRules(props.rows, localFilters.value, ruleIndex);
+}
+
 function syncFilters() {
   emit('update:customFilters', localFilters.value.map((r) => ({ ...r })));
 }
 
 function updateRule(id, patch) {
-  localFilters.value = localFilters.value.map((r) => (r.id === id ? { ...r, ...patch } : r));
+  const idx = localFilters.value.findIndex((r) => r.id === id);
+  if (idx < 0) return;
+  let next = localFilters.value.map((r) => (r.id === id ? { ...r, ...patch } : r));
+  next = reconcileMultiSelectFilterValues(props.rows, next);
+  localFilters.value = next;
   syncFilters();
 }
 

@@ -62,6 +62,26 @@ describe('word-import pipeline', () => {
     );
   });
 
+  it('extractWordBlocks 忽略 Word 域指令 TOC/HYPERLINK', () => {
+    const pXml = `<w:p>
+      <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+      <w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>
+      <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+      <w:r><w:t>第一章 概述</w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="end"/></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>TOC \\o "1-3" \\h \\z \\u HYPERLINK \\l "_Toc31517"</w:t></w:r>
+    </w:p>`;
+    const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>${pXml}<w:sectPr/></w:body>
+</w:document>`;
+    const blocks = extractWordBlocks(documentXml);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].text, '第一章 概述');
+  });
+
   it('extractWordBlocks 读取整本合并说明（含自闭合 w:p）', () => {
     const xml = readDocumentXmlFromDocx(fs.readFileSync(DOC_1104));
     const blocks = extractWordBlocks(xml);

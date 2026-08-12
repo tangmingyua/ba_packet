@@ -136,9 +136,12 @@ function extractBodyElements(documentXml) {
 }
 
 function paragraphText(blockXml) {
-  const cleaned = blockXml
+  let cleaned = blockXml
     .replace(/<w:del\b[\s\S]*?<\/w:del>/g, '')
     .replace(/<w:delText\b[^>]*>[\s\S]*?<\/w:delText>/g, '');
+
+  // 域指令（TOC / HYPERLINK / PAGEREF 等）在 w:instrText 中，不是正文
+  cleaned = cleaned.replace(/<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/gi, '');
 
   return cleaned
     .replace(/<w:tab\/>/g, '\t')
@@ -160,6 +163,19 @@ function paragraphMeta(blockXml) {
 
 function isHyperlinkToc(text) {
   return HYPERLINK_TOC_RE.test(text) && /bookmark/i.test(text);
+}
+
+/** Word 域代码/目录域指令等（非可见正文） */
+function isWordFieldArtifactText(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (/^TOC\s*\\/.test(t)) return true;
+  if (/^HYPERLINK\s*\\/.test(t)) return true;
+  if (/^PAGEREF\s*\\/.test(t)) return true;
+  if (/^REF\s*\\/.test(t)) return true;
+  if (/^SEQ\s*\\/.test(t)) return true;
+  if (/\\[a-z]+\b/i.test(t) && /(_Toc\d+|bookmark)/i.test(t)) return true;
+  return isHyperlinkToc(t);
 }
 
 function headingLevelFromStyle(styleName) {
@@ -379,7 +395,7 @@ export function extractWordBlocks(documentXml, options = {}) {
     if (numberingLookup) {
       text = prependListNumberToParagraph(el.xml, text, numberingLookup, countersState);
     }
-    if (!text) continue;
+    if (!text || isWordFieldArtifactText(text)) continue;
 
     const meta = {
       source: 'word_p',

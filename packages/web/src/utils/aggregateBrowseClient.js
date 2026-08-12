@@ -1,5 +1,6 @@
-import { getRowValueForExcelColumn } from '../composables/useDynamicTable.js';
+import { getRowValueForExcelColumn, ROW_CATALOG_SEQ_KEY } from '../composables/useDynamicTable.js';
 import { compareVersionLabelsDesc } from './versionSort.js';
+import { bucketCatalogSeqMin, parseCatalogSeq } from '../../../server/src/utils/catalog-seq.js';
 
 function cellToString(value) {
   if (value === null || value === undefined) return '';
@@ -12,8 +13,14 @@ function cellToString(value) {
 export function buildAggregateBrowseItemsFromRows(rows, columns) {
   if (!columns?.length || !rows?.length) return [];
 
+  const useCatalogOrder = rows.some((row) => row[ROW_CATALOG_SEQ_KEY] != null);
+  const rowsForAgg = useCatalogOrder
+    ? rows.filter((row) => row[ROW_CATALOG_SEQ_KEY] != null)
+    : rows;
+  if (!rowsForAgg.length) return [];
+
   const bucket = new Map();
-  for (const row of rows) {
+  for (const row of rowsForAgg) {
     const values = {};
     const keyParts = [];
     for (const { code, label } of columns) {
@@ -23,9 +30,11 @@ export function buildAggregateBrowseItemsFromRows(rows, columns) {
     }
     const key = keyParts.join('\u0001');
     if (!bucket.has(key)) {
-      bucket.set(key, { values, count: 0 });
+      bucket.set(key, { values, count: 0, catalogSeqMin: null });
     }
-    bucket.get(key).count += 1;
+    const entry = bucket.get(key);
+    entry.count += 1;
+    bucketCatalogSeqMin(entry, row[ROW_CATALOG_SEQ_KEY] ?? null);
   }
 
   const versionCol = columns.find((c) => c.code === 'version');
@@ -39,6 +48,12 @@ export function buildAggregateBrowseItemsFromRows(rows, columns) {
         );
         if (vcmp !== 0) return vcmp;
       }
+      if (useCatalogOrder) {
+        const aSeq = a.catalogSeqMin ?? Number.MAX_SAFE_INTEGER;
+        const bSeq = b.catalogSeqMin ?? Number.MAX_SAFE_INTEGER;
+        if (aSeq !== bSeq) return aSeq - bSeq;
+        return 0;
+      }
       for (const { label } of columns) {
         if (versionCol && label === versionCol.label) continue;
         const cmp = (a.values[label] || '').localeCompare(b.values[label] || '', 'zh-CN');
@@ -51,3 +66,5 @@ export function buildAggregateBrowseItemsFromRows(rows, columns) {
       count: entry.count,
     }));
 }
+
+export { parseCatalogSeq };

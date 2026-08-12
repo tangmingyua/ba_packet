@@ -7,15 +7,17 @@ export const STORAGE_KINDS = [
   { code: 'excel', label: '配置类' },
   { code: 'form_template', label: '表样 Excel 类' },
   { code: 'document', label: 'Word 类' },
+  { code: 'word_faithful', label: 'Word 原样显示' },
   { code: 'script', label: 'SQL 类' },
   { code: 'code_value', label: '码值' },
 ];
 
-/** 新建子类时可选的解析方式（产品定义的四种 + 码值） */
+/** 新建子类时可选的解析方式 */
 export const CREATABLE_STORAGE_KINDS = [
   'excel',
   'form_template',
   'document',
+  'word_faithful',
   'script',
   'code_value',
 ];
@@ -137,6 +139,7 @@ export function resolveSubtypeCode(storageKind, moduleCode = '') {
   if (kind === 'code_value') return mod ? `${mod}_CODE_VALUE` : '';
   if (kind === 'form_template') return mod ? `${mod}_FORM_TEMPLATE` : '';
   if (kind === 'document') return mod ? `${mod}_FILL_INSTRUCTION` : '';
+  if (kind === 'word_faithful') return mod ? `${mod}_WORD_FAITHFUL` : '';
   return '';
 }
 

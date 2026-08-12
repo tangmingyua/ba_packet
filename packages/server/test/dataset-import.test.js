@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import XLSX from 'xlsx';
-import { closeDb, queryOne } from '../src/db/database.js';
+import { closeDb, queryAll, queryOne } from '../src/db/database.js';
 import {
   createSubtypeVersion,
   deleteSubtype,
@@ -119,6 +119,38 @@ describe('dataset import model', () => {
     assert.ok(search.reports[0]?.hitCount >= 1);
     const searchOld = searchDatasetRecords('OLD_ITEM_XYZ');
     assert.equal(searchOld.reports.reduce((n, r) => n + r.hitCount, 0), 0);
+  });
+
+  it('识别纯 HYPERLINK 公式并写入 __has_links / __link_dict_text', () => {
+    saveFieldMappings(versionId, [
+      { originalColumn: '数据项名称', standardField: 'data_item', isRequired: false },
+      { originalColumn: '码值说明', standardField: 'collection_scope', isRequired: false },
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['数据项名称', '码值说明'],
+      ['测试项', '详见附录A1 操作类型'],
+    ]);
+    ws['B2'] = {
+      f: 'HYPERLINK("#\'码值\'!A"&MATCH("操作类型",码值!$A:$A,0),"详见附录A1 操作类型")',
+      v: '详见附录A1 操作类型',
+    };
+    const codeWs = XLSX.utils.aoa_to_sheet([['名称'], ['操作类型']]);
+    XLSX.utils.book_append_sheet(wb, ws, '转EAST问答');
+    XLSX.utils.book_append_sheet(wb, codeWs, '码值');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const result = importDatasetExcel(buffer, { fileName: 'hyperlink.xlsx', versionIds: [versionId] });
+    assert.equal(result.summary.success, 1);
+
+    const row = queryOne(
+      'SELECT payload FROM data_records WHERE subtype_version_id = ? ORDER BY id DESC LIMIT 1',
+      [versionId]
+    );
+    const payload = JSON.parse(row.payload);
+    assert.deepEqual(payload.__has_links, ['collection_scope']);
+    assert.equal(payload.__link_dict_text?.collection_scope, '操作类型');
   });
 
   it('成功导入 sheet 并可搜索 / 联想', () => {
@@ -279,7 +311,7 @@ describe('dataset import model', () => {
     assert.equal(normAggregate.reports.length, 0);
   });
 
-  it('查答疑可按表名、问题描述搜索', () => {
+  it('查答疑可按表名、问题描述搜索', async () => {
     saveFieldMappings(versionId, [
       { originalColumn: '数据项名称', standardField: 'data_item', isRequired: false },
       { originalColumn: '表名', standardField: 'table_name', isRequired: false },
@@ -423,6 +455,15 @@ describe('dataset import model', () => {
     assert.equal(result.summary.bulkAborted, false);
     assert.equal(countRecordsForVersion(bulkVersion.id), 2);
     assert.ok(searchDatasetRecords('F1').reports[0]?.hitCount >= 1);
+
+    const rows = queryAll('SELECT payload, sheet_name FROM data_records WHERE subtype_version_id = ?', [
+      bulkVersion.id,
+    ]);
+    const bySheet = Object.fromEntries(
+      rows.map((r) => [r.sheet_name, JSON.parse(r.payload)])
+    );
+    assert.equal(bySheet['表A'].__catalog_seq, 1);
+    assert.equal(bySheet['表B'].__catalog_seq, 2);
   });
 
   it('全量导入：任一 Sheet 失败则整本不落库', () => {

@@ -49,6 +49,7 @@ describe('system-subtypes', () => {
     assert.ok(codes.includes('excel'));
     assert.ok(codes.includes('form_template'));
     assert.ok(codes.includes('document'));
+    assert.ok(codes.includes('word_faithful'));
     assert.ok(codes.includes('script'));
   });
 });

@@ -585,6 +585,109 @@
       </fieldset>
       </div>
 
+      <div v-if="importStorageKind === 'word_faithful'" class="import-kind-panel">
+      <p class="hint">
+        上传 Word（<strong>.docx</strong>）。整本原样预览，按段落/表格单元格建立搜索索引；不拆分、不关联表样或指标。须填写<strong>导入版本号</strong>，同文件名 + 版本再次导入将覆盖。
+      </p>
+      <fieldset class="form-section">
+        <legend>上传 Word（原样显示）</legend>
+        <div class="form-grid">
+          <label v-if="restoreImportNeedsVersion" class="field span-2">
+            <span class="label">导入版本号 <span class="required">*</span></span>
+            <input
+              v-model="restoreImportVersionLabel"
+              type="text"
+              list="restore-import-version-list-wf"
+              placeholder="如 231、v202601；可下拉选择已有版本"
+            />
+            <datalist id="restore-import-version-list-wf">
+              <option
+                v-for="v in selectedImportSubtypeVersions"
+                :key="v.id"
+                :value="v.versionLabel"
+              />
+            </datalist>
+          </label>
+          <div class="field span-2">
+            <span class="label">Word 文件</span>
+            <div
+              class="dropzone"
+              :class="{ active: wordFaithfulDragging }"
+              @dragover.prevent="wordFaithfulDragging = true"
+              @dragleave="wordFaithfulDragging = false"
+              @drop.prevent="onWordFaithfulDrop"
+            >
+              <p v-if="!wordFaithfulFile">
+                拖拽 .docx 到此处，或
+                <label class="file-link"
+                  >选择文件<input type="file" accept=".docx" hidden @change="onWordFaithfulFile"
+                /></label>
+              </p>
+              <p v-else>
+                {{ wordFaithfulFile.name }}
+                <button type="button" class="btn-link" @click="wordFaithfulFile = null">清除</button>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="
+              !wordFaithfulFile ||
+              wordFaithfulImporting ||
+              (restoreImportNeedsVersion && !restoreImportVersionOk)
+            "
+            @click="doWordFaithfulImport"
+          >
+            {{ wordFaithfulImporting ? '导入中...' : '导入 Word' }}
+          </button>
+          <button type="button" class="btn" :disabled="wordFaithfulLoading" @click="refreshWordFaithfulList">
+            刷新列表
+          </button>
+          <router-link to="/word-faithful" class="btn">查看文档</router-link>
+        </div>
+        <p
+          v-if="wordFaithfulMessage"
+          class="feedback form-template-feedback"
+          :class="wordFaithfulMessageType"
+        >
+          {{ wordFaithfulMessage }}
+        </p>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>已导入 Word</legend>
+        <table v-if="wordFaithfulItems.length" class="simple-table">
+          <thead>
+            <tr>
+              <th>文档代号</th>
+              <th>版本</th>
+              <th>块数</th>
+              <th>导入时间</th>
+              <th>源文件</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in wordFaithfulItems" :key="item.id">
+              <td>{{ item.docCode }}</td>
+              <td>{{ item.versionLabel || '—' }}</td>
+              <td>{{ item.blockCount ?? '—' }}</td>
+              <td>{{ item.importedAt }}</td>
+              <td>{{ item.sourceFileName }}</td>
+              <td>
+                <router-link :to="{ path: `/word-faithful/${item.id}` }" class="btn-link">查看</router-link>
+                <button type="button" class="btn-link danger" @click="removeWordFaithful(item)">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="empty-cell">暂无 Word 文档</p>
+      </fieldset>
+      </div>
+
       <div v-if="importStorageKind === 'code_value'" class="import-kind-panel">
         <CodeValuesPanel
           :modules="catalog.modules"
@@ -1285,12 +1388,15 @@ import {
   importDatasetExcel,
   importFormTemplateExcel,
   importFillInstructionDocument,
+  importWordFaithfulDocument,
   importConversionScriptFile,
   listDatasets,
   listFormTemplates,
   listConversionScripts,
   listDocuments,
+  listWordFaithfulDocuments,
   deleteDocument,
+  deleteWordFaithfulDocument,
   deleteConversionScript,
   saveVersionMappings,
   updateSubtype,
@@ -1375,6 +1481,14 @@ const fillInstructionMessageType = ref('');
 const fillInstructionImportItems = ref([]);
 const fillInstructions = ref([]);
 
+const wordFaithfulFile = ref(null);
+const wordFaithfulDragging = ref(false);
+const wordFaithfulImporting = ref(false);
+const wordFaithfulLoading = ref(false);
+const wordFaithfulMessage = ref('');
+const wordFaithfulMessageType = ref('');
+const wordFaithfulItems = ref([]);
+
 const restoreImportVersionLabel = ref('');
 
 const conversionScriptFile = ref(null);
@@ -1439,7 +1553,9 @@ const versionedSubtypes = computed(() =>
 
 const restoreImportNeedsVersion = computed(
   () =>
-    importStorageKind.value === 'form_template' || importStorageKind.value === 'document'
+    importStorageKind.value === 'form_template' ||
+    importStorageKind.value === 'document' ||
+    importStorageKind.value === 'word_faithful'
 );
 
 const selectedImportSubtypeVersions = computed(
@@ -2330,6 +2446,69 @@ async function removeFillInstruction(item) {
   }
 }
 
+function onWordFaithfulFile(e) {
+  wordFaithfulFile.value = e.target.files?.[0] || null;
+}
+
+function onWordFaithfulDrop(e) {
+  wordFaithfulDragging.value = false;
+  const f = e.dataTransfer.files?.[0];
+  if (f) wordFaithfulFile.value = f;
+}
+
+async function refreshWordFaithfulList() {
+  wordFaithfulLoading.value = true;
+  try {
+    const params = {};
+    if (selectedImportSubtype.value?.code) {
+      params.subtypeCode = selectedImportSubtype.value.code;
+    }
+    const { items } = await listWordFaithfulDocuments(params);
+    wordFaithfulItems.value = items || [];
+  } catch (e) {
+    wordFaithfulMessageType.value = 'error';
+    wordFaithfulMessage.value = e.message || '加载列表失败';
+  } finally {
+    wordFaithfulLoading.value = false;
+  }
+}
+
+async function doWordFaithfulImport() {
+  if (!wordFaithfulFile.value) return;
+  wordFaithfulImporting.value = true;
+  wordFaithfulMessage.value = '';
+  try {
+    const result = await importWordFaithfulDocument(wordFaithfulFile.value, {
+      moduleCode: selectedImportSubtype.value?.moduleCode,
+      subtypeCode: selectedImportSubtype.value?.code,
+      versionLabel: String(restoreImportVersionLabel.value || '').trim(),
+    });
+    wordFaithfulMessageType.value = 'success';
+    wordFaithfulMessage.value = `已导入 ${result.docCode}（${result.blockCount} 块）`;
+    wordFaithfulFile.value = null;
+    await refreshWordFaithfulList();
+  } catch (e) {
+    wordFaithfulMessageType.value = 'error';
+    wordFaithfulMessage.value = e.message || '导入失败';
+  } finally {
+    wordFaithfulImporting.value = false;
+  }
+}
+
+async function removeWordFaithful(item) {
+  if (!item?.id) return;
+  if (!window.confirm(`确定删除 ${item.docCode}？`)) return;
+  try {
+    await deleteWordFaithfulDocument(item.id);
+    wordFaithfulMessageType.value = 'success';
+    wordFaithfulMessage.value = `已删除 ${item.docCode}`;
+    await refreshWordFaithfulList();
+  } catch (e) {
+    wordFaithfulMessageType.value = 'error';
+    wordFaithfulMessage.value = e.message || '删除失败';
+  }
+}
+
 function onConversionScriptFile(e) {
   conversionScriptFile.value = e.target.files?.[0] || null;
 }
@@ -2396,12 +2575,19 @@ async function removeConversionScript(item) {
   }
 }
 
+watch(importSubtypeCode, () => {
+  if (importStorageKind.value === 'word_faithful') {
+    refreshWordFaithfulList();
+  }
+});
+
 onMounted(async () => {
   applyRouteImportQuery();
   await refreshCatalog();
   await refreshDatasets();
   await refreshFormTemplates();
   await refreshFillInstructions();
+  await refreshWordFaithfulList();
   await refreshConversionScripts();
 });
 </script>

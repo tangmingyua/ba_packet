@@ -379,6 +379,69 @@ export function getDocumentSearchHitsApi(id, q, { hitsLimit } = {}) {
   return request(`/api/documents/${id}/search-hits?${query}`);
 }
 
+export async function importWordFaithfulDocument(file, { moduleCode, subtypeCode, versionLabel } = {}) {
+  const form = new FormData();
+  form.append('file', file);
+  if (moduleCode) form.append('moduleCode', moduleCode);
+  if (subtypeCode) form.append('subtypeCode', subtypeCode);
+  if (versionLabel) form.append('versionLabel', String(versionLabel).trim());
+  const response = await fetch(`${getApiBase()}/api/word-faithful/import`, {
+    method: 'POST',
+    headers: withAuthHeaders(),
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || 'Word 导入失败');
+  }
+  return response.json();
+}
+
+export function listWordFaithfulDocuments({ moduleCode, subtypeCode } = {}) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  const qs = query.toString();
+  return request(`/api/word-faithful${qs ? `?${qs}` : ''}`);
+}
+
+export function getWordFaithfulDocument(id) {
+  return request(`/api/word-faithful/${id}`);
+}
+
+export function deleteWordFaithfulDocument(id) {
+  return request(`/api/word-faithful/${id}`, { method: 'DELETE' });
+}
+
+export function searchWordFaithfulApi(q, { maxDocuments, subtypeCode, moduleCode } = {}) {
+  const query = new URLSearchParams({ q: String(q ?? '') });
+  if (maxDocuments != null) query.set('maxDocuments', String(maxDocuments));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  return request(`/api/word-faithful/search?${query}`);
+}
+
+export function getWordFaithfulSearchHitsApi(id, q, { hitsLimit } = {}) {
+  const query = new URLSearchParams({ q: String(q) });
+  if (hitsLimit != null) query.set('hitsLimit', String(hitsLimit));
+  return request(`/api/word-faithful/${id}/search-hits?${query}`);
+}
+
+export function getWordFaithfulBlocks(id) {
+  return request(`/api/word-faithful/${id}/blocks`);
+}
+
+export async function fetchWordFaithfulFile(id) {
+  const response = await fetch(`${getApiBase()}/api/word-faithful/${id}/file`, {
+    headers: withAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || '获取 Word 文件失败');
+  }
+  return response.arrayBuffer();
+}
+
 export async function importConversionScriptFile(file, { moduleCode, subtypeCode } = {}) {
   const form = new FormData();
   form.append('file', file);

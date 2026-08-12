@@ -16,6 +16,11 @@ export const SUBTYPE_PARSE_KINDS = [
     hint: 'Word 文档还原为节点树，无需字段映射',
   },
   {
+    code: 'word_faithful',
+    label: 'Word 原样显示',
+    hint: '整本 Word 原样预览，块级索引可搜索，无业务切分',
+  },
+  {
     code: 'script',
     label: 'SQL 类',
     hint: 'SQL/TXT 脚本还原，无需字段映射',

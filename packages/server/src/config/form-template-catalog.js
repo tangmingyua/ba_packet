@@ -58,7 +58,7 @@ export function normalizeFormTemplateModuleCode(code) {
 }
 
 /** 表样 Sheet 名即表名、不要求「_」拆表号/版本（与一表通相同） */
-export const FORM_TEMPLATE_WHOLE_SHEET_NAME_MODULE_CODES = new Set(['YBT', 'PISA']);
+export const FORM_TEMPLATE_WHOLE_SHEET_NAME_MODULE_CODES = new Set(['YBT', 'PISA', 'EAST']);
 
 export function usesWholeSheetNameFormTemplateRules(moduleCode) {
   return FORM_TEMPLATE_WHOLE_SHEET_NAME_MODULE_CODES.has(String(moduleCode ?? '').trim());

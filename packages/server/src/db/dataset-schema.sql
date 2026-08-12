@@ -224,6 +224,39 @@ CREATE TABLE IF NOT EXISTS report_doc_mapping (
 
 CREATE INDEX IF NOT EXISTS idx_report_doc_mapping_doc ON report_doc_mapping(document_id);
 
+-- Word 原样显示（整本导入，块级索引 + 预览 HTML，无业务切分）
+CREATE TABLE IF NOT EXISTS word_faithful_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_code TEXT NOT NULL,
+  doc_title TEXT,
+  version_label TEXT NOT NULL DEFAULT '',
+  subtype_code TEXT,
+  module_code TEXT NOT NULL DEFAULT '1104',
+  source_file_name TEXT,
+  file_hash TEXT,
+  docx_blob TEXT,
+  preview_html TEXT,
+  block_count INTEGER NOT NULL DEFAULT 0,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (subtype_code, doc_code, version_label)
+);
+
+CREATE TABLE IF NOT EXISTS word_faithful_blocks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id INTEGER NOT NULL,
+  sort_order INTEGER NOT NULL,
+  block_kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  table_index INTEGER,
+  row_index INTEGER,
+  col_index INTEGER,
+  FOREIGN KEY (document_id) REFERENCES word_faithful_documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_word_faithful_docs_subtype ON word_faithful_documents(subtype_code, version_label);
+CREATE INDEX IF NOT EXISTS idx_word_faithful_blocks_doc ON word_faithful_blocks(document_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_word_faithful_blocks_text ON word_faithful_blocks(document_id);
+
 -- 模块码值（「码值」Sheet 批量导入）
 CREATE TABLE IF NOT EXISTS module_code_values (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

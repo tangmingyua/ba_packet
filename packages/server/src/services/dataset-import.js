@@ -5,6 +5,9 @@
 import crypto from 'crypto';
 import XLSX from 'xlsx';
 import { queryOne, run, saveDb } from '../db/database.js';
+import { cellHasHyperlink, resolveHyperlinkDictName } from '../utils/excel-cell-hyperlink.js';
+import { extractDictNameFromCellText } from '../utils/code-value-dict-name.js';
+import { CATALOG_SEQ_PAYLOAD_KEY } from '../utils/catalog-seq.js';
 import {
   clearVersionRecords,
   findVersionBySheetName,
@@ -72,7 +75,9 @@ export function parseWorkbookSheets(buffer) {
       return row.map((_, c) => {
         const cellRef = XLSX.utils.encode_cell({ r, c });
         const cell = sheet[cellRef];
-        return Boolean(cell?.l?.Target);
+        if (!cellHasHyperlink(cell)) return null;
+        const dictText = resolveHyperlinkDictName({ cell, workbook, sheetName });
+        return dictText ? { dictText } : {};
       });
     });
     return { sheetName, matrix, linkMatrix };
@@ -113,19 +118,36 @@ export function validateHeaders(excelHeaders, mappings) {
   return { ok: true, ignoredColumns };
 }
 
-function mapRowToPayload(rowCells, excelHeaders, mappings, linkRow) {
+function mapRowToPayload(rowCells, excelHeaders, mappings, linkRow, { catalogSeq } = {}) {
   const headerIndex = new Map(excelHeaders.map((h, i) => [h, i]));
   const payload = {};
   const linkFields = [];
+  const linkDictText = {};
   for (const m of mappings) {
     const idx = headerIndex.get(m.originalColumn);
     payload[m.standardField] = idx === undefined ? '' : cellToString(rowCells[idx]);
-    if (linkRow && idx !== undefined && linkRow[idx]) {
+    const linkInfo = idx === undefined ? null : linkRow?.[idx];
+    const hasLink =
+      linkInfo === true || (linkInfo && typeof linkInfo === 'object' && !Array.isArray(linkInfo));
+    if (hasLink) {
       linkFields.push(m.standardField);
+      const resolved =
+        linkInfo && typeof linkInfo === 'object' && linkInfo.dictText
+          ? String(linkInfo.dictText).trim()
+          : extractDictNameFromCellText(payload[m.standardField]);
+      if (resolved) {
+        linkDictText[m.standardField] = resolved;
+      }
     }
   }
   if (linkFields.length) {
     payload.__has_links = linkFields;
+  }
+  if (Object.keys(linkDictText).length) {
+    payload.__link_dict_text = linkDictText;
+  }
+  if (catalogSeq != null && Number.isFinite(Number(catalogSeq))) {
+    payload[CATALOG_SEQ_PAYLOAD_KEY] = Number(catalogSeq);
   }
   return payload;
 }
@@ -171,6 +193,7 @@ export function parseBulkCatalogSheet(sheet, headerRow, dataStartRow) {
   const dataStart = Math.max(0, dataStartRow - 1);
   const byReport = new Map();
   const duplicateReports = new Set();
+  let catalogSeq = 0;
 
   for (let i = dataStart; i < sheet.matrix.length; i += 1) {
     const rowCells = sheet.matrix[i] || [];
@@ -179,7 +202,11 @@ export function parseBulkCatalogSheet(sheet, headerRow, dataStartRow) {
     if (byReport.has(report)) {
       duplicateReports.add(report);
     } else {
-      byReport.set(report, catalogRowToMap(headers, rowCells));
+      catalogSeq += 1;
+      byReport.set(report, {
+        rowMap: catalogRowToMap(headers, rowCells),
+        catalogSeq,
+      });
     }
   }
 
@@ -200,6 +227,7 @@ export function mergeBusinessSheetWithCatalog({
   sheet,
   catalogHeaders,
   catalogRowMap,
+  catalogSeq,
   headerRow,
   dataStartRow,
 }) {
@@ -231,7 +259,7 @@ export function mergeBusinessSheetWithCatalog({
     for (const h of catalogOnlyHeaders) {
       mergedCells.push(catalogRowMap?.[h] ?? '');
     }
-    dataRows.push({ rowNum: excelRowNum, cells: mergedCells, linkRow });
+    dataRows.push({ rowNum: excelRowNum, cells: mergedCells, linkRow, catalogSeq: catalogSeq ?? null });
   }
 
   return { mergedHeaders, dataRows, columnWarnings };
@@ -254,7 +282,9 @@ function prepareRowsFromTable({ headers, dataRows, mappings, version, subtype, s
   const pendingRows = [];
 
   for (const row of dataRows) {
-    const payload = mapRowToPayload(row.cells, headers, mappings, row.linkRow);
+    const payload = mapRowToPayload(row.cells, headers, mappings, row.linkRow, {
+      catalogSeq: row.catalogSeq,
+    });
     payload.subtype = subtype.name;
 
     const systemVersion = version.versionLabel;
@@ -527,11 +557,14 @@ function importBulkWorkbook({ sheets, version, sourceFileName, fileHash, descrip
   const allColumnWarnings = new Set();
 
   for (const sheet of businessSheets) {
-    const catalogRowMap = catalogParsed.byReport.get(sheet.sheetName) || null;
+    const catalogEntry = catalogParsed.byReport.get(sheet.sheetName) ?? null;
+    const catalogRowMap = catalogEntry?.rowMap ?? null;
+    const catalogSeq = catalogEntry?.catalogSeq ?? null;
     const merged = mergeBusinessSheetWithCatalog({
       sheet,
       catalogHeaders: catalogParsed.headers,
       catalogRowMap,
+      catalogSeq,
       headerRow: version.headerRow,
       dataStartRow: version.dataStartRow,
     });

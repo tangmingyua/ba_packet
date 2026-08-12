@@ -63,6 +63,18 @@ import {
 } from './services/conversion-script-import.js';
 import { searchDocuments, getDocumentSearchHits } from './services/document-search.js';
 import {
+  deleteWordFaithfulDocument,
+  getWordFaithfulDocument,
+  importWordFaithfulDocument,
+  listWordFaithfulDocuments,
+  getWordFaithfulDocxBuffer,
+  listWordFaithfulBlocks,
+} from './services/word-faithful-import.js';
+import {
+  getWordFaithfulSearchHits,
+  searchWordFaithfulDocuments,
+} from './services/word-faithful-search.js';
+import {
   getDatasetStats,
 } from './services/dataset-search.js';
 import { unifiedSearch, unifiedSuggest } from './services/unified-search.js';
@@ -659,6 +671,128 @@ app.put('/api/documents/:id/report-mapping', async (request, reply) => {
 app.delete('/api/documents/:id', async (request, reply) => {
   try {
     return deleteDocument(Number(request.params.id));
+  } catch (error) {
+    const msg = error.message || '删除失败';
+    if (msg.includes('不存在')) return reply.code(404).send({ message: msg });
+    return reply.code(400).send({ message: msg });
+  }
+});
+
+/** Word 原样显示（整本导入，块级索引） */
+app.post('/api/word-faithful/import', async (request, reply) => {
+  let buffer = null;
+  let fileName = '';
+  let moduleCode = '';
+  let subtypeCode = '';
+  let versionLabel = '';
+
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        buffer = await part.toBuffer();
+        fileName = part.filename || fileName;
+      } else if (part.fieldname === 'fileName') {
+        fileName = part.value || fileName;
+      } else if (part.fieldname === 'moduleCode') {
+        moduleCode = part.value || moduleCode;
+      } else if (part.fieldname === 'subtypeCode') {
+        subtypeCode = part.value || subtypeCode;
+      } else if (part.fieldname === 'versionLabel') {
+        versionLabel = part.value || versionLabel;
+      }
+    }
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '解析上传内容失败' });
+  }
+
+  if (!buffer) {
+    return reply.code(400).send({ message: '请上传 Word 文件' });
+  }
+
+  try {
+    return importWordFaithfulDocument(buffer, {
+      fileName,
+      moduleCode: moduleCode || undefined,
+      subtypeCode: subtypeCode || undefined,
+      versionLabel: versionLabel || undefined,
+    });
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '导入失败' });
+  }
+});
+
+app.get('/api/word-faithful', async (request) => {
+  const { moduleCode, subtypeCode } = request.query || {};
+  return {
+    items: listWordFaithfulDocuments({
+      moduleCode: moduleCode ? String(moduleCode) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
+    }),
+  };
+});
+
+app.get('/api/word-faithful/search', async (request, reply) => {
+  try {
+    const { q, maxDocuments, subtypeCode, moduleCode } = request.query || {};
+    return searchWordFaithfulDocuments(String(q ?? '').trim(), {
+      maxDocuments: maxDocuments ? Number(maxDocuments) : undefined,
+      subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
+      moduleCode: moduleCode ? String(moduleCode) : undefined,
+    });
+  } catch (error) {
+    return reply.code(500).send({ message: error.message || '搜索失败' });
+  }
+});
+
+app.get('/api/word-faithful/:id/search-hits', async (request, reply) => {
+  try {
+    const { q, hitsLimit } = request.query || {};
+    if (!String(q ?? '').trim()) {
+      return reply.code(400).send({ message: '请提供搜索关键词 q' });
+    }
+    const item = getWordFaithfulDocument(Number(request.params.id));
+    if (!item) return reply.code(404).send({ message: '文档不存在' });
+    return getWordFaithfulSearchHits(Number(request.params.id), q, {
+      hitsLimit: hitsLimit ? Number(hitsLimit) : undefined,
+    });
+  } catch (error) {
+    return reply.code(500).send({ message: error.message || '搜索失败' });
+  }
+});
+
+app.get('/api/word-faithful/:id/blocks', async (request, reply) => {
+  const item = getWordFaithfulDocument(Number(request.params.id));
+  if (!item) return reply.code(404).send({ message: '文档不存在' });
+  return { items: listWordFaithfulBlocks(Number(request.params.id)) };
+});
+
+app.get('/api/word-faithful/:id/file', async (request, reply) => {
+  const file = getWordFaithfulDocxBuffer(Number(request.params.id));
+  if (!file) {
+    return reply
+      .code(404)
+      .send({ message: '未找到原始 Word 文件，请在资料导入中重新上传该文档' });
+  }
+  reply.header(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
+  reply.header(
+    'Content-Disposition',
+    `inline; filename="${encodeURIComponent(file.fileName)}"`
+  );
+  return file.buffer;
+});
+
+app.get('/api/word-faithful/:id', async (request, reply) => {
+  const item = getWordFaithfulDocument(Number(request.params.id));
+  if (!item) return reply.code(404).send({ message: '文档不存在' });
+  return item;
+});
+
+app.delete('/api/word-faithful/:id', async (request, reply) => {
+  try {
+    return deleteWordFaithfulDocument(Number(request.params.id));
   } catch (error) {
     const msg = error.message || '删除失败';
     if (msg.includes('不存在')) return reply.code(404).send({ message: msg });

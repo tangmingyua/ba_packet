@@ -30,7 +30,8 @@ export function cascadesSubtypeVersionsOnDelete(storageKind) {
   return (
     isExcelConfigStorageKind(storageKind) ||
     storageKind === 'form_template' ||
-    storageKind === 'document'
+    storageKind === 'document' ||
+    storageKind === 'word_faithful'
   );
 }
 
@@ -39,12 +40,18 @@ export function cascadesSubtypeDeleteByVersions(storageKind) {
   return (
     isExcelConfigStorageKind(storageKind) ||
     storageKind === 'form_template' ||
-    storageKind === 'document'
+    storageKind === 'document' ||
+    storageKind === 'word_faithful'
   );
 }
 
 export function supportsSubtypeVersions(kind) {
-  return isExcelConfigStorageKind(kind) || kind === 'form_template' || kind === 'document';
+  return (
+    isExcelConfigStorageKind(kind) ||
+    kind === 'form_template' ||
+    kind === 'document' ||
+    kind === 'word_faithful'
+  );
 }
 
 function rowToVersion(row) {
@@ -204,6 +211,7 @@ function countRestorationRecords(subtypeCode, storageKind) {
   const tableByKind = {
     form_template: 'form_templates',
     document: 'documents',
+    word_faithful: 'word_faithful_documents',
     script: 'conversion_scripts',
     code_value: 'module_code_values',
   };
@@ -227,6 +235,16 @@ function purgeRestorationRecordsBySubtype(subtypeCode, storageKind) {
       run('DELETE FROM report_doc_mapping WHERE document_id = ?', [id]);
       run('DELETE FROM document_nodes WHERE document_id = ?', [id]);
       run('DELETE FROM documents WHERE id = ?', [id]);
+    }
+    saveDb();
+    return;
+  }
+  if (storageKind === 'word_faithful') {
+    const rows = queryAll('SELECT id FROM word_faithful_documents WHERE subtype_code = ?', [subtypeCode]);
+    for (const row of rows) {
+      const id = Number(row.id);
+      run('DELETE FROM word_faithful_blocks WHERE document_id = ?', [id]);
+      run('DELETE FROM word_faithful_documents WHERE id = ?', [id]);
     }
     saveDb();
     return;
@@ -418,7 +436,7 @@ export function deleteSubtype(code) {
     for (const v of versions) {
       deleteSubtypeVersion(v.id);
     }
-    if (existing.storageKind === 'form_template' || existing.storageKind === 'document') {
+    if (existing.storageKind === 'form_template' || existing.storageKind === 'document' || existing.storageKind === 'word_faithful') {
       const linked = countRestorationRecords(normalizedCode, existing.storageKind);
       if (linked > 0) {
         purgeRestorationRecordsBySubtype(normalizedCode, existing.storageKind);
@@ -583,6 +601,15 @@ export function countRecordsForVersion(versionId) {
       )?.c || 0
     );
   }
+  if (kind === 'word_faithful') {
+    return Number(
+      queryOne(
+        `SELECT COUNT(*) AS c FROM word_faithful_documents
+         WHERE subtype_code = ? AND version_label = ?`,
+        [version.subtypeCode, version.versionLabel]
+      )?.c || 0
+    );
+  }
   return 0;
 }
 
@@ -627,6 +654,20 @@ export function clearVersionRecords(versionId) {
       run('DELETE FROM report_doc_mapping WHERE document_id = ?', [id]);
       run('DELETE FROM document_nodes WHERE document_id = ?', [id]);
       run('DELETE FROM documents WHERE id = ?', [id]);
+    }
+    saveDb();
+    return { clearedDatasets: rows.length };
+  }
+
+  if (kind === 'word_faithful') {
+    const rows = queryAll(
+      `SELECT id FROM word_faithful_documents WHERE subtype_code = ? AND version_label = ?`,
+      [version.subtypeCode, version.versionLabel]
+    );
+    for (const row of rows) {
+      const id = Number(row.id);
+      run('DELETE FROM word_faithful_blocks WHERE document_id = ?', [id]);
+      run('DELETE FROM word_faithful_documents WHERE id = ?', [id]);
     }
     saveDb();
     return { clearedDatasets: rows.length };

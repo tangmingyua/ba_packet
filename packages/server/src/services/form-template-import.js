@@ -135,7 +135,7 @@ export function parseFormTemplateSheetMeta(sheetName, fileMeta = null) {
 
   const isWholeSheetNameModule = usesWholeSheetNameFormTemplateRules(fileMeta?.moduleCode);
 
-  // 一表通 / PISA 等：所有非排除 Sheet 都导入；report_code 默认用完整 Sheet 名
+  // 一表通 / PISA / EAST 等：所有非排除 Sheet 都导入；report_code 默认用完整 Sheet 名
   if (isWholeSheetNameModule) {
     return {
       reportCode: t,

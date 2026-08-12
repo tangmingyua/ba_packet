@@ -5,6 +5,7 @@ import { queryOne } from '../db/database.js';
 import { getSubtype, listFieldMappings } from './dataset-config.js';
 import { resolveSearchMode, queryDatasetMatchingRows } from './dataset-search.js';
 import { compareVersionLabelsDesc } from '../utils/version-sort.js';
+import { bucketCatalogSeqMin, parseCatalogSeq } from '../utils/catalog-seq.js';
 
 function parsePayload(raw) {
   try {
@@ -84,15 +85,24 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
   });
   if (!rows.length) return null;
 
-  const versionIds = [...new Set(rows.map((r) => r.subtype_version_id))];
+  const parsedRows = rows.map((row) => ({
+    row,
+    payload: parsePayload(row.payload),
+  }));
+  const useCatalogOrder = parsedRows.some(({ payload }) => parseCatalogSeq(payload) != null);
+  const rowsForAgg = useCatalogOrder
+    ? parsedRows.filter(({ payload }) => parseCatalogSeq(payload) != null)
+    : parsedRows;
+  if (!rowsForAgg.length) return null;
+
+  const versionIds = [...new Set(rowsForAgg.map(({ row }) => row.subtype_version_id))];
   const columnDefs = collectAggregateColumnDefs(versionIds);
   const hasAggregateDisplayCol = columnDefs.some((c) => c.code !== 'version');
   if (!hasAggregateDisplayCol) return null;
 
   const bucket = new Map();
 
-  for (const row of rows) {
-    const payload = parsePayload(row.payload);
+  for (const { row, payload } of rowsForAgg) {
     const values = {};
     const keyParts = [];
     for (const { code, label } of columnDefs) {
@@ -102,9 +112,11 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
     }
     const key = keyParts.join('\u0001');
     if (!bucket.has(key)) {
-      bucket.set(key, { values, count: 0 });
+      bucket.set(key, { values, count: 0, catalogSeqMin: null });
     }
-    bucket.get(key).count += 1;
+    const entry = bucket.get(key);
+    entry.count += 1;
+    bucketCatalogSeqMin(entry, parseCatalogSeq(payload));
   }
 
   const versionCol = columnDefs.find((c) => c.code === 'version');
@@ -117,6 +129,12 @@ export function buildAggregateBrowseIndex({ subtypeCode, moduleCode, categories,
           b.values[versionCol.label]
         );
         if (vcmp !== 0) return vcmp;
+      }
+      if (useCatalogOrder) {
+        const aSeq = a.catalogSeqMin ?? Number.MAX_SAFE_INTEGER;
+        const bSeq = b.catalogSeqMin ?? Number.MAX_SAFE_INTEGER;
+        if (aSeq !== bSeq) return aSeq - bSeq;
+        return 0;
       }
       for (const { label } of columnDefs) {
         if (versionCol && label === versionCol.label) continue;

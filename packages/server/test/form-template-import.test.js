@@ -98,6 +98,7 @@ const IMPORT_1104 = { moduleCode: '1104' };
 const IMPORT_NR = { moduleCode: 'IMAS' };
 const IMPORT_YBT = { moduleCode: 'YBT' };
 const IMPORT_PISA = { moduleCode: 'PISA' };
+const IMPORT_EAST = { moduleCode: 'EAST' };
 
 describe('form-template-import', () => {
   let tmpDir;
@@ -574,6 +575,26 @@ describe('form-template-import', () => {
     assert.equal(parsed.sheets[0].reportCode, 'PISA表(1.1示例)');
     assert.equal(parsed.sheets[0].reportTitle, 'PISA表(1.1示例)');
     assert.equal(parsed.sheets[0].versionLabel, FORM_TEMPLATE_LATEST_VERSION);
+  });
+
+  it('EAST 与一表通相同：中文 Sheet 名无「_」也可导入', async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([['表头'], ['1. 交易编号']]),
+      '即期及衍生品交易信息表填报示例'
+    );
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['说明']]), '说明');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const parsed = await parseFormTemplateWorkbook(buffer, {
+      fileName: 'east.xlsx',
+      ...IMPORT_EAST,
+      versionLabel: 'V20230201',
+    });
+    assert.equal(parsed.sheets.length, 1);
+    assert.equal(parsed.sheets[0].sheetName, '即期及衍生品交易信息表填报示例');
+    assert.equal(parsed.sheets[0].reportCode, '即期及衍生品交易信息表填报示例');
+    assert.equal(parsed.sheets[0].versionLabel, 'V20230201');
   });
 
   it('PISA 同前缀多 Sheet 以完整 Sheet 名为 report_code，互不覆盖', async () => {

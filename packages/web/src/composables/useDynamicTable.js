@@ -9,11 +9,13 @@ import {
   mergeDefaultDisplayLabels,
   mergeMappingOrderedLabels,
   getRowValueForExcelColumn,
+  resolveExcelColumnKeyForRows,
   pickTableNameFromPayload,
   TABLE_NAME_PAYLOAD_KEYS,
 } from '../utils/fieldLabels.js';
 import { getCategoryLabel } from '../constants/materialCategories.js';
 import { sortFlattenEntriesByVersionDesc } from '../utils/versionSort.js';
+import { parseCatalogSeq } from '../../../server/src/utils/catalog-seq.js';
 
 export { getRowValueForExcelColumn } from '../utils/fieldLabels.js';
 
@@ -127,12 +129,22 @@ export function mergeFieldMappingOrdersByVersion(ordersByVersion) {
 export function mergeFieldMappingDefaultDisplayByVersion(defaultDisplayByVersion) {
   return mergeFieldMappingDefaultDisplayByVersionFromUtil(defaultDisplayByVersion);
 }
-const SKIP_PAYLOAD_KEYS = new Set(['subtype', 'version', '__has_links']);
+const SKIP_PAYLOAD_KEYS = new Set([
+  'subtype',
+  'version',
+  '__has_links',
+  '__link_dict_text',
+  '__catalog_seq',
+]);
 
 /** 行元数据：主类模块 code（搜索查码值用） */
 export const ROW_MODULE_CODE_KEY = '$moduleCode';
 /** 行元数据：可点击查码值的 Excel 列名列表 */
 export const ROW_LINK_COLUMNS_KEY = '$linkColumns';
+/** 行元数据：列名 → 预解析码表名称 */
+export const ROW_LINK_DICT_TEXT_KEY = '$linkDictText';
+/** 行元数据：全量导入「目录」Sheet 行序 */
+export const ROW_CATALOG_SEQ_KEY = '$catalogSeq';
 
 function resolveLabelsForCodes(codeGroups, allKeys) {
   const labels = [];
@@ -216,7 +228,12 @@ export function itemToDisplayRow(item, report, block, mode) {
         })()
       : [];
   const linkColumns = [];
+  const linkDictByLabel = {};
   const linkSeen = new Set();
+  const rawLinkDictText =
+    payload.__link_dict_text && typeof payload.__link_dict_text === 'object'
+      ? payload.__link_dict_text
+      : {};
   for (const fieldKey of linkFields) {
     const key = String(fieldKey || '').trim();
     if (!key) continue;
@@ -225,9 +242,18 @@ export function itemToDisplayRow(item, report, block, mode) {
       linkColumns.push(label);
       linkSeen.add(label);
     }
+    const dictText = rawLinkDictText[key];
+    if (label && dictText) {
+      linkDictByLabel[label] = String(dictText);
+    }
   }
   row[ROW_MODULE_CODE_KEY] = item.moduleCode || report?.moduleCode || '';
   row[ROW_LINK_COLUMNS_KEY] = linkColumns;
+  row[ROW_LINK_DICT_TEXT_KEY] = linkDictByLabel;
+  const catalogSeq = parseCatalogSeq(payload);
+  if (catalogSeq != null) {
+    row[ROW_CATALOG_SEQ_KEY] = catalogSeq;
+  }
 
   return row;
 }
@@ -549,6 +575,44 @@ export function filterRows(rows, { tableFilter, customFilters = [], localKeyword
     );
   }
   return result;
+}
+
+/** 级联筛选：第 beforeIndex 个条件之前的规则（AND）收窄后的行，供后续下拉选项用 */
+export function rowsForPriorFilterRules(rows, rules, beforeIndex) {
+  const list = rows || [];
+  const idx = Number(beforeIndex);
+  if (!Number.isFinite(idx) || idx <= 0) return list;
+  const prior = (rules || []).slice(0, idx);
+  return filterRows(list, { tableFilter: '__all__', customFilters: prior });
+}
+
+/** 多选下拉合法取值（与 MultiSelectFilter 一致，含空值 ''） */
+export function validMultiSelectValuesForColumn(rows, col) {
+  const resolved = resolveExcelColumnKeyForRows(rows, col);
+  if (!resolved) return new Set();
+  const valid = new Set();
+  for (const row of rows || []) {
+    const v = getRowValueForExcelColumn(row, resolved);
+    valid.add(v === '' ? '' : v);
+  }
+  return valid;
+}
+
+/** 上游变更后，清理下游多选已失效的勾选 */
+export function reconcileMultiSelectFilterValues(baseRows, rules) {
+  const out = (rules || []).map((r) => ({ ...r, val: Array.isArray(r.val) ? [...r.val] : r.val }));
+  for (let j = 0; j < out.length; j++) {
+    const rule = out[j];
+    if (rule.op !== MULTI_SELECT_OPERATOR || !rule.col) continue;
+    const scoped = rowsForPriorFilterRules(baseRows, out, j);
+    const valid = validMultiSelectValuesForColumn(scoped, rule.col);
+    const prev = Array.isArray(rule.val) ? rule.val : [];
+    const next = prev.filter((v) => valid.has(v));
+    if (next.length !== prev.length) {
+      out[j] = { ...rule, val: next };
+    }
+  }
+  return out;
 }
 
 export function getTableOptions(rows) {

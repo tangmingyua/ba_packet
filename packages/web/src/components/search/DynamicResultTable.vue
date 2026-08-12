@@ -272,6 +272,7 @@ import CodeValueLookupModal from './CodeValueLookupModal.vue';
 import {
   PAGE_SIZE,
   ROW_LINK_COLUMNS_KEY,
+  ROW_LINK_DICT_TEXT_KEY,
   ROW_MODULE_CODE_KEY,
   buildPageList,
   copyText,
@@ -454,7 +455,8 @@ function openCodeValueLookup(row, col) {
   closePopover();
   const sourceText = cellText(row, col);
   const moduleCode = row[ROW_MODULE_CODE_KEY] || '';
-  const dictName = extractDictNameFromCellText(sourceText);
+  const linkDictMap = row[ROW_LINK_DICT_TEXT_KEY] || {};
+  const dictName = linkDictMap[col] || extractDictNameFromCellText(sourceText);
 
   if (!moduleCode) {
     codeValueModal.value = {
