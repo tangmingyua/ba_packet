@@ -1252,7 +1252,7 @@ async function loadSuggest() {
     const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
     const { items } = await suggestItems(q, 10, mode, opts);
     suggestions.value = items;
-    suggestIndex.value = items.length ? 0 : -1;
+    suggestIndex.value = -1;
     showSuggest.value = true;
   } catch {
     suggestions.value = [];
@@ -1272,7 +1272,7 @@ async function loadFilterSuggest() {
     const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
     const { items } = await suggestItems(q, 10, mode, opts);
     filterSuggestions.value = items;
-    filterSuggestIndex.value = items.length ? 0 : -1;
+    filterSuggestIndex.value = -1;
     filterShowSuggest.value = true;
   } catch {
     filterSuggestions.value = [];
@@ -1282,6 +1282,10 @@ async function loadFilterSuggest() {
 
 function moveSuggest(step) {
   if (!suggestions.value.length) return;
+  if (suggestIndex.value < 0) {
+    if (step > 0) suggestIndex.value = 0;
+    return;
+  }
   const next = suggestIndex.value + step;
   if (next < 0) suggestIndex.value = suggestions.value.length - 1;
   else if (next >= suggestions.value.length) suggestIndex.value = 0;
@@ -1290,6 +1294,10 @@ function moveSuggest(step) {
 
 function moveFilterSuggest(step) {
   if (!filterSuggestions.value.length) return;
+  if (filterSuggestIndex.value < 0) {
+    if (step > 0) filterSuggestIndex.value = 0;
+    return;
+  }
   const next = filterSuggestIndex.value + step;
   if (next < 0) filterSuggestIndex.value = filterSuggestions.value.length - 1;
   else if (next >= filterSuggestions.value.length) filterSuggestIndex.value = 0;
@@ -1309,7 +1317,8 @@ function pickFilterSuggest(item) {
 }
 
 function onEnter() {
-  if (showSuggest.value && suggestIndex.value >= 0) {
+  // 仅在使用 ↑↓ 明确选中联想项时采纳；否则回车搜索输入框原文
+  if (showSuggest.value && suggestIndex.value >= 0 && suggestions.value[suggestIndex.value]) {
     pickSuggest(suggestions.value[suggestIndex.value]);
     return;
   }
