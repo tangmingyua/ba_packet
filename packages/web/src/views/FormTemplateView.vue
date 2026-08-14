@@ -43,7 +43,7 @@
         <template v-else-if="detail">
           <header class="preview-header">
             <div>
-              <h2>{{ detail.reportCode }} — {{ detail.reportTitle }}</h2>
+              <h2>{{ formTemplateDisplayTitle(detail) }}</h2>
               <p class="preview-meta">
                 版本 {{ detail.versionLabel }} ·
                 {{ detail.rowCount }} 行 × {{ detail.colCount }} 列 ·
@@ -130,7 +130,7 @@ import {
   getDocumentIndicator,
 } from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
-import { formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
+import { formTemplateDisplayTitle, formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const route = useRoute();

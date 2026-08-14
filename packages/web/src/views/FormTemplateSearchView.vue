@@ -80,7 +80,7 @@
         <p v-if="loadingDetail" class="muted">加载表样…</p>
         <template v-else-if="detail">
           <header class="preview-header">
-            <h2>{{ detail.reportCode }} — {{ detail.reportTitle }}</h2>
+            <h2>{{ formTemplateDisplayTitle(detail) }}</h2>
             <p class="preview-meta">
               关键词「{{ lastKeyword }}」· 版本 {{ detail.versionLabel }}
               <span v-if="focusCell"> · 定位 R{{ focusCell.rowNum }}C{{ focusCell.colNum }}</span>
@@ -158,7 +158,7 @@ import {
   searchFormTemplateCells,
 } from '../api';
 import FormTemplateMatrix from '../components/form-template/FormTemplateMatrix.vue';
-import { formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
+import { formTemplateDisplayTitle, formTemplateListSheetLabel } from '../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../utils/formTemplateIndicator.js';
 
 const keyword = ref('');

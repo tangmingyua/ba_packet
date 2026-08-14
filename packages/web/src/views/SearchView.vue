@@ -18,6 +18,7 @@
             v-if="modules.length"
             v-model="moduleCode"
             :options="modules"
+            :hit-map="moduleHitMap"
             @change="onModuleChange"
           />
           <p v-else-if="moduleLabel" class="module-tab-fallback" :title="moduleCode">
@@ -30,14 +31,14 @@
           v-if="isAggregateMode && moduleCode"
           v-model="selectedCategories"
           single
-          :options="visibleCategoryStats"
+          :options="displayCategoryStats"
           @change="onCategoriesChange"
         />
 
         <SubtypeTabs
           v-if="showSubtypeTabs"
           v-model="selectedSubtypeCode"
-          :options="subtypeStats"
+          :options="displaySubtypeStats"
           @change="onSubtypeChange"
         />
       </div>
@@ -122,9 +123,6 @@
               </div>
             </div>
           </div>
-          <div v-else-if="showSuggest && keyword.trim()" class="header-suggestions show">
-            <div class="suggestion-empty">无匹配数据项</div>
-          </div>
         </form>
 
         <ResultFilterBar
@@ -205,6 +203,15 @@
           :empty-text="emptyText"
         />
 
+        <WordFaithfulResultPanel
+          v-else-if="selectedStorageKind === 'word_faithful'"
+          :keyword="lastKeyword"
+          :module-code="moduleCode"
+          :subtype-code="selectedSubtypeCode"
+          :default-version-label="resolveDefaultVersionLabelForSubtype(selectedSubtypeCode)"
+          :empty-text="emptyText"
+        />
+
         <ConversionScriptListPanel
           v-else-if="selectedStorageKind === 'script'"
           embedded
@@ -265,6 +272,8 @@
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  fetchModuleHitMap,
+  fetchTabHitStats,
   getDatasetCatalog,
   getModuleCategoryStats,
   getModuleSubtypeStats,
@@ -276,6 +285,7 @@ import DynamicResultTable from '../components/search/DynamicResultTable.vue';
 import CodeValueResultTable from '../components/search/CodeValueResultTable.vue';
 import FormTemplateResultPanel from '../components/search/FormTemplateResultPanel.vue';
 import DocumentResultPanel from '../components/search/DocumentResultPanel.vue';
+import WordFaithfulResultPanel from '../components/search/WordFaithfulResultPanel.vue';
 import ConversionScriptListPanel from '../components/conversion-script/ConversionScriptListPanel.vue';
 import UnifiedMaterialHitList from '../components/search/UnifiedMaterialHitList.vue';
 import AggregateBrowsePanel from '../components/search/AggregateBrowsePanel.vue';
@@ -334,6 +344,8 @@ const detailFromAggregateBrowse = ref(false);
 const activeReportCode = ref('');
 const elapsedMs = ref(0);
 const scriptListFetchKey = ref(0);
+const moduleHitMap = ref({});
+const tabHitStats = ref({ categories: {}, subtypes: {} });
 const fieldMappingsByVersion = ref({});
 const fieldMappingDefaultFilterByVersion = ref({});
 const catalogSubtypes = ref([]);
@@ -348,6 +360,8 @@ const filterSuggestIndex = ref(-1);
 const filterShowSuggest = ref(false);
 let suggestTimer = null;
 let filterSuggestTimer = null;
+let moduleHitAbort = null;
+let tabHitAbort = null;
 
 const VALID_SEARCH_MODES = ['norm', 'qa', 'aggregate'];
 const MODE_TO_CATEGORIES = {
@@ -381,6 +395,25 @@ const visibleCategoryStats = computed(() => {
       hasSubtype: row?.hasSubtype ?? false,
     };
   });
+});
+
+const displayCategoryStats = computed(() => {
+  const base = visibleCategoryStats.value;
+  if (!searched.value) return base;
+  const hits = tabHitStats.value.categories || {};
+  return base.map((cat) => ({
+    ...cat,
+    count: hits[cat.code] ?? 0,
+  }));
+});
+
+const displaySubtypeStats = computed(() => {
+  if (!searched.value) return subtypeStats.value;
+  const hits = tabHitStats.value.subtypes || {};
+  return subtypeStats.value.map((st) => ({
+    ...st,
+    count: hits[st.code] ?? 0,
+  }));
 });
 
 const searchMode = computed(() => {
@@ -448,6 +481,7 @@ const SUBTYPE_RESULT_TITLES = {
   excel: '配置类数据',
   form_template: '表样命中',
   document: '说明命中',
+  word_faithful: 'Word 原文',
   script: '脚本命中',
   code_value: '码值',
 };
@@ -805,8 +839,16 @@ const displayAggregateBrowseItems = computed(() => {
   return buildAggregateBrowseItemsFromRows(rows, data.columns);
 });
 
-/** 答疑类 Excel 列表：版本列默认隐藏（含按模块查询进入的答疑子类/分类） */
+/** 答疑类 Excel 列表：版本列默认隐藏；EAST 答疑详情保留版本为首列 */
 const hideVersionByDefault = computed(() => {
+  const isEastQa =
+    moduleCode.value === 'EAST' &&
+    (searchMode.value === 'qa' ||
+      selectedSubtypeMeta.value?.category === 'qa' ||
+      activeReport.value?.category === 'qa' ||
+      (selectedCategories.value.length === 1 && selectedCategories.value[0] === 'qa'));
+  if (isEastQa) return false;
+
   if (searchMode.value === 'qa') return true;
   if (searchMode.value !== 'aggregate') return false;
   if (selectedSubtypeMeta.value?.category === 'qa') return true;
@@ -973,6 +1015,63 @@ function resolveYbtModuleCode() {
 
 function isNormOrQaMode(mode) {
   return mode === 'norm' || mode === 'qa';
+}
+
+async function refreshModuleHitMap(keyword) {
+  const mode = apiSearchMode();
+  const q = String(keyword ?? '').trim();
+  if (!isNormOrQaMode(mode) || !q) {
+    moduleHitMap.value = {};
+    return;
+  }
+  if (moduleHitAbort) moduleHitAbort.abort();
+  moduleHitAbort = new AbortController();
+  const { signal } = moduleHitAbort;
+  try {
+    const result = await fetchModuleHitMap(q, mode, { signal });
+    if (signal.aborted) return;
+    const map = {};
+    for (const item of result.items || []) {
+      if (item.hasHits) map[item.moduleCode] = true;
+    }
+    moduleHitMap.value = map;
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    moduleHitMap.value = {};
+  }
+}
+
+async function refreshTabHitStats(keyword) {
+  if (!searched.value || !moduleCode.value) {
+    tabHitStats.value = { categories: {}, subtypes: {} };
+    return;
+  }
+  if (tabHitAbort) tabHitAbort.abort();
+  tabHitAbort = new AbortController();
+  const { signal } = tabHitAbort;
+  const q = String(keyword ?? '');
+  const mode = apiSearchMode();
+  const cats = categoriesForSubtypeStats();
+  try {
+    const result = await fetchTabHitStats(q, mode, {
+      moduleCode: moduleCode.value,
+      categories: cats.length ? cats : undefined,
+      signal,
+    });
+    if (signal.aborted) return;
+    const categories = {};
+    for (const item of result.categories || []) {
+      categories[item.code] = Number(item.hitCount) || 0;
+    }
+    const subtypes = {};
+    for (const item of result.subtypes || []) {
+      subtypes[item.code] = Number(item.hitCount) || 0;
+    }
+    tabHitStats.value = { categories, subtypes };
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    tabHitStats.value = { categories: {}, subtypes: {} };
+  }
 }
 
 /** 查规范 / 查答疑详情默认一表通主类 */
@@ -1240,9 +1339,21 @@ function onFilterSuggestInput() {
   filterSuggestTimer = setTimeout(loadFilterSuggest, 200);
 }
 
+function shouldUseHeaderSuggest() {
+  if (searched.value && selectedSubtypeCode.value && selectedStorageKind.value !== 'excel') {
+    return false;
+  }
+  return true;
+}
+
 async function loadSuggest() {
   const q = keyword.value.trim();
   if (!q) {
+    suggestions.value = [];
+    showSuggest.value = false;
+    return;
+  }
+  if (!shouldUseHeaderSuggest()) {
     suggestions.value = [];
     showSuggest.value = false;
     return;
@@ -1251,9 +1362,9 @@ async function loadSuggest() {
     const mode = previewSearchMode();
     const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
     const { items } = await suggestItems(q, 10, mode, opts);
-    suggestions.value = items;
+    suggestions.value = items || [];
     suggestIndex.value = -1;
-    showSuggest.value = true;
+    showSuggest.value = suggestions.value.length > 0;
   } catch {
     suggestions.value = [];
     showSuggest.value = false;
@@ -1271,9 +1382,9 @@ async function loadFilterSuggest() {
     const mode = previewSearchMode();
     const opts = searched.value ? searchApiOptions() : previewSearchApiOptions();
     const { items } = await suggestItems(q, 10, mode, opts);
-    filterSuggestions.value = items;
+    filterSuggestions.value = items || [];
     filterSuggestIndex.value = -1;
-    filterShowSuggest.value = true;
+    filterShowSuggest.value = filterSuggestions.value.length > 0;
   } catch {
     filterSuggestions.value = [];
     filterShowSuggest.value = false;
@@ -1363,6 +1474,8 @@ async function doSearch() {
       error.value = result.error;
       reports.value = [];
       searched.value = false;
+      moduleHitMap.value = {};
+      tabHitStats.value = { categories: {}, subtypes: {} };
       applySearchFieldMappings({});
       return;
     }
@@ -1397,10 +1510,14 @@ async function doSearch() {
       }
     }
     await router.replace({ path: '/', query: buildSearchQuery() });
+    void refreshModuleHitMap(q);
+    void refreshTabHitStats(q);
   } catch (e) {
     searched.value = false;
     error.value = e.message || '搜索失败';
     reports.value = [];
+    moduleHitMap.value = {};
+    tabHitStats.value = { categories: {}, subtypes: {} };
     applySearchFieldMappings({});
   } finally {
     loading.value = false;
@@ -1452,6 +1569,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick);
+  if (moduleHitAbort) moduleHitAbort.abort();
+  if (tabHitAbort) tabHitAbort.abort();
   emit('search-state', { layout: false, landingMode: homeMode.value });
 });
 </script>
@@ -1946,15 +2065,13 @@ onUnmounted(() => {
 }
 
 .search-page-compact :deep(.category-card.selected) {
-  transform: translateY(-2px) scale(1.04);
   box-shadow:
-    0 0 0 2px rgba(15, 23, 42, 0.5),
-    0 0 0 4px rgba(255, 255, 255, 0.9),
-    0 4px 12px rgba(15, 23, 42, 0.2);
+    0 0 0 2px rgba(15, 23, 42, 0.35),
+    0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
 .search-page-compact :deep(.category-card:not(.selected)) {
-  opacity: 0.78;
+  opacity: 1;
 }
 
 .search-page-compact :deep(.category-card:hover) {

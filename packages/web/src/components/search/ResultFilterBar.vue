@@ -33,7 +33,6 @@
               <span v-if="item.tableName" class="q-table">{{ item.tableName }}</span>
             </div>
           </template>
-          <div v-else-if="keyword.trim()" class="q-suggest-empty">无匹配结果</div>
         </div>
       </div>
 

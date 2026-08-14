@@ -1,17 +1,23 @@
 /**
- * 统一检索：模块 + 标签 + 关键词，联邦查询 Excel / 表样 / 说明 / 脚本 / 码值
+ * 统一检索：模块 + 标签 + 关键词，联邦查询 Excel / 表样 / 说明 / 脚本 / 码值 / Word 原样显示
  */
 import { queryAll } from '../db/database.js';
-import { getCategoryLabel, parseCategoryFilter } from '../config/material-categories.js';
+import { getCategoryLabel, normalizeCategory, parseCategoryFilter, QUERY_DISPLAY_CATEGORIES } from '../config/material-categories.js';
 import { getStorageKindLabel } from '../config/system-subtypes.js';
 import {
   resolveSearchMode,
   searchDatasetRecords,
   suggestDatasetItems,
   parseModuleCodeFilter,
+  hasDatasetHitsInModule,
 } from './dataset-search.js';
 import { searchFormTemplates } from './form-template-search.js';
 import { searchDocuments } from './document-search.js';
+import {
+  searchWordFaithfulDocuments,
+  hasWordFaithfulHitsInModule,
+} from './word-faithful-search.js';
+import { getModuleSubtypeStats } from './module-browse.js';
 import { sortByRelevance } from './relevance.js';
 
 /** Excel 联想已在 suggestDatasetItems 内按 payload 计分，勿再用 dataItemName 二次过滤 */
@@ -49,17 +55,16 @@ function shouldSearchStorageKind(categoryList, kind) {
     if (!categoryList.length) return true;
     return categoryList.some((c) => c === 'composite' || !NON_EXCEL_CATEGORIES.has(c));
   }
-  const allowed = STORAGE_KIND_CATEGORIES[kind];
-  if (!allowed) return false;
-  if (!categoryList.length) return true;
-  if (allowed.some((c) => categoryList.includes(c))) return true;
-  // 表样 / 填报说明子类可能挂在非 norm 分类下（如逻辑）
-  if (kind === 'form_template' || kind === 'document') {
+  if (kind === 'form_template' || kind === 'document' || kind === 'word_faithful') {
+    if (!categoryList.length) return true;
     return listSubtypes().some(
       (st) => st.enabled && st.storageKind === kind && categoryList.includes(st.category)
     );
   }
-  return false;
+  const allowed = STORAGE_KIND_CATEGORIES[kind];
+  if (!allowed) return false;
+  if (!categoryList.length) return true;
+  return allowed.some((c) => categoryList.includes(c));
 }
 
 function moduleLabel(code) {
@@ -370,6 +375,74 @@ function searchCodeValueReports(keyword, { moduleCode, subtypeCode } = {}) {
   return reports;
 }
 
+function searchWordFaithfulReports(keyword, { moduleCode, subtypeCode, categories } = {}) {
+  const q = String(keyword ?? '').trim();
+  const result = searchWordFaithfulDocuments(q, {
+    moduleCode: moduleCode || undefined,
+    subtypeCode: subtypeCode || undefined,
+    categories: categories || undefined,
+  });
+  if (!result.items.length) return [];
+
+  const bySubtype = new Map();
+  for (const item of result.items) {
+    const stCode = String(item.subtypeCode || '').trim();
+    if (!stCode) continue;
+    const st = getSubtype(stCode);
+    if (!st?.enabled || st.storageKind !== 'word_faithful') continue;
+    if (!bySubtype.has(stCode)) bySubtype.set(stCode, { st, items: [] });
+    bySubtype.get(stCode).items.push(item);
+  }
+  if (!bySubtype.size) return [];
+
+  const reports = [];
+  for (const [stCode, { st, items }] of bySubtype) {
+    const sortedItems = sortByVersionLabelDesc(items, (item) => item.versionLabel);
+    const blocks = sortedItems.map((item) => ({
+      blockKey: item.versionLabel || String(item.id),
+      tableName: item.versionLabel || item.docTitle || item.docCode,
+      versionLabel: item.versionLabel || '',
+      items: [
+        {
+          dataItemName: item.docTitle || item.docCode,
+          snippet: q
+            ? `${item.hitCount} 处命中 · ${item.blockCount} 块`
+            : `${item.blockCount} 块`,
+          moduleCode: st.moduleCode,
+          moduleName: moduleLabel(st.moduleCode),
+          category: st.category || 'norm',
+          categoryLabel: getCategoryLabel(st.category || 'norm'),
+          entityKind: 'word_faithful',
+          entityId: item.id,
+          linkPath: `/word-faithful/${item.id}${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+          payload: {
+            doc_code: item.docCode,
+            version: item.versionLabel,
+            hit_count: item.hitCount,
+          },
+          fields: [
+            { key: '版本', value: item.versionLabel || '—' },
+            { key: '块数', value: String(item.blockCount ?? 0) },
+            ...(q ? [{ key: '命中数', value: String(item.hitCount ?? 0) }] : []),
+          ],
+        },
+      ],
+    }));
+
+    reports.push(
+      buildMaterialReport({
+        code: stCode,
+        name: st.name,
+        moduleCode: st.moduleCode,
+        category: st.category || 'norm',
+        layout: 'word_faithful',
+        blocks,
+      })
+    );
+  }
+  return reports;
+}
+
 function parseSubtypeFilter(input) {
   if (!input) return [];
   const list = Array.isArray(input)
@@ -464,12 +537,109 @@ function searchReportsForSubtype(q, st, { mode, categories, versionId, moduleCod
     reports.push(...searchScriptReports(q, opts));
   } else if (st.storageKind === 'code_value') {
     reports.push(...searchCodeValueReports(q, opts));
+  } else if (st.storageKind === 'word_faithful') {
+    reports.push(...searchWordFaithfulReports(q, { ...opts, categories }));
   }
 
   return {
     reports,
     aggregateBrowse: maybeAggregateBrowse(q, st, { mode, categories, moduleCode: mod }),
     ...fieldMeta,
+  };
+}
+
+function hasModuleSearchHits(keyword, mode, moduleCode) {
+  const q = String(keyword ?? '').trim();
+  const mod = normalizeModuleCode(moduleCode);
+  if (!q || !mod) return false;
+
+  const categoryList = resolveCategoryList(mode, undefined);
+
+  if (shouldSearchStorageKind(categoryList, 'excel')) {
+    if (hasDatasetHitsInModule(q, { mode, moduleCode: mod })) return true;
+  }
+  if (shouldSearchStorageKind(categoryList, 'word_faithful')) {
+    if (hasWordFaithfulHitsInModule(q, { moduleCode: mod, categories: categoryList })) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 查规范/查答疑：各模块是否存在跨子类命中（异步探测，不阻塞主搜索） */
+export function searchModuleHitMap(keyword, { mode } = {}) {
+  const q = String(keyword ?? '').trim();
+  const resolved = resolveSearchMode(mode);
+  if (!q || (resolved !== 'norm' && resolved !== 'qa')) {
+    return { keyword: q, mode: resolved, items: [] };
+  }
+
+  const items = listModules().map((m) => ({
+    moduleCode: m.code,
+    hasHits: hasModuleSearchHits(q, mode, m.code),
+  }));
+  return { keyword: q, mode: resolved, items };
+}
+
+function countSubtypeSearchHits(keyword, st, { mode, moduleCode } = {}) {
+  if (!st?.enabled) return 0;
+  const resolved = resolveSearchMode(mode);
+  const categories =
+    resolved === 'aggregate'
+      ? [normalizeCategory(st.category)]
+      : resolveCategoryList(mode, undefined);
+  const scoped = searchReportsForSubtype(String(keyword ?? '').trim(), st, {
+    mode,
+    categories,
+    moduleCode: moduleCode || st.moduleCode,
+  });
+  if (scoped.error) return 0;
+  return (scoped.reports || []).reduce((sum, r) => sum + (Number(r.hitCount) || 0), 0);
+}
+
+/** 查询页标签 / 子类 TAB 命中数（跨子类统计，不受当前选中子类影响） */
+export function searchTabHitStats(keyword, { mode, moduleCode, categories } = {}) {
+  const q = String(keyword ?? '').trim();
+  const mod = normalizeModuleCode(moduleCode);
+  if (!mod) {
+    return { keyword: q, mode: resolveSearchMode(mode), categories: [], subtypes: [] };
+  }
+
+  const categoryList = resolveCategoryList(mode, categories);
+  const categoriesParam = categoryList.length ? categoryList.join(',') : undefined;
+  const allSubtypeRows = getModuleSubtypeStats(mod);
+  const visibleSubtypeRows = categoriesParam
+    ? getModuleSubtypeStats(mod, categoriesParam)
+    : allSubtypeRows;
+
+  const categoryHits = new Map();
+  for (const row of allSubtypeRows) {
+    const st = getSubtype(row.code);
+    if (!st) continue;
+    const hitCount = countSubtypeSearchHits(q, st, { mode, moduleCode: mod });
+    const cat = normalizeCategory(row.category);
+    categoryHits.set(cat, (categoryHits.get(cat) || 0) + hitCount);
+  }
+
+  const subtypes = visibleSubtypeRows.map((row) => {
+    const st = getSubtype(row.code);
+    return {
+      code: row.code,
+      hitCount: st ? countSubtypeSearchHits(q, st, { mode, moduleCode: mod }) : 0,
+    };
+  });
+
+  const categoryItems = QUERY_DISPLAY_CATEGORIES.map((code) => ({
+    code,
+    hitCount: categoryHits.get(code) || 0,
+  }));
+
+  return {
+    keyword: q,
+    mode: resolveSearchMode(mode),
+    moduleCode: mod,
+    categories: categoryItems,
+    subtypes,
   };
 }
 
@@ -544,6 +714,14 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
   }
   if (shouldSearchStorageKind(categoryList, 'code_value')) {
     reports.push(...searchCodeValueReports(q, { moduleCode: mod || undefined }));
+  }
+  if (shouldSearchStorageKind(categoryList, 'word_faithful')) {
+    reports.push(
+      ...searchWordFaithfulReports(q, {
+        moduleCode: mod || undefined,
+        categories: categoryList,
+      })
+    );
   }
 
   const finalReports = mod

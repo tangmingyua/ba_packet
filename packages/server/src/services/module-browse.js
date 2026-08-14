@@ -86,7 +86,19 @@ function countCategoryRecords(mod, catCode) {
     )?.c || 0
   );
 
-  return excelCount + formCount + docCount + scriptCount;
+  const wordFaithfulCount = Number(
+    queryOne(
+      `
+      SELECT COUNT(*) AS c
+      FROM word_faithful_documents wf
+      JOIN subtypes s ON s.code = wf.subtype_code
+      WHERE wf.module_code = ? AND s.category IN (${placeholders})
+      `,
+      [mod, ...uniqueCats]
+    )?.c || 0
+  );
+
+  return excelCount + formCount + docCount + scriptCount + wordFaithfulCount;
 }
 
 /** 各标签在该模块下的记录数 + 是否有启用子类（查询页固定展示六类） */
@@ -130,6 +142,14 @@ function countExcelSubtypeRecords(subtypeCode, categoryList) {
 function countSubtypeRecords(st, categoryList) {
   if (st.storageKind === 'excel') {
     return countExcelSubtypeRecords(st.code, categoryList);
+  }
+  if (st.storageKind === 'word_faithful') {
+    return Number(
+      queryOne(
+        'SELECT COUNT(*) AS c FROM word_faithful_documents WHERE subtype_code = ? AND module_code = ?',
+        [st.code, st.moduleCode]
+      )?.c || 0
+    );
   }
   const tableMap = {
     form_template: 'form_templates',

@@ -490,6 +490,14 @@
               />
             </datalist>
           </label>
+          <label class="field span-2">
+            <span class="label">展示文件名</span>
+            <input
+              v-model="restoreImportDisplayName"
+              type="text"
+              placeholder="留空则使用 Word 解析标题；整本导入时可自定义展示名"
+            />
+          </label>
           <div class="field span-2">
             <span class="label">Word 文件</span>
             <div
@@ -608,6 +616,14 @@
               />
             </datalist>
           </label>
+          <label class="field span-2">
+            <span class="label">展示文件名</span>
+            <input
+              v-model="restoreImportDisplayName"
+              type="text"
+              placeholder="留空则使用文件名（去扩展名）；可填简短展示名"
+            />
+          </label>
           <div class="field span-2">
             <span class="label">Word 文件</span>
             <div
@@ -663,6 +679,7 @@
           <thead>
             <tr>
               <th>文档代号</th>
+              <th>展示名</th>
               <th>版本</th>
               <th>块数</th>
               <th>导入时间</th>
@@ -673,6 +690,7 @@
           <tbody>
             <tr v-for="item in wordFaithfulItems" :key="item.id">
               <td>{{ item.docCode }}</td>
+              <td>{{ item.docTitle || '—' }}</td>
               <td>{{ item.versionLabel || '—' }}</td>
               <td>{{ item.blockCount ?? '—' }}</td>
               <td>{{ item.importedAt }}</td>
@@ -1490,6 +1508,7 @@ const wordFaithfulMessageType = ref('');
 const wordFaithfulItems = ref([]);
 
 const restoreImportVersionLabel = ref('');
+const restoreImportDisplayName = ref('');
 
 const conversionScriptFile = ref(null);
 const conversionScriptModuleCode = ref('YBT');
@@ -2417,6 +2436,7 @@ async function doFillInstructionImport() {
       moduleCode: selectedImportSubtype.value?.moduleCode,
       subtypeCode: selectedImportSubtype.value?.code,
       versionLabel: String(restoreImportVersionLabel.value || '').trim(),
+      displayFileName: String(restoreImportDisplayName.value || '').trim(),
     });
     fillInstructionMessageType.value = 'success';
     fillInstructionMessage.value = result.message || '导入成功';
@@ -2482,9 +2502,10 @@ async function doWordFaithfulImport() {
       moduleCode: selectedImportSubtype.value?.moduleCode,
       subtypeCode: selectedImportSubtype.value?.code,
       versionLabel: String(restoreImportVersionLabel.value || '').trim(),
+      displayFileName: String(restoreImportDisplayName.value || '').trim(),
     });
     wordFaithfulMessageType.value = 'success';
-    wordFaithfulMessage.value = `已导入 ${result.docCode}（${result.blockCount} 块）`;
+    wordFaithfulMessage.value = `已导入 ${result.docTitle || result.docCode}（${result.blockCount} 块）`;
     wordFaithfulFile.value = null;
     await refreshWordFaithfulList();
   } catch (e) {

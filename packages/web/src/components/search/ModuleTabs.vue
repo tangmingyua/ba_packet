@@ -22,7 +22,12 @@
         role="tab"
         @click="select(m.code)"
       >
-        {{ m.name }}
+        <span class="module-tab-label">{{ m.name }}</span>
+        <span
+          v-if="hitMap[m.code]"
+          class="module-tab-hit-dot"
+          aria-hidden="true"
+        />
       </button>
     </div>
 
@@ -45,6 +50,7 @@ import { ref } from 'vue';
 defineProps({
   modelValue: { type: String, default: '' },
   options: { type: Array, default: () => [] },
+  hitMap: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'change']);
@@ -134,6 +140,7 @@ function onWheel(e) {
 
 .module-tab {
   flex-shrink: 0;
+  position: relative;
   padding: 4px 12px 5px;
   border: 1px solid transparent;
   border-bottom: none;
@@ -146,6 +153,26 @@ function onWheel(e) {
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   line-height: 1.4;
   min-height: 26px;
+}
+
+.module-tab-label {
+  display: inline-block;
+}
+
+.module-tab-hit-dot {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 1px var(--bg-subtle);
+  pointer-events: none;
+}
+
+.module-tab.active .module-tab-hit-dot {
+  box-shadow: 0 0 0 1px var(--bg);
 }
 
 .module-tab:hover {

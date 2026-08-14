@@ -141,6 +141,24 @@ describe('word-faithful-import', () => {
     assert.equal(blockCount, second.blockCount);
   });
 
+  it('displayFileName 写入 doc_title', () => {
+    const buffer = buildMinimalDocx(['展示名测试正文']);
+    const result = importWordFaithfulDocument(buffer, {
+      fileName: 'very-long-original-file-name.docx',
+      moduleCode: 'EAST',
+      subtypeCode: SUBTYPE,
+      versionLabel: 'V3',
+      displayFileName: '征信答疑',
+    });
+    assert.equal(result.docTitle, '征信答疑');
+    assert.equal(result.docCode, 'very-long-original-file-name');
+
+    const row = queryOne('SELECT doc_title FROM word_faithful_documents WHERE id = ?', [
+      result.id,
+    ]);
+    assert.equal(row.doc_title, '征信答疑');
+  });
+
   it('POST /api/word-faithful/import', async () => {
     createSubtypeVersion(SUBTYPE, { versionLabel: 'V2', sheetName: '-' });
     const buffer = buildMinimalDocx(['API 导入测试']);

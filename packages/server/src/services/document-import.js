@@ -340,11 +340,17 @@ export function importFillInstructionDocument(buffer, options = {}) {
   let createdCount = 0;
   let replacedCount = 0;
 
+  const displayFileName = String(
+    options.displayFileName ?? options.displayTitle ?? ''
+  ).trim();
+  const applyDisplayTitle = displayFileName && parsed.documents.length === 1;
+
   for (const doc of parsed.documents) {
     const docVersion = importVersion || EMPTY_VERSION;
+    const docToSave = applyDisplayTitle ? { ...doc, docTitle: displayFileName } : doc;
     const existing = findDocument(doc.docCode, docVersion);
     const result = saveDocumentTree(
-      doc,
+      docToSave,
       fileHash,
       fileName,
       moduleCode,
@@ -374,12 +380,12 @@ export function importFillInstructionDocument(buffer, options = {}) {
       overwritten: result.overwritten,
       importAction: result.importAction,
       docCode: doc.docCode,
-      docTitle: doc.docTitle,
+      docTitle: docToSave.docTitle,
       reportCode: getMappedReportCode(result.id, docVersion),
       suggestedReportCode: defaultReportCodeForDocCode(doc.docCode),
       nodeCount: countTreeNodes(doc.tree),
       blockCount: doc.blocks.length,
-      message: `${actionLabel}：${doc.docCode}（${doc.docTitle}）`,
+      message: `${actionLabel}：${doc.docCode}（${docToSave.docTitle}）`,
     });
   }
 

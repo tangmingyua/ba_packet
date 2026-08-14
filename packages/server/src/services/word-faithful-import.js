@@ -142,7 +142,10 @@ export function importWordFaithfulDocument(buffer, options = {}) {
   const previewHtml = buildPreviewHtml(units);
   const docxBlob = Buffer.from(buffer).toString('base64');
   const docCode = docCodeFromImportFileName(fileName);
-  const docTitle = docCode;
+  const displayFileName = String(
+    options.displayFileName ?? options.displayTitle ?? ''
+  ).trim();
+  const docTitle = displayFileName || docCode;
   const resolvedSubtype = subtypeCode || resolveSubtypeCode('word_faithful', moduleCode);
 
   const existing = findDocument(resolvedSubtype, docCode, versionLabel);
@@ -210,7 +213,7 @@ export function listWordFaithfulDocuments({ moduleCode, subtypeCode } = {}) {
     sql += ' AND subtype_code = ?';
     params.push(String(subtypeCode).trim());
   }
-  sql += ' ORDER BY doc_code, version_label, id';
+  sql += ' ORDER BY version_label DESC, id DESC';
   return queryAll(sql, params).map(mapDocumentRow);
 }
 

@@ -128,4 +128,31 @@ describe('module-browse', () => {
     assert.ok(qaOnly.some((s) => s.code === 'TO_EAST_FAQ'));
     assert.ok(!qaOnly.some((s) => s.code === 'CONVERSION_SCRIPT'));
   });
+
+  it('getModuleCategoryStats 答疑计数含 Word 原样显示', () => {
+    upsertSubtype({
+      code: 'YBT_WF_QA_TEST',
+      name: 'Word 答疑测试',
+      moduleCode: 'YBT',
+      category: 'qa',
+      storageKind: 'word_faithful',
+      enabled: true,
+      sortOrder: 996,
+    });
+    const before = getModuleCategoryStats('YBT').find((s) => s.code === 'qa')?.count || 0;
+    run(
+      `INSERT INTO word_faithful_documents (
+         doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash, block_count
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['wf-qa-test', '测试 Word 答疑', 'v1', 'YBT_WF_QA_TEST', 'YBT', 't.docx', 'hash-wf-qa', 3]
+    );
+    const after = getModuleCategoryStats('YBT').find((s) => s.code === 'qa')?.count || 0;
+    assert.equal(after, before + 1);
+
+    const qaSubtypes = getModuleSubtypeStats('YBT', ['qa']);
+    const wf = qaSubtypes.find((s) => s.code === 'YBT_WF_QA_TEST');
+    assert.ok(wf);
+    assert.equal(wf.storageKind, 'word_faithful');
+    assert.equal(wf.count, 1);
+  });
 });

@@ -37,7 +37,7 @@
         <template v-else-if="detail">
           <header class="preview-header">
             <div>
-              <h2>{{ detail.docCode }} — {{ detail.docTitle }}</h2>
+              <h2>{{ detail.docTitle || detail.docCode }}</h2>
               <p class="preview-meta">
                 {{ detail.nodeCount ?? 0 }} 节点 · 导入 {{ detail.importedAt }} ·
                 {{ detail.sourceFileName || '—' }}

@@ -8,7 +8,9 @@ import {
 } from '../src/services/dataset-config.js';
 import { importConversionScript } from '../src/services/conversion-script-import.js';
 import { importModuleCodeValues } from '../src/services/code-value.js';
-import { unifiedSearch } from '../src/services/unified-search.js';
+import { unifiedSearch, searchModuleHitMap, searchTabHitStats } from '../src/services/unified-search.js';
+import { upsertSubtype } from '../src/services/dataset-config.js';
+import { run } from '../src/db/database.js';
 import XLSX from 'xlsx';
 
 function codeValueHeaderRow() {
@@ -84,6 +86,138 @@ describe('unified-search', () => {
   it('qa 模式仅检索 Excel 答疑', () => {
     const result = unifiedSearch('不存在的关键词xyz', { mode: 'qa' });
     assert.equal(result.reports.length, 0);
+  });
+
+  it('qa 模式含 Word 原样显示子类检索', () => {
+    upsertSubtype({
+      code: 'YBT_WF_QA_SEARCH',
+      name: 'Word 答疑检索',
+      moduleCode: 'YBT',
+      category: 'qa',
+      storageKind: 'word_faithful',
+      enabled: true,
+      sortOrder: 995,
+    });
+    run(
+      `INSERT INTO word_faithful_documents (
+         doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash, block_count, preview_html
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'wf-search',
+        '征信答疑示例',
+        'V2026',
+        'YBT_WF_QA_SEARCH',
+        'YBT',
+        'qa.docx',
+        'hash-wf-search',
+        2,
+        '<div></div>',
+      ]
+    );
+    run(
+      `INSERT INTO word_faithful_blocks (document_id, sort_order, block_kind, text)
+       VALUES ((SELECT id FROM word_faithful_documents WHERE doc_code = 'wf-search'), 0, 'paragraph', ?)`,
+      ['即期及衍生品交易信息']
+    );
+
+    const empty = unifiedSearch('', {
+      mode: 'qa',
+      moduleCode: 'YBT',
+      subtypeCode: 'YBT_WF_QA_SEARCH',
+    });
+    assert.equal(empty.reports.length, 1);
+    assert.equal(empty.reports[0].layout, 'word_faithful');
+    assert.equal(empty.reports[0].hitCount, 1);
+
+    const hit = unifiedSearch('即期', {
+      mode: 'qa',
+      moduleCode: 'YBT',
+      subtypeCode: 'YBT_WF_QA_SEARCH',
+    });
+    assert.equal(hit.reports.length, 1);
+    assert.ok(hit.reports[0].hitCount >= 1);
+  });
+
+  it('searchModuleHitMap 跨模块探测 Word 答疑命中', () => {
+    upsertSubtype({
+      code: 'YBT_WF_QA_HITMAP',
+      name: 'Word 答疑命中图',
+      moduleCode: 'YBT',
+      category: 'qa',
+      storageKind: 'word_faithful',
+      enabled: true,
+      sortOrder: 996,
+    });
+    run(
+      `INSERT INTO word_faithful_documents (
+         doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash, block_count, preview_html
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'wf-hitmap',
+        '命中图示例',
+        'V2026',
+        'YBT_WF_QA_HITMAP',
+        'YBT',
+        'qa.docx',
+        'hash-wf-hitmap',
+        1,
+        '<div></div>',
+      ]
+    );
+    run(
+      `INSERT INTO word_faithful_blocks (document_id, sort_order, block_kind, text)
+       VALUES ((SELECT id FROM word_faithful_documents WHERE doc_code = 'wf-hitmap'), 0, 'paragraph', ?)`,
+      ['跨模块红点关键词']
+    );
+
+    const empty = searchModuleHitMap('', { mode: 'qa' });
+    assert.equal(empty.items.length, 0);
+
+    const map = searchModuleHitMap('跨模块红点', { mode: 'qa' });
+    assert.ok(map.items.length >= 2);
+    const ybt = map.items.find((i) => i.moduleCode === 'YBT');
+    const imas = map.items.find((i) => i.moduleCode === 'IMAS');
+    assert.ok(ybt?.hasHits);
+    assert.equal(imas?.hasHits, false);
+  });
+
+  it('searchTabHitStats 返回标签与子类命中数', () => {
+    upsertSubtype({
+      code: 'YBT_WF_QA_TABSTATS',
+      name: 'Word 答疑 Tab 统计',
+      moduleCode: 'YBT',
+      category: 'qa',
+      storageKind: 'word_faithful',
+      enabled: true,
+      sortOrder: 997,
+    });
+    run(
+      `INSERT INTO word_faithful_documents (
+         doc_code, doc_title, version_label, subtype_code, module_code, source_file_name, file_hash, block_count, preview_html
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'wf-tabstats',
+        'Tab 统计示例',
+        'V2026',
+        'YBT_WF_QA_TABSTATS',
+        'YBT',
+        'qa.docx',
+        'hash-wf-tabstats',
+        1,
+        '<div></div>',
+      ]
+    );
+    run(
+      `INSERT INTO word_faithful_blocks (document_id, sort_order, block_kind, text)
+       VALUES ((SELECT id FROM word_faithful_documents WHERE doc_code = 'wf-tabstats'), 0, 'paragraph', ?)`,
+      ['Tab统计专用关键词']
+    );
+
+    const stats = searchTabHitStats('Tab统计专用', { mode: 'qa', moduleCode: 'YBT' });
+    const qaCat = stats.categories.find((c) => c.code === 'qa');
+    assert.ok(qaCat?.hitCount >= 1);
+    const wfSubtype = stats.subtypes.find((s) => s.code === 'YBT_WF_QA_TABSTATS');
+    assert.ok(wfSubtype?.hitCount >= 1);
   });
 
   it('码值子类检索不受 OR/AND 优先级影响，空关键词仅返回指定模块', () => {

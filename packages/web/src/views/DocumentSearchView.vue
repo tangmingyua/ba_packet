@@ -62,7 +62,7 @@
         <p v-if="loadingDetail" class="muted">加载说明…</p>
         <template v-else-if="detail">
           <header class="preview-header">
-            <h2>{{ detail.docCode }} — {{ detail.docTitle }}</h2>
+            <h2>{{ detail.docTitle || detail.docCode }}</h2>
             <p class="preview-meta">
               关键词「{{ lastKeyword }}」
               <span v-if="focusNodeId"> · 已定位节点 #{{ focusNodeId }}</span>

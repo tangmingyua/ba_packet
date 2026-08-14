@@ -45,7 +45,7 @@
         <template v-else-if="detail">
           <header class="preview-header">
             <div>
-              <h2>{{ detail.docCode }} — {{ detail.docTitle }}</h2>
+              <h2>{{ detail.docTitle || detail.docCode }}</h2>
               <p class="preview-meta">
                 {{ detail.nodeCount ?? 0 }} 节点
                 <span v-if="detail.reportCode"> · 表样 {{ detail.reportCode }}</span>

@@ -434,6 +434,35 @@ function buildFieldLabels(fieldMappingsByVersion) {
   return labels;
 }
 
+/** 模块下是否存在 Excel 配置类命中（与 queryMatchingRows 同规则，LIMIT 1 探测） */
+export function hasDatasetHitsInModule(keyword, { mode, moduleCode } = {}) {
+  const q = String(keyword ?? '').trim();
+  const mod = String(moduleCode ?? '').trim();
+  if (!q || !mod) return false;
+  if (!tableExists('data_records')) return false;
+
+  const matchSql = buildSearchMatchSql(mode);
+  const matchParams = buildSearchMatchParams(q, mode);
+  const { clause, params: categoryParams } = categoryFilterClause(mode, undefined);
+
+  const hit = queryOne(
+    `SELECT 1 AS hit ${RECORD_JOINS}
+     WHERE ${matchSql}${clause} AND s.module_code = ?
+     LIMIT 1`,
+    [...matchParams, ...categoryParams, mod]
+  );
+  if (hit) return true;
+
+  const fallbackParams = [...categoryParams, mod];
+  let fallbackSql = `
+    SELECT r.payload ${RECORD_JOINS}
+    WHERE 1 = 1${clause} AND s.module_code = ?
+    LIMIT 300
+  `;
+  const sample = queryAll(fallbackSql, fallbackParams);
+  return sample.some((row) => payloadMatchesKeyword(parsePayload(row.payload), q, mode));
+}
+
 export function getDatasetStats() {
   if (!tableExists('data_records')) {
     return { records: 0, datasets: 0, subtypes: 0 };

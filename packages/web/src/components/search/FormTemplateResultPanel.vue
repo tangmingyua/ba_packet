@@ -44,7 +44,7 @@
         <template v-else-if="detail">
           <header class="preview-header">
             <div>
-              <h2>{{ detail.reportCode }} — {{ detail.reportTitle }}</h2>
+              <h2>{{ formTemplateDisplayTitle(detail) }}</h2>
               <p class="preview-meta">
                 版本 {{ detail.versionLabel }} · {{ detail.rowCount }} 行 × {{ detail.colCount }} 列
                 <span v-if="searchMode && keyword"> · 关键词「{{ keyword }}」</span>
@@ -114,7 +114,7 @@ import {
   searchFormTemplateCells,
 } from '../../api';
 import FormTemplateMatrix from '../form-template/FormTemplateMatrix.vue';
-import { formTemplateListSheetLabel } from '../../utils/formTemplateListDisplay.js';
+import { formTemplateDisplayTitle, formTemplateListSheetLabel } from '../../utils/formTemplateListDisplay.js';
 import { resolveIndicatorKeyAtCell } from '../../utils/formTemplateIndicator.js';
 
 const props = defineProps({

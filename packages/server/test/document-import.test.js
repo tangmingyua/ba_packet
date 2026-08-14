@@ -17,9 +17,30 @@ import {
 } from '../src/services/document-import.js';
 import { queryAll, queryOne } from '../src/db/database.js';
 import { stripRomanIndicatorPrefix } from '../src/services/docx-fill-instruction-parser.js';
+import { strToU8, zipSync } from 'fflate';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DOCX = path.resolve(__dirname, '../../../参考/文档/1104合并填报说明202601.docx');
+
+function buildMinimalDocx(paragraphs) {
+  const body = paragraphs
+    .map((p) => `<w:p><w:r><w:t>${String(p).replace(/&/g, '&amp;')}</w:t></w:r></w:p>`)
+    .join('');
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>${body}<w:sectPr/></w:body>
+</w:document>`;
+  const files = {
+    '[Content_Types].xml': strToU8(
+      `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`
+    ),
+    '_rels/.rels': strToU8(
+      `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`
+    ),
+    'word/document.xml': strToU8(documentXml),
+  };
+  return Buffer.from(zipSync(files));
+}
 
 function authHeaders(extra = {}) {
   return { authorization: `Bearer ${getApiToken()}`, ...extra };
@@ -114,13 +135,22 @@ describe('document-import step1', () => {
 
   it('deleteDocument 删除记录与映射', () => {
     importFillInstructionDocument(sampleBuffer, { fileName: 'del.docx' });
-    const g01 = listDocuments().find((d) => d.docCode === 'G01');
+    const g01 = listDocuments().find(
+      (d) => d.docCode === 'G01' && d.sourceFileName === 'del.docx'
+    );
     assert.ok(g01);
+    assert.ok(
+      queryOne('SELECT document_id FROM report_doc_mapping WHERE document_id = ?', [g01.id])
+    );
 
     const deleted = deleteDocument(g01.id);
     assert.equal(deleted.docCode, 'G01');
     assert.equal(listDocuments().find((d) => d.id === g01.id), undefined);
-    assert.equal(getDocumentByReport('G0100'), null);
+    assert.equal(getDocument(g01.id), null);
+    assert.equal(
+      queryOne('SELECT document_id FROM report_doc_mapping WHERE document_id = ?', [g01.id]),
+      null
+    );
   });
 
   it('POST /api/document/import 与 GET /api/documents', async () => {
@@ -229,5 +259,28 @@ describe('document-import step1', () => {
       [g26.id]
     );
     assert.ok(romanRows.some((r) => r.indicator_key === 'Ⅲ_4'));
+  });
+
+  it('整本导入时 displayFileName 覆盖 doc_title', () => {
+    const buffer = buildMinimalDocx(['整本导入测试段落']);
+    const result = importFillInstructionDocument(buffer, {
+      fileName: 'whole-book.docx',
+      displayFileName: '自定义展示名',
+    });
+    assert.equal(result.documentCount, 1);
+    assert.equal(result.docTitle, '自定义展示名');
+    const stored = getDocument(result.id);
+    assert.equal(stored.docTitle, '自定义展示名');
+  });
+
+  it('合并拆分多文档时忽略 displayFileName', () => {
+    const result = importFillInstructionDocument(sampleBuffer, {
+      fileName: 'split-ignore-display.docx',
+      displayFileName: '不应生效',
+    });
+    assert.ok(result.documentCount > 1);
+    const g01 = listDocuments().find((d) => d.docCode === 'G01' && d.sourceFileName === 'split-ignore-display.docx');
+    assert.ok(g01);
+    assert.notEqual(g01.docTitle, '不应生效');
   });
 });

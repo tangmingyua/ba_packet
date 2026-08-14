@@ -25,5 +25,13 @@ export function formTemplateListSheetLabel(item, options = {}) {
   return stripFormTemplateListSheetSuffix(raw);
 }
 
+/** 表样预览标题：优先表题，避免 reportCode 与 reportTitle 相同时重复 */
+export function formTemplateDisplayTitle(detail) {
+  const title = String(detail?.reportTitle ?? '').trim();
+  const code = String(detail?.reportCode ?? '').trim();
+  if (title) return title;
+  return code || '—';
+}
+
 /** @deprecated 使用 stripFormTemplateListSheetSuffix */
 export const strip1104FormTemplateListSuffix = stripFormTemplateListSheetSuffix;

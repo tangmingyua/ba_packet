@@ -35,7 +35,11 @@ function mapDocumentRow(row) {
     id: Number(row.id),
     docCode: row.doc_code,
     docTitle: row.doc_title || '',
+    versionLabel: row.version_label || '',
     blockCount: Number(row.block_count || 0),
+    subtypeCode: row.subtype_code || '',
+    moduleCode: row.module_code || '',
+    subtypeCategory: row.subtype_category || '',
   };
 }
 
@@ -80,19 +84,73 @@ function mapBlockHitRow(row, keyword) {
   };
 }
 
-function loadDocuments({ subtypeCode, moduleCode } = {}) {
-  let sql = `SELECT id, doc_code, doc_title, block_count FROM word_faithful_documents WHERE 1=1`;
+function loadDocuments({ subtypeCode, moduleCode, categories } = {}) {
+  let sql = `
+    SELECT wf.id, wf.doc_code, wf.doc_title, wf.version_label, wf.block_count,
+           wf.subtype_code, wf.module_code, s.category AS subtype_category
+    FROM word_faithful_documents wf
+    JOIN subtypes s ON s.code = wf.subtype_code
+    WHERE s.enabled = 1
+  `;
   const params = [];
   if (subtypeCode) {
-    sql += ' AND subtype_code = ?';
+    sql += ' AND wf.subtype_code = ?';
     params.push(String(subtypeCode).trim());
   }
   if (moduleCode) {
-    sql += ' AND module_code = ?';
+    sql += ' AND wf.module_code = ?';
     params.push(String(moduleCode).trim());
   }
-  sql += ' ORDER BY doc_code';
+  if (categories?.length) {
+    const unique = [...new Set(categories.map((c) => String(c).trim()).filter(Boolean))];
+    if (unique.length) {
+      const placeholders = unique.map(() => '?').join(',');
+      sql += ` AND s.category IN (${placeholders})`;
+      params.push(...unique);
+    }
+  }
+  sql += ' ORDER BY wf.version_label DESC, wf.id DESC';
   return queryAll(sql, params);
+}
+
+/** 模块下是否存在 Word 原样显示命中（与 searchWordFaithfulDocuments 同规则，LIMIT 1 探测） */
+export function hasWordFaithfulHitsInModule(keyword, { moduleCode, categories } = {}) {
+  const q = String(keyword ?? '').trim();
+  const mod = String(moduleCode ?? '').trim();
+  if (!q || !mod) return false;
+
+  const like = matchesKeywordSql(q);
+  let categoryClause = '';
+  const categoryParams = [];
+  if (categories?.length) {
+    const unique = [...new Set(categories.map((c) => String(c).trim()).filter(Boolean))];
+    if (unique.length) {
+      categoryClause = ` AND s.category IN (${unique.map(() => '?').join(',')})`;
+      categoryParams.push(...unique);
+    }
+  }
+
+  const blockHit = queryOne(
+    `SELECT 1 AS hit
+     FROM word_faithful_blocks b
+     JOIN word_faithful_documents wf ON wf.id = b.document_id
+     JOIN subtypes s ON s.code = wf.subtype_code
+     WHERE s.enabled = 1 AND wf.module_code = ? AND LOWER(b.text) LIKE ?${categoryClause}
+     LIMIT 1`,
+    [mod, like, ...categoryParams]
+  );
+  if (blockHit) return true;
+
+  const metaHit = queryOne(
+    `SELECT 1 AS hit
+     FROM word_faithful_documents wf
+     JOIN subtypes s ON s.code = wf.subtype_code
+     WHERE s.enabled = 1 AND wf.module_code = ?
+       AND (LOWER(wf.doc_code) LIKE ? OR LOWER(COALESCE(wf.doc_title, '')) LIKE ?)${categoryClause}
+     LIMIT 1`,
+    [mod, like, like, ...categoryParams]
+  );
+  return Boolean(metaHit);
 }
 
 export function searchWordFaithfulDocuments(keyword, options = {}) {
@@ -101,6 +159,7 @@ export function searchWordFaithfulDocuments(keyword, options = {}) {
   const documents = loadDocuments({
     subtypeCode: options.subtypeCode,
     moduleCode: options.moduleCode,
+    categories: options.categories,
   });
 
   if (!q) {

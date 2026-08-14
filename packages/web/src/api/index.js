@@ -63,6 +63,18 @@ export function searchRegulatory(q, mode = 'aggregate', { categories, moduleCode
   return request(`/api/search?${query}`);
 }
 
+export function fetchModuleHitMap(q, mode = 'norm', { signal } = {}) {
+  const query = new URLSearchParams({ q, mode });
+  return request(`/api/search/module-hit-map?${query}`, { signal });
+}
+
+export function fetchTabHitStats(q, mode = 'aggregate', { moduleCode, categories, signal } = {}) {
+  const query = new URLSearchParams({ q, mode });
+  if (moduleCode) query.set('moduleCode', moduleCode);
+  if (categories?.length) query.set('categories', categories.join(','));
+  return request(`/api/search/tab-hit-stats?${query}`, { signal });
+}
+
 export function getSearchableCategories(moduleCode) {
   const query = new URLSearchParams();
   if (moduleCode) query.set('moduleCode', moduleCode);
@@ -306,12 +318,13 @@ export function getFormTemplateSearchHits(id, q, { hitsLimit } = {}) {
   return request(`/api/form-templates/${id}/search-hits?${query}`);
 }
 
-export async function importFillInstructionDocument(file, { moduleCode, subtypeCode, versionLabel } = {}) {
+export async function importFillInstructionDocument(file, { moduleCode, subtypeCode, versionLabel, displayFileName } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (moduleCode) form.append('moduleCode', moduleCode);
   if (subtypeCode) form.append('subtypeCode', subtypeCode);
   if (versionLabel) form.append('versionLabel', String(versionLabel).trim());
+  if (displayFileName) form.append('displayFileName', String(displayFileName).trim());
   const response = await fetch(`${getApiBase()}/api/document/import`, {
     method: 'POST',
     headers: withAuthHeaders(),
@@ -379,12 +392,13 @@ export function getDocumentSearchHitsApi(id, q, { hitsLimit } = {}) {
   return request(`/api/documents/${id}/search-hits?${query}`);
 }
 
-export async function importWordFaithfulDocument(file, { moduleCode, subtypeCode, versionLabel } = {}) {
+export async function importWordFaithfulDocument(file, { moduleCode, subtypeCode, versionLabel, displayFileName } = {}) {
   const form = new FormData();
   form.append('file', file);
   if (moduleCode) form.append('moduleCode', moduleCode);
   if (subtypeCode) form.append('subtypeCode', subtypeCode);
   if (versionLabel) form.append('versionLabel', String(versionLabel).trim());
+  if (displayFileName) form.append('displayFileName', String(displayFileName).trim());
   const response = await fetch(`${getApiBase()}/api/word-faithful/import`, {
     method: 'POST',
     headers: withAuthHeaders(),

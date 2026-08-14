@@ -77,7 +77,7 @@ import {
 import {
   getDatasetStats,
 } from './services/dataset-search.js';
-import { unifiedSearch, unifiedSuggest } from './services/unified-search.js';
+import { unifiedSearch, unifiedSuggest, searchModuleHitMap, searchTabHitStats } from './services/unified-search.js';
 import {
   ensureApiToken,
   getCorsOptions,
@@ -137,6 +137,28 @@ app.get('/api/search', async (request, reply) => {
   } catch (error) {
     console.error('[api/search]', error);
     return reply.code(500).send({ message: error.message || '搜索失败' });
+  }
+});
+
+app.get('/api/search/module-hit-map', async (request, reply) => {
+  try {
+    const { q, mode } = request.query || {};
+    return searchModuleHitMap(q, { mode });
+  } catch (error) {
+    console.error('[api/search/module-hit-map]', error);
+    return reply.code(500).send({ message: error.message || '模块命中探测失败', items: [] });
+  }
+});
+
+app.get('/api/search/tab-hit-stats', async (request, reply) => {
+  try {
+    const { q, mode, moduleCode, categories } = request.query || {};
+    return searchTabHitStats(q, { mode, moduleCode, categories });
+  } catch (error) {
+    console.error('[api/search/tab-hit-stats]', error);
+    return reply
+      .code(500)
+      .send({ message: error.message || '标签命中统计失败', categories: [], subtypes: [] });
   }
 });
 
@@ -545,6 +567,7 @@ app.post('/api/document/import', async (request, reply) => {
   let moduleCode = '';
   let subtypeCode = '';
   let versionLabel = '';
+  let displayFileName = '';
 
   try {
     for await (const part of request.parts()) {
@@ -561,6 +584,8 @@ app.post('/api/document/import', async (request, reply) => {
         subtypeCode = part.value || subtypeCode;
       } else if (part.fieldname === 'versionLabel') {
         versionLabel = part.value || versionLabel;
+      } else if (part.fieldname === 'displayFileName') {
+        displayFileName = part.value || displayFileName;
       }
     }
   } catch (error) {
@@ -578,6 +603,7 @@ app.post('/api/document/import', async (request, reply) => {
       moduleCode: moduleCode || undefined,
       subtypeCode: subtypeCode || undefined,
       versionLabel: versionLabel || undefined,
+      displayFileName: displayFileName || undefined,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });
@@ -685,6 +711,7 @@ app.post('/api/word-faithful/import', async (request, reply) => {
   let moduleCode = '';
   let subtypeCode = '';
   let versionLabel = '';
+  let displayFileName = '';
 
   try {
     for await (const part of request.parts()) {
@@ -699,6 +726,8 @@ app.post('/api/word-faithful/import', async (request, reply) => {
         subtypeCode = part.value || subtypeCode;
       } else if (part.fieldname === 'versionLabel') {
         versionLabel = part.value || versionLabel;
+      } else if (part.fieldname === 'displayFileName') {
+        displayFileName = part.value || displayFileName;
       }
     }
   } catch (error) {
@@ -715,6 +744,7 @@ app.post('/api/word-faithful/import', async (request, reply) => {
       moduleCode: moduleCode || undefined,
       subtypeCode: subtypeCode || undefined,
       versionLabel: versionLabel || undefined,
+      displayFileName: displayFileName || undefined,
     });
   } catch (error) {
     return reply.code(400).send({ message: error.message || '导入失败' });

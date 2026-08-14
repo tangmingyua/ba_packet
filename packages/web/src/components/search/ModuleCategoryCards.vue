@@ -9,8 +9,9 @@
         :class="{
           selected: isSelected(cat.code),
           disabled: isDisabled(cat),
+          'has-records': !isDisabled(cat) && (cat.count ?? 0) > 0,
+          'no-records': isDisabled(cat) || !(cat.count ?? 0),
         }"
-        :style="cardStyle(cat.code)"
         :aria-pressed="!single && isSelected(cat.code)"
         :aria-checked="single ? isSelected(cat.code) : undefined"
         :role="single ? 'radio' : undefined"
@@ -98,11 +99,6 @@ function clearAll() {
 function theme(code) {
   return getCategoryCardTheme(code);
 }
-
-function cardStyle(code) {
-  const t = theme(code);
-  return { '--card-bg': t.bg, '--card-text': t.text || '#fff' };
-}
 </script>
 
 <style scoped>
@@ -122,11 +118,9 @@ function cardStyle(code) {
 
 .category-card {
   position: relative;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   border-radius: 10px;
   padding: 6px 5px 5px;
-  background: var(--card-bg);
-  color: var(--card-text);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -134,43 +128,62 @@ function cardStyle(code) {
   justify-content: center;
   gap: 3px;
   min-height: 60px;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   transition:
-    transform 0.15s ease,
     box-shadow 0.15s ease,
     border-color 0.15s ease,
-    filter 0.15s ease;
+    background-color 0.15s ease;
 }
 
-.category-card:not(.selected):not(.disabled) {
-  filter: saturate(0.72) brightness(0.94);
-  opacity: 0.82;
+.category-card.has-records {
+  background-color: #d4e8da;
+  color: #245032;
+  border-color: #9bc4a8;
+}
+
+.category-card.no-records {
+  background-color: #e8ebee;
+  color: #5a6570;
+  border-color: #ced4da;
 }
 
 .category-card.disabled {
+  background-color: #eceef0;
+  color: #9aa3ad;
+  border-color: #dde1e6;
   cursor: not-allowed;
-  filter: grayscale(0.85) brightness(0.72);
-  opacity: 0.55;
   box-shadow: none;
 }
 
-.category-card:hover:not(.disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
-  filter: none;
-  opacity: 1;
+.category-card.has-records:not(.disabled):hover {
+  border-color: #3f8b58;
+  box-shadow: 0 2px 8px rgba(36, 80, 50, 0.12);
 }
 
-.category-card.selected {
-  border-color: #fff;
-  box-shadow:
-    0 0 0 3px rgba(15, 23, 42, 0.55),
-    0 0 0 5px rgba(255, 255, 255, 0.95),
-    0 6px 16px rgba(15, 23, 42, 0.22);
-  transform: translateY(-2px) scale(1.03);
-  filter: none;
-  opacity: 1;
+.category-card.no-records:not(.disabled):hover {
+  border-color: #8a939c;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.category-card.has-records.selected {
+  background-color: #c2dfca;
+  border-color: #3f8b58;
+  border-width: 2px;
+  box-shadow: 0 2px 10px rgba(36, 80, 50, 0.14);
   z-index: 1;
+}
+
+.category-card.no-records.selected {
+  background-color: #dde1e5;
+  border-color: #8a939c;
+  border-width: 2px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
+  z-index: 1;
+}
+
+.category-card.disabled.selected {
+  border-color: #9aa3ad;
+  border-width: 2px;
 }
 
 .card-check {
@@ -180,28 +193,50 @@ function cardStyle(code) {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  color: #111827;
+  color: #fff;
   font-size: 11px;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.category-card.has-records .card-check {
+  background: #3f8b58;
+}
+
+.category-card.no-records .card-check {
+  background: #8a939c;
+}
+
+.category-card.disabled .card-check {
+  background: #9aa3ad;
 }
 
 .card-icon {
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
+}
+
+.category-card.has-records .card-icon {
+  background: rgba(36, 80, 50, 0.14);
+}
+
+.category-card.no-records .card-icon {
+  background: rgba(90, 101, 112, 0.1);
+}
+
+.category-card.disabled .card-icon {
+  background: rgba(154, 163, 173, 0.12);
 }
 
 .card-label {

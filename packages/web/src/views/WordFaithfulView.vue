@@ -82,8 +82,22 @@
             </li>
           </ul>
 
-          <div v-show="!useFallbackHtml" ref="previewRef" class="wf-preview" />
-          <div v-show="useFallbackHtml" ref="fallbackRef" class="wf-preview wf-fallback" v-html="fallbackHtml" />
+          <div class="wf-preview-shell">
+            <div
+              v-show="!useFallbackHtml"
+              ref="previewRef"
+              class="wf-preview"
+              @click.capture="preventPreviewHashLinkNavigation"
+            />
+            <div
+              v-show="useFallbackHtml"
+              ref="fallbackRef"
+              class="wf-preview wf-fallback"
+              v-html="fallbackHtml"
+              @click.capture="preventPreviewHashLinkNavigation"
+            />
+            <WordPreviewZoomBar v-if="!rendering" v-model="previewZoom" />
+          </div>
         </template>
         <p v-else-if="items.length && !activeId" class="muted empty-hint">请从左侧选择文档</p>
       </div>
@@ -104,9 +118,13 @@ import {
 } from '../api';
 import {
   applyFindHighlight,
+  applyPreviewZoom,
   clearFindHighlights,
+  PREVIEW_ZOOM,
+  preventPreviewHashLinkNavigation,
   resolveMatchIndexForHit,
 } from '../utils/wordFaithfulPreview.js';
+import WordPreviewZoomBar from '../components/search/WordPreviewZoomBar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -129,6 +147,7 @@ const findTotal = ref(0);
 const findActiveIndex = ref(0);
 const findMessage = ref('');
 const activeHitIndex = ref(-1);
+const previewZoom = ref(PREVIEW_ZOOM.default);
 
 const activeId = computed(() => {
   const id = Number(route.params.id);
@@ -180,6 +199,15 @@ function resetFindState() {
   if (root) clearFindHighlights(root);
 }
 
+function syncPreviewZoom() {
+  applyPreviewZoom(activePreviewRoot(), previewZoom.value);
+}
+
+function resetPreviewZoom() {
+  previewZoom.value = PREVIEW_ZOOM.default;
+  syncPreviewZoom();
+}
+
 function applyFindAtIndex(index, { hitIndex = -1 } = {}) {
   const root = activePreviewRoot();
   const q = inlineKeyword.value.trim();
@@ -188,7 +216,8 @@ function applyFindAtIndex(index, { hitIndex = -1 } = {}) {
     return;
   }
 
-  const result = applyFindHighlight(root, q, index);
+  const scrollEl = useFallbackHtml.value ? fallbackRef.value : previewRef.value;
+  const result = applyFindHighlight(root, q, index, scrollEl);
   findTotal.value = result.total;
   findActiveIndex.value = result.activeIndex;
   activeHitIndex.value = hitIndex;
@@ -235,6 +264,8 @@ async function renderDocxPreview(id) {
     fallbackHtml.value = detail.value?.previewHtml || '';
   } finally {
     rendering.value = false;
+    await nextTick();
+    syncPreviewZoom();
   }
 }
 
@@ -263,6 +294,7 @@ async function loadDetail(id) {
   loadingDetail.value = true;
   loadError.value = '';
   resetFindState();
+  resetPreviewZoom();
   useFallbackHtml.value = false;
   fallbackHtml.value = '';
   try {
@@ -319,6 +351,7 @@ async function runInlineSearch({ skipRoute = false } = {}) {
 function stepFind(delta) {
   if (findTotal.value <= 0) return;
   const next = (findActiveIndex.value + delta + findTotal.value) % findTotal.value;
+  activeHitIndex.value = -1;
   applyFindAtIndex(next);
 }
 
@@ -327,6 +360,7 @@ function focusHit(hit, hitIndex, { skipRoute = false } = {}) {
   const q = inlineKeyword.value.trim();
   if (!root || !q) return;
 
+  clearFindHighlights(root);
   const matchIndex = resolveMatchIndexForHit(root, q, hit, hitIndex);
   applyFindAtIndex(matchIndex, { hitIndex });
 
@@ -373,6 +407,15 @@ watch(
     }
   }
 );
+
+watch(previewZoom, () => {
+  syncPreviewZoom();
+});
+
+watch(useFallbackHtml, async () => {
+  await nextTick();
+  syncPreviewZoom();
+});
 
 refreshList();
 </script>
@@ -494,6 +537,10 @@ refreshList();
   flex: 0 0 auto;
   font-size: 0.75rem;
   color: var(--text-muted, #666);
+}
+
+.wf-preview-shell {
+  position: relative;
 }
 
 .wf-preview {
