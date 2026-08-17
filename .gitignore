@@ -14,6 +14,7 @@ packages/desktop/release/
 # 桌面打包产物（安装包 / 免安装 / server.exe 等）
 packages/desktop/bundle/
 packages/desktop/src-tauri/target/
+packages/license-issuer/src-tauri/target/
 
 # 数据库与运行时密钥（勿提交）
 packages/server/data/

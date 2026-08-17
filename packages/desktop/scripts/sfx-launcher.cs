@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using System.Text;
 
 internal static class Launcher
 {
@@ -38,19 +39,23 @@ internal static class Launcher
                 Product);
 
             string mainExe = Path.Combine(targetDir, Product + ".exe");
-
-            // 每次启动单文件 exe 都解压覆盖程序与 web/（zip 不含 app-data，用户库保留）
             Directory.CreateDirectory(targetDir);
-            using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
-            using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
+
+            string zipBuildId = ReadZipEntryText(exeBytes, zipStart, zipLen, "dist-build-id.txt");
+            string existingBuildId = ReadTextIfExists(Path.Combine(targetDir, "dist-build-id.txt"));
+            bool sameBuild = !string.IsNullOrEmpty(zipBuildId)
+                && string.Equals(zipBuildId.Trim(), (existingBuildId ?? "").Trim(), StringComparison.Ordinal);
+
+            if (!sameBuild || !File.Exists(mainExe))
             {
-                foreach (var entry in archive.Entries)
+                try
                 {
-                    if (string.IsNullOrEmpty(entry.Name)) continue;
-                    string dest = Path.Combine(targetDir, entry.FullName);
-                    string dir = Path.GetDirectoryName(dest);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                    entry.ExtractToFile(dest, true);
+                    ExtractZip(exeBytes, zipStart, zipLen, targetDir);
+                }
+                catch (IOException ex)
+                {
+                    if (!File.Exists(mainExe)) throw;
+                    LogError("解压时文件被占用，改为启动已有程序：" + ex.Message);
                 }
             }
 
@@ -73,6 +78,56 @@ internal static class Launcher
         {
             LogError("启动失败：" + ex);
             return 99;
+        }
+    }
+
+    private static void ExtractZip(byte[] exeBytes, int zipStart, int zipLen, string targetDir)
+    {
+        using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name)) continue;
+                string dest = Path.Combine(targetDir, entry.FullName);
+                string dir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                entry.ExtractToFile(dest, true);
+            }
+        }
+    }
+
+    private static string ReadZipEntryText(byte[] exeBytes, int zipStart, int zipLen, string name)
+    {
+        try
+        {
+            using (var ms = new MemoryStream(exeBytes, zipStart, zipLen))
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Read))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    if (!string.Equals(entry.FullName.Replace('\\', '/'), name, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    using (var reader = new StreamReader(entry.Open(), Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static string ReadTextIfExists(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

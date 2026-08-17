@@ -1,0 +1,31 @@
+[package]
+name = "ba-license-issuer"
+version = "1.0.0"
+description = "口袋BA授权工具"
+authors = ["ba-packet"]
+edition = "2021"
+
+[lib]
+name = "ba_license_issuer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ed25519-dalek = { version = "2.1", features = ["pkcs8", "pem", "std", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+arboard = "3"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

@@ -1,3 +1,7 @@
+function invoke(cmd, args) {
+  return window.__TAURI__.core.invoke(cmd, args);
+}
+
 const machineEl = document.getElementById('machineId');
 const licenseEl = document.getElementById('license');
 const issueBtn = document.getElementById('issue');
@@ -7,7 +11,7 @@ const fpEl = document.getElementById('fp');
 const matchEl = document.getElementById('match');
 
 async function refreshStatus() {
-  const status = await window.licenseIssuer.status();
+  const status = await invoke('license_status');
   fpEl.textContent = status.fingerprint || '未知';
   if (status.matchesApp) {
     matchEl.className = 'ok';
@@ -23,20 +27,24 @@ issueBtn.addEventListener('click', async () => {
   issueMsg.textContent = '';
   issueMsg.className = 'msg';
   try {
-    const { code } = await window.licenseIssuer.issue(machineEl.value);
+    const { code } = await invoke('license_issue', { machineId: machineEl.value });
     licenseEl.value = code;
     issueMsg.className = 'msg ok';
     issueMsg.textContent = '已生成，请复制发给对方。';
   } catch (error) {
     issueMsg.className = 'msg warn';
-    issueMsg.textContent = error?.message || '签发失败';
+    issueMsg.textContent = error?.message || String(error) || '签发失败';
   }
 });
 
 copyBtn.addEventListener('click', async () => {
   const text = licenseEl.value.trim();
   if (!text) return;
-  await window.licenseIssuer.copy(text);
+  try {
+    await invoke('copy_text', { text });
+  } catch {
+    await navigator.clipboard.writeText(text);
+  }
   copyBtn.textContent = '已复制';
   setTimeout(() => {
     copyBtn.textContent = '复制';
@@ -45,5 +53,5 @@ copyBtn.addEventListener('click', async () => {
 
 refreshStatus().catch((error) => {
   matchEl.className = 'warn';
-  matchEl.textContent = error?.message || '无法读取密钥';
+  matchEl.textContent = error?.message || String(error) || '无法读取密钥';
 });

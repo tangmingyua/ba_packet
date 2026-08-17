@@ -3,51 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "dist:win": "electron-builder --win portable --x64"
+    "dev": "tauri dev",
+    "start": "tauri dev",
+    "dist:win": "scripts\\build-win.cmd"
   },
   "devDependencies": {
-    "electron": "34.0.0",
-    "electron-builder": "^25.1.8"
-  },
-  "build": {
-    "appId": "com.ba.packet.license-issuer",
-    "productName": "口袋BA授权工具",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "main.js",
-      "preload.cjs",
-      "index.html",
-      "renderer.js"
-    ],
-    "extraResources": [
-      {
-        "from": "../server/src/license",
-        "to": "license",
-        "filter": ["*.js"]
-      },
-      {
-        "from": "keys",
-        "to": "keys",
-        "filter": ["*.pem"]
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ]
-    },
-    "portable": {
-      "artifactName": "口袋BA授权工具.exe"
-    },
-    "asar": true
+    "@tauri-apps/cli": "^2.11.4"
   }
 }

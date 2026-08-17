@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-issuer"
+description = "Allow the license issuer UI to read key status, issue codes, and copy text."
+commands.allow = ["license_status", "license_issue", "copy_text"]

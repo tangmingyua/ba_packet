@@ -241,6 +241,11 @@ describe('form-template-catalog-browse', () => {
     }
   });
 
+  it('大集中也走表样目录入口', () => {
+    const result = browseFormTemplateCatalog({ moduleCode: 'DJZ' });
+    assert.equal(result.found, true);
+  });
+
   it('未配置目录入口的主类 found=false', () => {
     const result = browseFormTemplateCatalog({ moduleCode: 'YBT' });
     assert.equal(result.found, false);

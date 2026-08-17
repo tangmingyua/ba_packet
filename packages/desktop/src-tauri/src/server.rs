@@ -232,106 +232,83 @@ fn ensure_db_key(app_data_dir: &Path) -> Result<String, String> {
 
 
 
-fn verify_server_auth(port: u16, token: &str) -> Result<(), String> {
+enum ServerProbe {
+    Ready,
+    Pending,
+    Stale,
+}
 
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{port}"))
-
-        .map_err(|error| error.to_string())?;
-
-    stream
-
-        .set_read_timeout(Some(Duration::from_secs(3)))
-
-        .map_err(|error| error.to_string())?;
-
-    stream
-
-        .set_write_timeout(Some(Duration::from_secs(3)))
-
-        .map_err(|error| error.to_string())?;
-
-
-
-    let request = format!(
-
-        "GET /api/dataset/catalog HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-
-    );
-
-    stream
-
-        .write_all(request.as_bytes())
-
-        .map_err(|error| error.to_string())?;
-
-
-
-    let mut response = vec![0u8; 1024];
-
-    let read = stream.read(&mut response).map_err(|error| error.to_string())?;
-
-    let text = String::from_utf8_lossy(&response[..read]);
-
-    if text.contains("HTTP/1.1 200") || text.contains("HTTP/1.0 200") {
-
-        return Ok(());
-
+fn http_status_ok(port: u16, path: &str) -> bool {
+    let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{port}")) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
     }
+    let mut response = vec![0u8; 256];
+    let Ok(read) = stream.read(&mut response) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&response[..read]);
+    text.contains("HTTP/1.1 200") || text.contains("HTTP/1.0 200")
+}
 
-
-
-    Err(format!(
-
-        "端口 {port} 上的本地服务令牌不匹配，可能被旧进程占用"
-
-    ))
-
+fn probe_server(port: u16, token: &str, session_path: &Path) -> ServerProbe {
+    // 未激活时业务 API 会 403，探活只能用开放的 /api/health。
+    if !http_status_ok(port, "/api/health") {
+        return ServerProbe::Pending;
+    }
+    let Ok(session) = fs::read_to_string(session_path) else {
+        return ServerProbe::Pending;
+    };
+    if session.contains(token) {
+        ServerProbe::Ready
+    } else {
+        ServerProbe::Stale
+    }
 }
 
 
 
-fn wait_for_server(child: &mut Child, port: u16, token: &str, timeout_ms: u64) -> Result<(), String> {
-
+fn wait_for_server(
+    child: &mut Child,
+    port: u16,
+    token: &str,
+    session_path: &Path,
+    timeout_ms: u64,
+) -> Result<(), String> {
     let addr: SocketAddr = format!("127.0.0.1:{port}")
-
         .parse::<SocketAddr>()
-
         .map_err(|error| error.to_string())?;
-
     let started = Instant::now();
 
-
-
     loop {
-
         if let Ok(Some(status)) = child.try_wait() {
-
             return Err(format!("本地服务异常退出: {status}"));
-
         }
-
-
 
         if TcpStream::connect_timeout(&addr, Duration::from_millis(400)).is_ok() {
-
-            return verify_server_auth(port, token);
-
+            match probe_server(port, token, session_path) {
+                ServerProbe::Ready => return Ok(()),
+                ServerProbe::Stale => {
+                    return Err(format!(
+                        "端口 {port} 上的本地服务令牌不匹配，可能被旧进程占用"
+                    ));
+                }
+                ServerProbe::Pending => {}
+            }
         }
-
-
 
         if started.elapsed() > Duration::from_millis(timeout_ms) {
-
             return Err("本地服务启动超时".into());
-
         }
 
-
-
         thread::sleep(Duration::from_millis(300));
-
     }
-
 }
 
 
@@ -521,36 +498,28 @@ fn launch_server(
 
     let mut child = spawn_server(paths, db_path, db_key, api_token, session_path)?;
 
-    if wait_for_server(&mut child, PORT, api_token, 30_000).is_err() {
-
-        let _ = child.kill();
-
-        kill_process_listening_on_port(PORT);
-
-        thread::sleep(Duration::from_millis(800));
-
-        let mut child = spawn_server(paths, db_path, db_key, api_token, session_path)?;
-
-        wait_for_server(&mut child, PORT, api_token, 30_000)?;
-
+    if wait_for_server(&mut child, PORT, api_token, session_path, 30_000).is_ok() {
         return Ok(ServerProcess {
-
             child,
-
             api_token: api_token.to_string(),
-
         });
-
     }
 
+    let _ = child.kill();
+    let _ = child.wait();
+    kill_process_listening_on_port(PORT);
+    thread::sleep(Duration::from_millis(800));
 
+    let mut child = spawn_server(paths, db_path, db_key, api_token, session_path)?;
+    if let Err(error) = wait_for_server(&mut child, PORT, api_token, session_path, 30_000) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
 
     Ok(ServerProcess {
-
         child,
-
         api_token: api_token.to_string(),
-
     })
 
 }

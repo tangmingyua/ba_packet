@@ -37,6 +37,35 @@ fn build_init_script(api_token: &str) -> String {
     )
 }
 
+fn report_startup_error(message: &str) {
+    eprintln!("{message}");
+    #[cfg(windows)]
+    unsafe {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        let text: Vec<u16> = OsStr::new(message)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let caption: Vec<u16> = OsStr::new("口袋BA")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10);
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" {
+    fn MessageBoxW(
+        hwnd: *mut std::ffi::c_void,
+        lptext: *const u16,
+        lpcaption: *const u16,
+        utype: u32,
+    ) -> i32;
+}
+
 fn resolve_release_web_url() -> Result<WebviewUrl, String> {
     if uses_sidecar_web_ui() {
         let base = api_base_url();
@@ -56,7 +85,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![get_api_config])
         .setup(|app| {
-            let server = start_server(app.handle())?;
+            let server = match start_server(app.handle()) {
+                Ok(server) => server,
+                Err(error) => {
+                    report_startup_error(&format!("启动失败：{error}"));
+                    return Err(error.into());
+                }
+            };
             let init_script = build_init_script(&server.api_token);
             *app.state::<AppState>().server.lock().unwrap() = Some(server);
 
