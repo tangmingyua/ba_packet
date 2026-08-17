@@ -456,7 +456,14 @@ fn spawn_server(
         .env("BA_API_TOKEN", api_token)
         .env("BA_PORT", PORT.to_string())
         .env("BA_HOST", "127.0.0.1")
-        .env("BA_RUNTIME_SESSION_PATH", session_path);
+        .env("BA_RUNTIME_SESSION_PATH", session_path)
+        .env(
+            "BA_LICENSE_PATH",
+            session_path
+                .parent()
+                .map(|dir| dir.join("license.json"))
+                .unwrap_or_else(|| session_path.with_file_name("license.json")),
+        );
 
     if !db_key.is_empty() {
         command.env("BA_DB_KEY", db_key);

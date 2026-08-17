@@ -187,13 +187,28 @@
           :empty-text="emptyText"
         />
 
-        <FormTemplateResultPanel
-          v-else-if="selectedStorageKind === 'form_template'"
-          :keyword="lastKeyword"
-          :module-code="moduleCode"
-          :subtype-code="selectedSubtypeCode"
-          :empty-text="emptyText"
-        />
+        <template v-else-if="selectedStorageKind === 'form_template'">
+          <p v-if="formTemplateCatalogError" class="feedback error">{{ formTemplateCatalogError }}</p>
+          <DynamicResultTable
+            v-if="showFormTemplateCatalog"
+            :rows="filteredRows"
+            :column-meta="columnMeta"
+            :keyword="lastKeyword"
+            :title="'表样目录'"
+            :empty-text="emptyText"
+            @form-template-link="onFormTemplateCatalogPick"
+          />
+          <FormTemplateResultPanel
+            v-else
+            :keyword="lastKeyword"
+            :module-code="moduleCode"
+            :subtype-code="selectedSubtypeCode"
+            :empty-text="emptyText"
+            :show-back="formTemplateDetailOpen"
+            :focus-report-code="formTemplateFocusReportCode"
+            @back="onBackToFormTemplateCatalog"
+          />
+        </template>
 
         <DocumentResultPanel
           v-else-if="selectedStorageKind === 'document'"
@@ -272,11 +287,13 @@
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
+  fetchFormTemplateCatalog,
   fetchModuleHitMap,
   fetchTabHitStats,
   getDatasetCatalog,
   getModuleCategoryStats,
   getModuleSubtypeStats,
+  listFormTemplates,
   searchRegulatory,
   suggestItems,
 } from '../api';
@@ -311,6 +328,9 @@ import {
   normalizeActiveFilters,
 } from '../composables/useDynamicTable.js';
 import { buildAggregateBrowseItemsFromRows } from '../utils/aggregateBrowseClient.js';
+import { formTemplateReportCodesMatch } from '../../../server/src/utils/form-template-report-code.js';
+import { compareVersionLabelsDesc } from '../utils/versionSort.js';
+import { FORM_TEMPLATE_CATALOG_ENTRY_MODULES } from '../constants/formTemplateCatalog.js';
 
 const emit = defineEmits(['search-state']);
 
@@ -341,6 +361,10 @@ const reports = ref([]);
 const aggregateBrowseData = ref(null);
 const showAggregateBrowse = ref(false);
 const detailFromAggregateBrowse = ref(false);
+const formTemplateCatalogFound = ref(false);
+const formTemplateDetailOpen = ref(false);
+const formTemplateFocusReportCode = ref('');
+const formTemplateCatalogError = ref('');
 const activeReportCode = ref('');
 const elapsedMs = ref(0);
 const scriptListFetchKey = ref(0);
@@ -464,6 +488,13 @@ const selectedSubtypeLabel = computed(() => {
   return selectedSubtypeMeta.value?.name || selectedSubtypeCode.value;
 });
 
+const showFormTemplateCatalog = computed(
+  () =>
+    selectedStorageKind.value === 'form_template' &&
+    formTemplateCatalogFound.value &&
+    !formTemplateDetailOpen.value
+);
+
 const selectedStorageKind = computed(() => selectedSubtypeMeta.value?.storageKind || '');
 
 const useSubtypeScopedRender = computed(
@@ -503,6 +534,7 @@ const aggregateLinkColumnLabel = computed(() => {
 });
 
 const showResultFilterBar = computed(() => {
+  if (showFormTemplateCatalog.value) return true;
   if (showAggregateBrowse.value && selectedStorageKind.value === 'excel') return true;
   if (showAggregateBrowse.value) return false;
   if (useSubtypeScopedRender.value) {
@@ -671,6 +703,58 @@ function onBackFromAggregateDetail() {
   detailFromAggregateBrowse.value = false;
   applySubtypeDefaultFilters(null);
   showAggregateBrowse.value = true;
+}
+
+function resetFormTemplateCatalogState() {
+  formTemplateCatalogFound.value = false;
+  formTemplateDetailOpen.value = false;
+  formTemplateFocusReportCode.value = '';
+  formTemplateCatalogError.value = '';
+}
+
+function shouldUseFormTemplateCatalog() {
+  return (
+    selectedStorageKind.value === 'form_template' &&
+    FORM_TEMPLATE_CATALOG_ENTRY_MODULES.has(String(moduleCode.value || '').trim())
+  );
+}
+
+function pickLatestFormTemplate(items, reportCode) {
+  const matched = (items || []).filter((item) =>
+    formTemplateReportCodesMatch(item.reportCode, reportCode)
+  );
+  if (!matched.length) return null;
+  return [...matched].sort((a, b) => compareVersionLabelsDesc(a.versionLabel, b.versionLabel))[0];
+}
+
+async function onFormTemplateCatalogPick({ reportCode }) {
+  const code = String(reportCode || '').trim();
+  formTemplateCatalogError.value = '';
+  if (!code) {
+    formTemplateCatalogError.value = '未找到对应表样';
+    return;
+  }
+  try {
+    const res = await listFormTemplates({
+      moduleCode: moduleCode.value || undefined,
+      subtypeCode: selectedSubtypeCode.value || undefined,
+    });
+    const picked = pickLatestFormTemplate(res.items || [], code);
+    if (!picked) {
+      formTemplateCatalogError.value = '未找到对应表样';
+      return;
+    }
+    formTemplateFocusReportCode.value = picked.reportCode || code;
+    formTemplateDetailOpen.value = true;
+  } catch (e) {
+    formTemplateCatalogError.value = e.message || '未找到对应表样';
+  }
+}
+
+function onBackToFormTemplateCatalog() {
+  formTemplateDetailOpen.value = false;
+  formTemplateFocusReportCode.value = '';
+  formTemplateCatalogError.value = '';
 }
 
 watch(
@@ -974,6 +1058,7 @@ function resetAll() {
   aggregateBrowseData.value = null;
   showAggregateBrowse.value = false;
   detailFromAggregateBrowse.value = false;
+  resetFormTemplateCatalogState();
   activeReportCode.value = '';
   error.value = '';
   searched.value = false;
@@ -1279,6 +1364,7 @@ function clearQueryConditions() {
   aggregateBrowseData.value = null;
   showAggregateBrowse.value = false;
   detailFromAggregateBrowse.value = false;
+  resetFormTemplateCatalogState();
   activeReportCode.value = '';
   applySearchFieldMappings({});
 }
@@ -1482,6 +1568,33 @@ async function doSearch() {
     lastKeyword.value = result.keyword;
     applySearchFieldMappings(result);
     await ensureCatalogSubtypes();
+    formTemplateCatalogError.value = '';
+    formTemplateDetailOpen.value = false;
+    formTemplateFocusReportCode.value = '';
+    formTemplateCatalogFound.value = false;
+
+    if (shouldUseFormTemplateCatalog()) {
+      const catalog = await fetchFormTemplateCatalog(moduleCode.value, q, {
+        subtypeCode: selectedSubtypeCode.value || undefined,
+      });
+      if (catalog?.found) {
+        applySearchFieldMappings(catalog);
+        reports.value = catalog.reports || [];
+        formTemplateCatalogFound.value = true;
+        applyAggregateBrowseState({ aggregateBrowse: null });
+        applyDefaultFilterColumns(catalog);
+        pickDefaultTabs();
+        appliedTableFilter.value = tableFilter.value;
+        appliedCustomFilters.value = normalizeActiveFilters(customFilters.value);
+        searched.value = true;
+        scriptListFetchKey.value += 1;
+        await router.replace({ path: '/', query: buildSearchQuery() });
+        void refreshModuleHitMap(q);
+        void refreshTabHitStats(q);
+        return;
+      }
+    }
+
     if (shouldEnterAggregateBrowse(result)) {
       detailFromAggregateBrowse.value = false;
       applySubtypeDefaultFilters(result);

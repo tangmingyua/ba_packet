@@ -88,18 +88,19 @@
               <template v-if="isLinkCell(row, col)">
                 <div
                   class="cell-inner cell-link"
+                  :class="{ 'cell-link--text-only': isFormTemplateLinkCell(row, col) }"
                   role="button"
                   tabindex="0"
-                  title="点击查看码值表"
-                  @click.stop="openCodeValueLookup(row, col)"
-                  @keydown.enter.prevent="openCodeValueLookup(row, col)"
+                  :title="linkCellTitle(row, col)"
+                  @click.stop="onLinkCellClick(row, col)"
+                  @keydown.enter.prevent="onLinkCellClick(row, col)"
                 >
                   <span
                     class="cell-link-text"
                     :class="{ 'cell-desc': isDesc(col), 'cell-keyword': isKeywordHighlight(col) }"
                     v-html="isKeywordHighlight(col) ? renderCellHtml(row, col) || '—' : escapeCellHtml(cellText(row, col)) || '—'"
                   />
-                  <span class="link-icon" aria-hidden="true">🔗</span>
+                  <span v-if="!isFormTemplateLinkCell(row, col)" class="link-icon" aria-hidden="true">🔗</span>
                 </div>
               </template>
 
@@ -273,6 +274,7 @@ import {
   PAGE_SIZE,
   ROW_LINK_COLUMNS_KEY,
   ROW_LINK_DICT_TEXT_KEY,
+  ROW_FORM_TEMPLATE_LINK_COLUMNS_KEY,
   ROW_MODULE_CODE_KEY,
   buildPageList,
   copyText,
@@ -293,7 +295,7 @@ const props = defineProps({
   showBack: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['page-change', 'back']);
+const emit = defineEmits(['page-change', 'back', 'form-template-link']);
 
 const currentPage = ref(1);
 const pageSizeLocal = ref(
@@ -437,9 +439,30 @@ function cellClass(row, col) {
   };
 }
 
-function isLinkCell(row, col) {
+function isCodeValueLinkCell(row, col) {
   const links = row[ROW_LINK_COLUMNS_KEY];
   return Array.isArray(links) && links.includes(col);
+}
+
+function isFormTemplateLinkCell(row, col) {
+  const links = row[ROW_FORM_TEMPLATE_LINK_COLUMNS_KEY];
+  return Array.isArray(links) && links.includes(col);
+}
+
+function isLinkCell(row, col) {
+  return isFormTemplateLinkCell(row, col) || isCodeValueLinkCell(row, col);
+}
+
+function linkCellTitle(row, col) {
+  return isFormTemplateLinkCell(row, col) ? '点击查看表样' : '点击查看码值表';
+}
+
+function onLinkCellClick(row, col) {
+  if (isFormTemplateLinkCell(row, col)) {
+    emit('form-template-link', { reportCode: cellText(row, col), row, col });
+    return;
+  }
+  openCodeValueLookup(row, col);
 }
 
 function escapeCellHtml(text) {
@@ -957,8 +980,17 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.cell-link--text-only {
+  padding-right: 0;
+}
+
+.cell-link .cell-link-text {
+  color: #2563eb;
+}
+
 .cell-link:hover .cell-link-text {
   color: #2563eb;
+  text-decoration: underline;
 }
 
 .cell-link-text {

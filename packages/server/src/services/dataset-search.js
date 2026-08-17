@@ -19,6 +19,7 @@ import {
   expandCategoriesForStorage,
 } from '../config/material-categories.js';
 import { compareVersionLabelsDesc } from '../utils/version-sort.js';
+import { sqlExcludeHiddenSubtypeNames } from '../config/query-hidden-subtypes.js';
 
 function parsePayload(raw) {
   try {
@@ -127,6 +128,10 @@ function queryMatchingRows({
   } else if (subtypes.length > 1) {
     moduleClause += ` AND s.code IN (${subtypes.map(() => '?').join(',')})`;
     params.push(...subtypes);
+  } else {
+    const hidden = sqlExcludeHiddenSubtypeNames('s');
+    moduleClause += hidden.clause;
+    params.push(...hidden.params);
   }
   const select = distinct
     ? `SELECT DISTINCT r.std_data_item, r.std_subtype, r.std_version,
@@ -445,18 +450,19 @@ export function hasDatasetHitsInModule(keyword, { mode, moduleCode } = {}) {
   const matchParams = buildSearchMatchParams(q, mode);
   const { clause, params: categoryParams } = categoryFilterClause(mode, undefined);
 
+  const hidden = sqlExcludeHiddenSubtypeNames('s');
   const hit = queryOne(
     `SELECT 1 AS hit ${RECORD_JOINS}
-     WHERE ${matchSql}${clause} AND s.module_code = ?
+     WHERE ${matchSql}${clause} AND s.module_code = ?${hidden.clause}
      LIMIT 1`,
-    [...matchParams, ...categoryParams, mod]
+    [...matchParams, ...categoryParams, mod, ...hidden.params]
   );
   if (hit) return true;
 
-  const fallbackParams = [...categoryParams, mod];
+  const fallbackParams = [...categoryParams, mod, ...hidden.params];
   let fallbackSql = `
     SELECT r.payload ${RECORD_JOINS}
-    WHERE 1 = 1${clause} AND s.module_code = ?
+    WHERE 1 = 1${clause} AND s.module_code = ?${hidden.clause}
     LIMIT 300
   `;
   const sample = queryAll(fallbackSql, fallbackParams);

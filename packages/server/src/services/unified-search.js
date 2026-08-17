@@ -26,6 +26,7 @@ function mergeSuggestItems(excelItems, materialItems, keyword, limit) {
   return [...excelItems, ...materialSorted].slice(0, limit);
 }
 import { listModules, getSubtype, listSubtypes } from './dataset-config.js';
+import { isQueryHiddenSubtype } from '../config/query-hidden-subtypes.js';
 import { buildAggregateBrowseIndex } from './aggregate-browse.js';
 import { compareVersionLabelsDesc, sortByVersionLabelDesc } from '../utils/version-sort.js';
 
@@ -58,7 +59,11 @@ function shouldSearchStorageKind(categoryList, kind) {
   if (kind === 'form_template' || kind === 'document' || kind === 'word_faithful') {
     if (!categoryList.length) return true;
     return listSubtypes().some(
-      (st) => st.enabled && st.storageKind === kind && categoryList.includes(st.category)
+      (st) =>
+        st.enabled &&
+        !isQueryHiddenSubtype(st) &&
+        st.storageKind === kind &&
+        categoryList.includes(st.category)
     );
   }
   const allowed = STORAGE_KIND_CATEGORIES[kind];
@@ -656,7 +661,7 @@ export function unifiedSearch(keyword, { mode, categories, moduleCode, versionId
     let aggregateBrowse = null;
     for (const code of subtypeList) {
       const st = getSubtype(code);
-      if (!st || !st.enabled || (mod && st.moduleCode !== mod)) continue;
+      if (!st || !st.enabled || isQueryHiddenSubtype(st) || (mod && st.moduleCode !== mod)) continue;
       const scoped = searchReportsForSubtype(q, st, {
         mode,
         categories: categoryList,
@@ -841,7 +846,7 @@ export function unifiedSuggest(keyword, options = {}) {
     let materialItems = [];
     for (const code of subtypeList) {
       const st = getSubtype(code);
-      if (!st || !st.enabled || (mod && st.moduleCode !== mod)) continue;
+      if (!st || !st.enabled || isQueryHiddenSubtype(st) || (mod && st.moduleCode !== mod)) continue;
       if (st.storageKind === 'excel') {
         excelItems.push(
           ...suggestDatasetItems(q, {

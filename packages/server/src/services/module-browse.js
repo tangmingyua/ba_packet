@@ -10,6 +10,11 @@ import {
   expandCategoryStorageCodes,
 } from '../config/material-categories.js';
 import { listVersionRecordsView, listSubtypes } from './dataset-config.js';
+import {
+  FORM_TEMPLATE_CATALOG_ENTRY_MODULES,
+  isQueryHiddenSubtype,
+  sqlExcludeHiddenSubtypeNames,
+} from '../config/query-hidden-subtypes.js';
 
 function normalizeModuleCode(code) {
   const mod = String(code || '').trim();
@@ -37,6 +42,7 @@ function countCategoryRecords(mod, catCode) {
   const uniqueCats = [...new Set(categoryList.map((c) => normalizeCategory(c)))];
   const placeholders = uniqueCats.map(() => '?').join(',');
 
+  const hidden = sqlExcludeHiddenSubtypeNames('s');
   const excelCount = Number(
     queryOne(
       `
@@ -44,9 +50,9 @@ function countCategoryRecords(mod, catCode) {
       FROM data_records r
       JOIN subtype_versions sv ON sv.id = r.subtype_version_id
       JOIN subtypes s ON s.code = sv.subtype_code
-      WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) IN (${placeholders})
+      WHERE s.module_code = ? AND COALESCE(r.std_category, s.category) IN (${placeholders})${hidden.clause}
       `,
-      [mod, ...uniqueCats]
+      [mod, ...uniqueCats, ...hidden.params]
     )?.c || 0
   );
 
@@ -106,9 +112,10 @@ export function getModuleCategoryStats(moduleCode) {
   const mod = normalizeModuleCode(moduleCode);
   const subtypeCats = new Set();
   for (const row of queryAll(
-    `SELECT category FROM subtypes WHERE module_code = ? AND enabled = 1`,
+    `SELECT name, category FROM subtypes WHERE module_code = ? AND enabled = 1`,
     [mod]
   )) {
+    if (isQueryHiddenSubtype(row)) continue;
     subtypeCats.add(normalizeCategory(row.category));
   }
 
@@ -212,13 +219,19 @@ function subtypeMatchesCategories(st, categoryList) {
   return false;
 }
 
+function moduleHasFormTemplateCatalog(moduleCode) {
+  return FORM_TEMPLATE_CATALOG_ENTRY_MODULES.has(String(moduleCode || '').trim());
+}
+
 /** 当前模块下可选子类（有资料且匹配已选标签） */
 export function getModuleSubtypeStats(moduleCode, categories) {
   const mod = normalizeModuleCode(moduleCode);
   const categoryList = parseCategoryFilter(categories);
+  const keepFormTemplateEntry = moduleHasFormTemplateCatalog(mod);
 
   return listSubtypes()
     .filter((st) => st.moduleCode === mod && st.enabled)
+    .filter((st) => !isQueryHiddenSubtype(st))
     .filter((st) => subtypeMatchesCategories(st, categoryList))
     .map((st) => ({
       code: st.code,
@@ -228,7 +241,11 @@ export function getModuleSubtypeStats(moduleCode, categories) {
       storageKind: st.storageKind,
       count: countSubtypeRecords(st, categoryList),
     }))
-    .filter((st) => st.count > 0)
+    .filter(
+      (st) =>
+        st.count > 0 ||
+        (keepFormTemplateEntry && st.storageKind === 'form_template')
+    )
     .sort((a, b) => {
       const rank = (st) => {
         if (st.category === 'norm' && st.storageKind === 'excel') return 0;
@@ -358,8 +375,13 @@ function browseExcelCategory({ moduleCode, category, keyword, limit, offset }) {
   const q = String(keyword || '').trim();
 
   const placeholders = catCodes.map(() => '?').join(',');
+  const hidden = sqlExcludeHiddenSubtypeNames('s');
   const where = ['s.module_code = ?', `COALESCE(r.std_category, s.category) IN (${placeholders})`];
   const params = [mod, ...catCodes];
+  if (hidden.clause) {
+    where.push(hidden.clause.replace(/^\s*AND\s+/i, ''));
+    params.push(...hidden.params);
+  }
   if (q) {
     where.push('(r.payload LIKE ? OR r.std_data_item LIKE ? OR r.std_subtype LIKE ? OR r.std_version LIKE ?)');
     const pattern = `%${q}%`;

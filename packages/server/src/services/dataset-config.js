@@ -10,6 +10,7 @@ import {
 } from '../config/material-categories.js';
 import { getStorageKindLabel, listStorageKinds, listCreatableStorageKinds } from '../config/system-subtypes.js';
 import { STANDARD_FIELD_SEEDS } from '../db/seed-standard-fields.js';
+import { sqlExcludeHiddenSubtypeNames } from '../config/query-hidden-subtypes.js';
 
 function parseJsonArray(value, fallback = []) {
   if (!value) return fallback;
@@ -829,6 +830,9 @@ export function listSearchableCategories({ moduleCode } = {}) {
       AND TRIM(COALESCE(NULLIF(TRIM(r.std_category), ''), s.category)) != ''
   `;
   const excelParams = [];
+  const hidden = sqlExcludeHiddenSubtypeNames('s');
+  excelSql += hidden.clause;
+  excelParams.push(...hidden.params);
   if (mod) {
     excelSql += ' AND s.module_code = ?';
     excelParams.push(mod);

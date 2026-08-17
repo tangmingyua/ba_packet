@@ -43,6 +43,8 @@ test-session.json
 .env
 .env.*
 !.env.example
+packages/license-issuer/keys/*.pem
+packages/server/src/license/.pubkey.tmp
 
 # 系统与编辑器
 .DS_Store

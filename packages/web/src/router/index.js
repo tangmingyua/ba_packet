@@ -9,10 +9,13 @@ import FormTemplateView from '../views/FormTemplateView.vue';
 import DocumentView from '../views/DocumentView.vue';
 import WordFaithfulView from '../views/WordFaithfulView.vue';
 import ConversionScriptView from '../views/ConversionScriptView.vue';
+import ActivateView from '../views/ActivateView.vue';
+import { licenseActivated, licenseReady, refreshLicenseStatus } from '../composables/licenseGate.js';
 
-export default createRouter({
+const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/activate', name: 'activate', component: ActivateView },
     { path: '/', name: 'search', component: SearchView },
     { path: '/import', name: 'import', component: ImportView },
     { path: '/form-templates', name: 'formTemplates', component: FormTemplateView },
@@ -30,3 +33,24 @@ export default createRouter({
     { path: '/fields', redirect: { path: '/import', query: { tab: 'fields' } } },
   ],
 });
+
+router.beforeEach(async (to) => {
+  if (!licenseReady.value) {
+    try {
+      await refreshLicenseStatus();
+    } catch {
+      if (to.name !== 'activate') return { name: 'activate' };
+      return true;
+    }
+  }
+  if (!licenseActivated.value && to.name !== 'activate') {
+    return { name: 'activate' };
+  }
+  if (licenseActivated.value && to.name === 'activate') {
+    return { name: 'search' };
+  }
+  return true;
+});
+
+export default router;
+

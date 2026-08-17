@@ -7,7 +7,10 @@
     <div v-if="listItems.length" class="form-template-layout">
       <aside class="form-template-list">
         <div class="list-header">
-          <h3>表样</h3>
+          <div class="list-header-left">
+            <button v-if="showBack" type="button" class="btn" @click="emit('back')">返回目录</button>
+            <h3>表样</h3>
+          </div>
           <span v-if="searchMode" class="list-meta">{{ listItems.length }} 张</span>
         </div>
         <ul class="template-items">
@@ -115,6 +118,8 @@ import {
 } from '../../api';
 import FormTemplateMatrix from '../form-template/FormTemplateMatrix.vue';
 import { formTemplateDisplayTitle, formTemplateListSheetLabel } from '../../utils/formTemplateListDisplay.js';
+import { formTemplateReportCodesMatch } from '../../../../server/src/utils/form-template-report-code.js';
+import { compareVersionLabelsDesc } from '../../utils/versionSort.js';
 import { resolveIndicatorKeyAtCell } from '../../utils/formTemplateIndicator.js';
 
 const props = defineProps({
@@ -122,7 +127,11 @@ const props = defineProps({
   moduleCode: { type: String, default: '' },
   subtypeCode: { type: String, default: '' },
   emptyText: { type: String, default: '未找到匹配表样' },
+  showBack: { type: Boolean, default: false },
+  focusReportCode: { type: String, default: '' },
 });
+
+const emit = defineEmits(['back']);
 
 const listItems = ref([]);
 const detail = ref(null);
@@ -198,6 +207,42 @@ function filterByModule(items) {
   return items.filter((item) => (item.moduleCode || '') === mod);
 }
 
+function pickLatestByReportCode(items, reportCode) {
+  const code = String(reportCode || '').trim();
+  if (!code) return null;
+  const matched = items.filter((item) => formTemplateReportCodesMatch(item.reportCode, code));
+  if (!matched.length) return null;
+  return [...matched].sort((a, b) => compareVersionLabelsDesc(a.versionLabel, b.versionLabel))[0];
+}
+
+async function applyFocusOrSelectFirst() {
+  const focus = String(props.focusReportCode || '').trim();
+  if (focus) {
+    let picked = pickLatestByReportCode(listItems.value, focus);
+    if (!picked) {
+      try {
+        const res = await listFormTemplates({
+          moduleCode: props.moduleCode.trim() || undefined,
+          subtypeCode: props.subtypeCode.trim() || undefined,
+        });
+        picked = pickLatestByReportCode(res.items || [], focus);
+        if (picked && !listItems.value.some((item) => item.id === picked.id)) {
+          listItems.value = [picked, ...listItems.value];
+        }
+      } catch {
+        picked = null;
+      }
+    }
+    if (picked) {
+      await selectTemplate(picked);
+      return;
+    }
+  }
+  if (listItems.value.length) {
+    await selectTemplate(listItems.value[0]);
+  }
+}
+
 async function loadBrowseList() {
   loadingList.value = true;
   loadError.value = '';
@@ -210,7 +255,7 @@ async function loadBrowseList() {
     listItems.value = res.items || [];
     searchResult.value = null;
     if (listItems.value.length) {
-      await selectTemplate(listItems.value[0]);
+      await applyFocusOrSelectFirst();
     } else {
       selectedId.value = null;
       detail.value = null;
@@ -242,7 +287,7 @@ async function loadSearchList() {
     });
     listItems.value = searchResult.value.items || [];
     if (listItems.value.length) {
-      await selectTemplate(listItems.value[0]);
+      await applyFocusOrSelectFirst();
     }
   } catch (e) {
     loadError.value = e.message || '搜索表样失败';
@@ -361,7 +406,7 @@ async function onIndicatorCellClick({ row, col }) {
 }
 
 watch(
-  () => [props.keyword, props.moduleCode, props.subtypeCode],
+  () => [props.keyword, props.moduleCode, props.subtypeCode, props.focusReportCode],
   () => {
     reload();
   },
@@ -410,6 +455,19 @@ watch(
   justify-content: space-between;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+}
+
+.list-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.list-header-left .btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .list-header h3 {

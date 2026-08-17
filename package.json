@@ -6,13 +6,16 @@
   "workspaces": [
     "packages/server",
     "packages/web",
-    "packages/desktop"
+    "packages/desktop",
+    "packages/license-issuer"
   ],
   "scripts": {
     "dev:server": "npm run dev -w @ba-packet/server",
     "dev:web": "npm run dev -w @ba-packet/web",
     "dev": "concurrently -n server,web -c blue,green \"npm run dev:server\" \"npm run dev:delayed -w @ba-packet/web\"",
     "dev:desktop": "npm run dev -w @ba-packet/desktop",
+    "dev:license-issuer": "npm run start -w @ba-packet/license-issuer",
+    "dist:license-issuer": "npm run dist:win -w @ba-packet/license-issuer",
     "build:web": "npm run build -w @ba-packet/web",
     "build": "npm run build:web",
     "import:excel": "npm run import:excel -w @ba-packet/server",

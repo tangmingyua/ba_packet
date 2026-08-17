@@ -1,6 +1,6 @@
 <template>
-  <div class="app">
-    <aside class="sidebar sidebar-minimal">
+  <div class="app" :class="{ 'app-activate': isActivatePage }">
+    <aside v-if="!isActivatePage" class="sidebar sidebar-minimal">
       <button type="button" class="logo logo-compact" title="返回查询首页" @click="goHome">
         <div class="logo-mark">
           <svg viewBox="0 0 24 24">
@@ -22,7 +22,7 @@
       <div
         class="content"
         :class="{
-          'content-search-landing': isSearchLanding,
+          'content-search-landing': isSearchLanding || isActivatePage,
           'content-search-results': isSearchResults,
           'content-fill': isFillPage,
         }"
@@ -48,6 +48,8 @@ provide('pendingHomeMode', pendingHomeMode);
 provide('goHome', goHome);
 
 const landingMode = ref('aggregate');
+
+const isActivatePage = computed(() => route.name === 'activate');
 
 const isSearchLanding = computed(
   () => route.name === 'search' && !searchLayoutActive.value

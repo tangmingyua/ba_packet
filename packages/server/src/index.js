@@ -46,6 +46,7 @@ import {
   listFormTemplates,
 } from './services/form-template-import.js';
 import { searchFormTemplates, getFormTemplateSearchHits } from './services/form-template-search.js';
+import { browseFormTemplateCatalog } from './services/form-template-catalog-browse.js';
 import {
   deleteDocument,
   getDocument,
@@ -85,6 +86,7 @@ import {
   writeRuntimeSession,
 } from './local-api-auth.js';
 import { registerDesktopWebUi } from './desktop-web-ui.js';
+import { activateLicense, getLicenseStatus, registerLicenseGuard } from './license/guard.js';
 
 const PORT = Number(process.env.BA_PORT || 39281);
 const HOST = process.env.BA_HOST || '127.0.0.1';
@@ -102,10 +104,22 @@ async function initPlugins() {
     limits: { fileSize: 50 * 1024 * 1024 },
   });
   registerLocalApiAuth(app);
+  registerLicenseGuard(app);
   pluginsReady = true;
 }
 
 app.get('/api/health', async () => ({ ok: true, ...getDatasetStats() }));
+
+app.get('/api/license/status', async () => getLicenseStatus());
+
+app.post('/api/license/activate', async (request, reply) => {
+  try {
+    const code = request.body?.code ?? request.body?.licenseCode ?? '';
+    return activateLicense(code);
+  } catch (error) {
+    return reply.code(400).send({ message: error.message || '激活失败' });
+  }
+});
 
 app.get('/api/suggest', async (request, reply) => {
   try {
@@ -506,6 +520,20 @@ app.get('/api/form-templates', async (request) => {
       subtypeCode: subtypeCode ? String(subtypeCode) : undefined,
     }),
   };
+});
+
+app.get('/api/form-templates/catalog', async (request, reply) => {
+  try {
+    const { moduleCode, q, subtypeCode } = request.query || {};
+    const result = browseFormTemplateCatalog({
+      moduleCode: moduleCode ? String(moduleCode) : '',
+      keyword: q ? String(q) : '',
+      formTemplateSubtypeCode: subtypeCode ? String(subtypeCode) : undefined,
+    });
+    return result;
+  } catch (error) {
+    return reply.code(500).send({ message: error.message || '加载表样目录失败', found: false });
+  }
 });
 
 app.get('/api/form-templates/search', async (request, reply) => {

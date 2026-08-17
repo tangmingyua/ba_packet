@@ -30,6 +30,11 @@ async function request(path, options = {}) {
     headers: withAuthHeaders(options.headers),
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 403 && body.code === 'LICENSE_REQUIRED') {
+    if (typeof window !== 'undefined' && !window.location.hash.startsWith('#/activate')) {
+      window.location.hash = '#/activate';
+    }
+  }
   if (!response.ok) {
     throw new Error(body.message || `请求失败: ${response.status}`);
   }
@@ -38,6 +43,18 @@ async function request(path, options = {}) {
 
 export function getHealth() {
   return request('/api/health');
+}
+
+export function getLicenseStatus() {
+  return request('/api/license/status');
+}
+
+export function activateLicense(code) {
+  return request('/api/license/activate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: String(code || '') }),
+  });
 }
 
 export function suggestItems(q, limit = 10, mode = 'aggregate', { categories, moduleCode, moduleCodes, subtypeCode } = {}) {
@@ -293,6 +310,14 @@ export function listFormTemplates({ moduleCode, subtypeCode } = {}) {
   if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
   const qs = query.toString();
   return request(`/api/form-templates${qs ? `?${qs}` : ''}`);
+}
+
+export function fetchFormTemplateCatalog(moduleCode, q = '', { subtypeCode, signal } = {}) {
+  const query = new URLSearchParams();
+  if (moduleCode) query.set('moduleCode', String(moduleCode));
+  if (q) query.set('q', String(q));
+  if (subtypeCode) query.set('subtypeCode', String(subtypeCode));
+  return request(`/api/form-templates/catalog?${query}`, { signal });
 }
 
 export function getFormTemplate(id) {

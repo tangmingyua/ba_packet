@@ -24,6 +24,9 @@ export const PAGE_SIZE = 15;
 /** 配置类/答疑结果表单元格默认展示字数上限（超出可点开展开） */
 export const RESULT_CELL_DISPLAY_MAX_CHARS = 30;
 
+/** 列名含这些词时按长文本处理：两行截断、展开、复制（与「说明」一致） */
+const LONG_TEXT_COL_RE = /校验|说明|逻辑|范围|备注|公式|建议|意见|规则|描述|定义/;
+
 /** 内部字段：表名筛选用，不参与列展示 */
 export const ROW_TABLE_KEY = '$tableName';
 
@@ -135,6 +138,7 @@ const SKIP_PAYLOAD_KEYS = new Set([
   '__has_links',
   '__link_dict_text',
   '__catalog_seq',
+  '__form_template_link_fields',
 ]);
 
 /** 行元数据：主类模块 code（搜索查码值用） */
@@ -143,6 +147,8 @@ export const ROW_MODULE_CODE_KEY = '$moduleCode';
 export const ROW_LINK_COLUMNS_KEY = '$linkColumns';
 /** 行元数据：列名 → 预解析码表名称 */
 export const ROW_LINK_DICT_TEXT_KEY = '$linkDictText';
+/** 行元数据：可点击跳转表样的 Excel 列名列表 */
+export const ROW_FORM_TEMPLATE_LINK_COLUMNS_KEY = '$formTemplateLinkColumns';
 /** 行元数据：全量导入「目录」Sheet 行序 */
 export const ROW_CATALOG_SEQ_KEY = '$catalogSeq';
 
@@ -250,6 +256,21 @@ export function itemToDisplayRow(item, report, block, mode) {
   row[ROW_MODULE_CODE_KEY] = item.moduleCode || report?.moduleCode || '';
   row[ROW_LINK_COLUMNS_KEY] = linkColumns;
   row[ROW_LINK_DICT_TEXT_KEY] = linkDictByLabel;
+  const ftLinkFields = Array.isArray(payload.__form_template_link_fields)
+    ? payload.__form_template_link_fields
+    : [];
+  const ftLinkColumns = [];
+  const ftSeen = new Set();
+  for (const fieldKey of ftLinkFields) {
+    const key = String(fieldKey || '').trim();
+    if (!key) continue;
+    const label = col(key);
+    if (label && !ftSeen.has(label)) {
+      ftLinkColumns.push(label);
+      ftSeen.add(label);
+    }
+  }
+  row[ROW_FORM_TEMPLATE_LINK_COLUMNS_KEY] = ftLinkColumns;
   const catalogSeq = parseCatalogSeq(payload);
   if (catalogSeq != null) {
     row[ROW_CATALOG_SEQ_KEY] = catalogSeq;
@@ -380,26 +401,28 @@ function buildColumnMetaFromKeys(allKeys, mode, options = {}) {
   let truncatableLabels = resolveLabelsForCodeList(truncatableStd, allKeys).filter((l) =>
     displayCols.includes(l)
   );
+  const descSet = new Set(
+    resolveLabelsForCodeList(descStd, allKeys).filter((l) => displayCols.includes(l))
+  );
 
-  if (mode === 'norm' || mode === 'aggregate') {
-    const truncSet = new Set(truncatableLabels);
-    const versionLabels = new Set(resolveLabelsForCodeList(['version'], allKeys));
-    const codeSet = new Set(codeLabels);
-    for (const col of displayCols) {
-      if (truncSet.has(col) || versionLabels.has(col) || codeSet.has(col)) continue;
-      if (/校验|说明|逻辑|范围|备注|公式|建议|意见/.test(col)) {
-        truncSet.add(col);
-      }
+  const versionLabels = new Set(resolveLabelsForCodeList(['version'], allKeys));
+  const codeSet = new Set(codeLabels);
+  const truncSet = new Set(truncatableLabels);
+  for (const col of displayCols) {
+    if (versionLabels.has(col) || codeSet.has(col)) continue;
+    if (LONG_TEXT_COL_RE.test(col)) {
+      truncSet.add(col);
+      descSet.add(col);
     }
-    truncatableLabels = [...truncSet];
   }
+  truncatableLabels = [...truncSet];
 
   return {
     displayCols,
     primaryCols,
     secondaryCols,
     truncatableLabels,
-    descLabels: resolveLabelsForCodeList(descStd, allKeys).filter((l) => displayCols.includes(l)),
+    descLabels: [...descSet],
     highlightLabels: resolveSearchHighlightLabels(mode, allKeys),
     codeLabels,
     groupLabels: [],

@@ -64,6 +64,7 @@ export async function startServer({ userDataPath, port, dbKeyHex } = {}) {
     BA_PORT: String(listenPort),
     BA_HOST: '127.0.0.1',
     BA_API_TOKEN: apiToken,
+    BA_LICENSE_PATH: path.join(userDataPath, 'license.json'),
     BA_RESOURCES_PATH: getResourcePath(),
     ELECTRON_RUN_AS_NODE: '1',
     NODE_PATH: getResourcePath('node_modules'),
