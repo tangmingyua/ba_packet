@@ -56,6 +56,7 @@ import {
   updateDocumentReportMapping,
   listDocuments,
 } from './services/document-import.js';
+import { lookupTestifyRulesByDocCode } from './services/testify-rule-lookup.js';
 import {
   deleteConversionScript,
   getConversionScript,
@@ -709,6 +710,18 @@ app.get('/api/documents/:id/indicators/:key', async (request, reply) => {
   if (!result) return reply.code(404).send({ message: '填报说明不存在' });
   if (!result.found) return reply.code(404).send({ message: `未找到指标 ${key}`, ...result });
   return result;
+});
+
+app.get('/api/testify-rules/lookup', async (request, reply) => {
+  const docCode = String(request.query?.docCode ?? '').trim();
+  const indicatorKey = String(request.query?.indicatorKey ?? '').trim();
+  if (!docCode || !indicatorKey) {
+    return reply.code(400).send({ message: '请提供 docCode 与 indicatorKey' });
+  }
+  const versionLabel = request.query?.versionLabel;
+  return lookupTestifyRulesByDocCode(docCode, indicatorKey, {
+    versionLabel: versionLabel != null ? String(versionLabel) : undefined,
+  });
 });
 
 app.put('/api/documents/:id/report-mapping', async (request, reply) => {

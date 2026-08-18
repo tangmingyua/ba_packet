@@ -53,7 +53,7 @@
                 <span v-if="searchMode && keyword"> · 关键词「{{ keyword }}」</span>
                 <span v-if="focusCell"> · 定位 R{{ focusCell.rowNum }}C{{ focusCell.colNum }}</span>
               </p>
-              <p class="preview-hint">点击指标名称查看对应填报说明</p>
+              <p class="preview-hint">点击指标名称查看填报说明；若存在匹配的主指标校验规则，将一并展示</p>
             </div>
           </header>
 
@@ -68,36 +68,18 @@
               :selected-cell="selectedCell"
               :enable-cell-full-text="props.moduleCode !== '1104'"
               enable-indicator-click
-              @cell-click="onIndicatorCellClick"
+              @cell-click="handleIndicatorCellClick"
             />
 
-            <aside v-if="instructionOpen" class="instruction-drawer">
-              <div class="instruction-header">
-                <h3>填报说明</h3>
-                <button type="button" class="btn-link" @click="clearInstruction">关闭</button>
-              </div>
-
-              <p v-if="loadingInstruction" class="muted">加载说明…</p>
-              <p v-else-if="instructionError" class="instruction-error">{{ instructionError }}</p>
-              <template v-else-if="instruction">
-                <p class="instruction-meta">
-                  {{ instruction.document?.docCode }}
-                  <span v-if="instruction.document?.reportCode">
-                    · 表样 {{ instruction.document.reportCode }}
-                  </span>
-                  · 指标 #{{ instruction.indicatorKey }}
-                </p>
-                <div class="instruction-title">{{ instruction.indicator?.text }}</div>
-                <div
-                  v-for="(body, idx) in instructionBodies"
-                  :key="idx"
-                  class="instruction-body"
-                >
-                  {{ body }}
-                </div>
-                <p v-if="!instructionBodies.length" class="muted">该指标下暂无正文</p>
-              </template>
-            </aside>
+            <FormTemplateInstructionDrawer
+              :open="instructionOpen"
+              :loading="loadingInstruction"
+              :error="instructionError"
+              :instruction="instruction"
+              :bodies="instructionBodies"
+              :testify-rules="testifyRules"
+              @close="clearInstruction"
+            />
           </div>
         </template>
         <p v-else class="muted empty-hint">请从左侧选择表样</p>
@@ -109,18 +91,17 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import {
-  getDocumentByReport,
-  getDocumentIndicator,
   getFormTemplate,
   getFormTemplateSearchHits,
   listFormTemplates,
   searchFormTemplateCells,
 } from '../../api';
 import FormTemplateMatrix from '../form-template/FormTemplateMatrix.vue';
+import FormTemplateInstructionDrawer from '../form-template/FormTemplateInstructionDrawer.vue';
+import { useFormTemplateInstructionPanel } from '../../composables/useFormTemplateInstructionPanel.js';
 import { formTemplateDisplayTitle, formTemplateListSheetLabel } from '../../utils/formTemplateListDisplay.js';
 import { formTemplateReportCodesMatch } from '../../../../server/src/utils/form-template-report-code.js';
 import { compareVersionLabelsDesc } from '../../utils/versionSort.js';
-import { resolveIndicatorKeyAtCell } from '../../utils/formTemplateIndicator.js';
 
 const props = defineProps({
   keyword: { type: String, default: '' },
@@ -147,26 +128,19 @@ const hitsForSelected = ref([]);
 const hitsTruncated = ref(false);
 const focusCell = ref(null);
 const matrixRef = ref(null);
-const selectedCell = ref(null);
-const instruction = ref(null);
-const instructionError = ref('');
-const loadingInstruction = ref(false);
+const {
+  selectedCell,
+  instruction,
+  instructionError,
+  loadingInstruction,
+  testifyRules,
+  instructionBodies,
+  instructionOpen,
+  clearInstruction,
+  onIndicatorCellClick,
+} = useFormTemplateInstructionPanel();
 
 const searchMode = computed(() => Boolean(props.keyword.trim()));
-
-const instructionBodies = computed(() =>
-  (instruction.value?.indicator?.children || [])
-    .filter((c) => c.nodeKind === 'body')
-    .map((c) => c.text)
-);
-
-const instructionOpen = computed(
-  () =>
-    Boolean(selectedCell.value) ||
-    Boolean(instruction.value) ||
-    Boolean(instructionError.value) ||
-    loadingInstruction.value
-);
 
 const highlightCells = computed(() =>
   hitsForSelected.value
@@ -195,10 +169,14 @@ function listSheetLabel(item) {
   });
 }
 
-function clearInstruction() {
-  selectedCell.value = null;
-  instruction.value = null;
-  instructionError.value = '';
+async function handleIndicatorCellClick({ row, col }) {
+  await onIndicatorCellClick({
+    matrix: detail.value?.matrix,
+    reportCode: detail.value?.reportCode,
+    versionLabel: detail.value?.versionLabel,
+    row,
+    col,
+  });
 }
 
 function filterByModule(items) {
@@ -364,45 +342,6 @@ async function selectHit(item, hit) {
   }
   await nextTick();
   matrixRef.value?.scrollToCell?.(hit?.row, hit?.col);
-}
-
-async function onIndicatorCellClick({ row, col }) {
-  selectedCell.value = { row, col };
-  instruction.value = null;
-  instructionError.value = '';
-
-  const key = resolveIndicatorKeyAtCell(detail.value?.matrix, row, col);
-  if (!key) {
-    instructionError.value = '无法识别指标序号';
-    return;
-  }
-
-  const reportCode = detail.value?.reportCode;
-  if (!reportCode) {
-    instructionError.value = '当前表样缺少表号';
-    return;
-  }
-
-  loadingInstruction.value = true;
-  try {
-    let docMeta;
-    try {
-      docMeta = await getDocumentByReport(reportCode, {
-        versionLabel: detail.value?.versionLabel,
-      });
-    } catch {
-      instructionError.value = `未找到表样 ${reportCode} 对应的填报说明，请先导入并关联`;
-      return;
-    }
-
-    try {
-      instruction.value = await getDocumentIndicator(docMeta.id, key);
-    } catch (e) {
-      instructionError.value = e.message || `未找到指标 ${key} 的填报说明`;
-    }
-  } finally {
-    loadingInstruction.value = false;
-  }
 }
 
 watch(
@@ -608,64 +547,6 @@ watch(
   width: 100%;
   height: 100%;
   max-height: none;
-}
-
-.instruction-drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(320px, 42%);
-  z-index: 5;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #fff;
-  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12);
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  padding: 8px 10px;
-}
-
-.instruction-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.instruction-header h3 {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.instruction-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.instruction-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  line-height: 1.45;
-}
-
-.instruction-body {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-bottom: 8px;
-}
-
-.instruction-error {
-  font-size: 12px;
-  color: #b91c1c;
-  line-height: 1.5;
 }
 
 .muted {

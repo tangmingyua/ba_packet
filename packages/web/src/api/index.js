@@ -391,6 +391,17 @@ export function getDocumentIndicator(documentId, indicatorKey) {
   );
 }
 
+export function lookupTestifyRules({ docCode, indicatorKey, versionLabel } = {}) {
+  const query = new URLSearchParams({
+    docCode: String(docCode ?? ''),
+    indicatorKey: String(indicatorKey ?? ''),
+  });
+  if (versionLabel != null && String(versionLabel).trim()) {
+    query.set('versionLabel', String(versionLabel).trim());
+  }
+  return request(`/api/testify-rules/lookup?${query}`);
+}
+
 export function deleteDocument(id) {
   return request(`/api/documents/${id}`, { method: 'DELETE' });
 }
